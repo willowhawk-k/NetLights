@@ -16,3 +16,6 @@ Package.resolved
 .claude/
 *.xcodeproj
 *.xcworkspace
+
+# Local-only collaboration notes
+docs/AI-ASSIST.md

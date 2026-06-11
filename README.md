@@ -12,6 +12,8 @@ NetLights arranges every network interface on your Mac into horizontal bands tha
 mirror the network stack — from the physical chassis ports at the top down to virtual
 tunnels at the bottom — and lights up live link, traffic, device, and power state.
 
+<img src="assets/screenshot.png" alt="NetLights graph view" width="900">
+
 </div>
 
 ---

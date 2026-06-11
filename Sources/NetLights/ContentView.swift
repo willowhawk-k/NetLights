@@ -4,6 +4,7 @@ struct ContentView: View {
     @StateObject private var monitor = NetworkMonitor()
     @State private var selectedTab: Tab = .graph
     @State private var hideUnused: Bool = false
+    @State private var privacy: Bool = false
 
     enum Tab: String, CaseIterable {
         case graph      = "Graph"
@@ -39,6 +40,7 @@ struct ContentView: View {
             statusBar
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.privacyMode, privacy)
         .onAppear  { monitor.start() }
         .onDisappear { monitor.stop() }
     }
@@ -70,6 +72,14 @@ struct ContentView: View {
             }
             .toggleStyle(.button)
             .help("Hide interfaces with no IP address and no traffic (e.g. un-used utun ports)")
+
+            // Privacy: mask IP / MAC addresses for screenshots & screen-sharing
+            Toggle(isOn: $privacy) {
+                Label("Privacy", systemImage: privacy ? "eye.slash.circle.fill" : "eye.slash.circle")
+                    .font(.callout)
+            }
+            .toggleStyle(.button)
+            .help("Mask IP and MAC addresses (for screenshots / screen-sharing)")
 
             Button {
                 monitor.refresh()
@@ -119,13 +129,13 @@ struct ContentView: View {
                     if r.isDefault {
                         Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption)
                     }
-                    Text(r.destination).font(.system(.body, design: .monospaced))
+                    Text(Privacy.mask(r.destination, on: privacy)).font(.system(.body, design: .monospaced))
                 }
             }
             .width(min: 130, ideal: 160)
 
             TableColumn("Gateway") { r in
-                Text(r.gateway).font(.system(.body, design: .monospaced))
+                Text(Privacy.mask(r.gateway, on: privacy)).font(.system(.body, design: .monospaced))
             }
             .width(min: 130, ideal: 160)
 
@@ -178,13 +188,13 @@ struct ContentView: View {
                 .width(min: 80, ideal: 100)
 
             TableColumn("IPv4") { i in
-                Text(i.ipv4Addresses.joined(separator: ", "))
+                Text(Privacy.mask(i.ipv4Addresses.joined(separator: ", "), on: privacy))
                     .font(.system(.body, design: .monospaced))
             }
             .width(min: 120, ideal: 150)
 
             TableColumn("MAC") { i in
-                Text(i.macAddress ?? "—").font(.system(.body, design: .monospaced))
+                Text(Privacy.mask(i.macAddress ?? "—", on: privacy)).font(.system(.body, design: .monospaced))
             }
             .width(min: 130, ideal: 140)
 

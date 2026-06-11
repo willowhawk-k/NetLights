@@ -4,6 +4,7 @@ struct GatewayNodeView: View {
     let gateway: GatewayNode
     let routes: [RouteEntry]
 
+    @Environment(\.privacyMode) private var privacyMode
     @State private var isHovered = false
 
     var body: some View {
@@ -13,7 +14,7 @@ struct GatewayNodeView: View {
                     .font(.system(size: 22, weight: .light))
                     .foregroundColor(accentColor)
 
-                Text(gateway.id)
+                Text(Privacy.mask(gateway.id, on: privacyMode))
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundColor(.primary)
 
@@ -57,7 +58,7 @@ struct GatewayNodeView: View {
 
     private var gatewayTooltip: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(gateway.id)
+            Text(Privacy.mask(gateway.id, on: privacyMode))
                 .font(.system(.headline, design: .monospaced))
 
             Divider()
@@ -97,7 +98,7 @@ struct GatewayNodeView: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
                 .frame(width: 60, alignment: .leading)
-            Text(value)
+            Text(Privacy.mask(value, on: privacyMode))
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
         }

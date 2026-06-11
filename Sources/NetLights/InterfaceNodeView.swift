@@ -5,6 +5,7 @@ import SwiftUI
 struct InterfaceTooltip: View {
     let iface: InterfaceInfo
     let routes: [RouteEntry]
+    @Environment(\.privacyMode) private var privacyMode
 
     var defaultRoute: RouteEntry? {
         routes.first { $0.isDefault && $0.interfaceName == iface.id }
@@ -86,7 +87,7 @@ struct InterfaceTooltip: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
                 .frame(width: 72, alignment: .leading)
-            Text(value)
+            Text(Privacy.mask(value, on: privacyMode))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.primary)
                 .textSelection(.enabled)
@@ -110,6 +111,7 @@ struct InterfaceNodeView: View {
     let traffic: TrafficState?
     let routes: [RouteEntry]
 
+    @Environment(\.privacyMode) private var privacyMode
     @State private var isHovered = false
 
     private var ledState: LEDView.LEDState {
@@ -133,7 +135,7 @@ struct InterfaceNodeView: View {
                     .font(.system(.caption, design: .monospaced, weight: .semibold))
                     .foregroundColor(dimmed ? .secondary : .primary)
 
-                Text(iface.subtitleLabel)
+                Text(Privacy.mask(iface.subtitleLabel, on: privacyMode))
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
                     .lineLimit(1)
