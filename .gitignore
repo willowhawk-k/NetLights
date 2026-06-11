@@ -1,0 +1,18 @@
+# Swift Package Manager / build output
+.build/
+.swiftpm/
+Package.resolved
+
+# Packaged release artifacts
+/dist/
+*.app
+*.zip
+*.iconset
+
+# macOS
+.DS_Store
+
+# Editor / tooling
+.claude/
+*.xcodeproj
+*.xcworkspace

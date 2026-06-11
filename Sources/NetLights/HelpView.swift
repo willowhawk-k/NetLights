@@ -1,0 +1,109 @@
+import SwiftUI
+
+struct HelpView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+
+                section("What you're looking at", icon: "square.stack.3d.up.fill") {
+                    para("NetLights arranges every network interface on your Mac into horizontal bands that mirror the network stack — from the physical chassis ports at the top down to virtual tunnels at the bottom. Lines show how interfaces relate; small LEDs show live link and traffic state.")
+                }
+
+                section("The layer bands", icon: "rectangle.3.group.fill") {
+                    bullet("Hardware (L0)", "The physical USB-C / Thunderbolt receptacles on your Mac's chassis, plus any directly-attached device such as an iPhone. Position labels (Left · Front, Right, …) come from a per-model layout table.")
+                    bullet("Physical (L1)", "Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (en1–en3), USB Ethernet, and app/VM virtual adapters. TB and iPhone interfaces sit directly under the hardware port they belong to.")
+                    bullet("Data Link (L2)", "Bridges and VLANs — e.g. bridge0, the Thunderbolt Bridge — drawn centered over their member ports.")
+                    bullet("Virtual (L3+)", "Everything software-defined: VPN/utun tunnels, loopback, AWDL (AirDrop), Continuity, and system interfaces.")
+                }
+
+                section("Nodes, LEDs & lines", icon: "lightbulb.fill") {
+                    bullet("Green dot", "The interface (or port) has an active link / a device is attached.")
+                    bullet("Amber ant-crawl", "Live traffic. The dashes march while bytes are moving and hold steady (no blink) for ~3 s after activity stops.")
+                    bullet("Dim dot", "No link / nothing attached.")
+                    bullet("Connection lines", "Show relationships: hardware port → its en* interfaces, bridge ↔ members, and interface → gateway. Emphasized links (iPhone↔port, VPN egress) stay brightly lit.")
+                }
+
+                section("Hardware ports & power", icon: "powerplug.fill") {
+                    bullet("Lit port", "Anything physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a charger — lights the port, regardless of whether it carries network traffic.")
+                    bullet("⚡︎ Power badge", "A yellow plug badge marks a port with a USB-C charger attached (an active connection that presents no USB data device).")
+                    bullet("iPhone link", "A USB-connected iPhone is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green “USB-C” link.")
+                }
+
+                section("Gateways (left sidebar)", icon: "diamond.fill") {
+                    bullet("Default GW (orange)", "Your primary next hop — typically the Wi-Fi/router address.")
+                    bullet("VPN GW (blue)", "A default route that egresses over a tunnel. Its tooltip shows the physical gateway it ultimately exits through, and the chain utun → VPN GW → Wi-Fi GW → Wi-Fi port is drawn explicitly.")
+                }
+
+                section("Where the data comes from", icon: "cpu.fill") {
+                    bullet("Interfaces & stats", "getifaddrs() for addresses; sysctl(NET_RT_IFLIST) for link state, MAC, MTU and byte counters.")
+                    bullet("Routes & gateways", "sysctl(NET_RT_DUMP) over the PF_ROUTE socket.")
+                    bullet("Friendly names", "SystemConfiguration (SCNetworkInterface) for hardware-port display names.")
+                    bullet("Port topology", "system_profiler SPThunderboltDataType for receptacle status; ioreg (IOUSB + AppleHPM USB-C PD controller) for attached devices, the iPhone's port, and power state.")
+                }
+
+                section("Capabilities & restrictions", icon: "exclamationmark.triangle.fill") {
+                    bullet("No admin rights", "Everything is read-only and runs as your user — NetLights never changes configuration.")
+                    bullet("Refresh cadence", "Interface/route data refreshes every 0.75 s; the slower port-topology probe runs ~every 5 s on a background thread so the UI never stalls.")
+                    bullet("Link speed", "Reported via the interface's 32-bit baud field, so values above ~4.3 Gbps may read low on some links.")
+                    bullet("Port front/rear labels", "Receptacle position labels come from a hand-curated per-model table and may be approximate on some Macs — connection/power state itself is read live and accurate.")
+                    bullet("iPhone visibility", "A locked iPhone is hidden from system_profiler's USB list; NetLights falls back to the IOKit registry to find it.")
+                }
+
+                Divider()
+
+                section("Credits", icon: "heart.fill") {
+                    para("NetLights was created by \(AppInfo.author), pair-programmed with Claude (Anthropic). Claude helped architect the layered layout engine, the low-level sysctl/IOKit data plumbing, and this help system.")
+                    para(AppInfo.copyright)
+                }
+            }
+            .padding(28)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minWidth: 640, minHeight: 560)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Building blocks
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            AppIconView().frame(width: 56, height: 56)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(AppInfo.name) Help")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                Text(AppInfo.tagline)
+                    .font(.callout).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func section<Content: View>(_ title: String, icon: String,
+                                        @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: icon)
+                .font(.headline)
+                .foregroundColor(.primary)
+            content()
+        }
+    }
+
+    private func para(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundColor(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func bullet(_ term: String, _ desc: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 5))
+                .foregroundColor(.accentColor)
+                .padding(.top, 5)
+            (Text(term + " — ").font(.callout.weight(.semibold))
+             + Text(desc).font(.callout).foregroundColor(.secondary))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
