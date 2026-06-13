@@ -2,10 +2,9 @@ import SwiftUI
 
 struct GatewayNodeView: View {
     let gateway: GatewayNode
-    let routes: [RouteEntry]
+    var isHovered: Bool = false
 
     @Environment(\.privacyMode) private var privacyMode
-    @State private var isHovered = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -44,82 +43,12 @@ struct GatewayNodeView: View {
                 .offset(x: -5, y: 5)
                 .accessibilityHidden(true)
         }
-        .onHover { isHovered = $0 }
-        .overlay(alignment: .top) {
-            if isHovered {
-                gatewayTooltip
-                    .offset(y: -140)
-                    .zIndex(100)
-                    .transition(.opacity)
-                    .animation(.easeOut(duration: 0.1), value: isHovered)
-            }
-        }
-    }
-
-    private var gatewayTooltip: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(Privacy.mask(gateway.id, on: privacyMode))
-                .font(.system(.headline, design: .monospaced))
-
-            Divider()
-
-            row("Role",  gateway.roleLabel)
-            row("Via",   gateway.reachableVia.joined(separator: ", "))
-            if let eg = egressGateway {
-                row("Egress", "via \(eg)")
-            }
-
-            let myRoutes = routes.filter { $0.gateway == gateway.id }
-            if !myRoutes.isEmpty {
-                row("Routes", "\(myRoutes.count) entries")
-                ForEach(myRoutes.prefix(5)) { r in
-                    row("  →", "\(r.destination)\(r.netmask.map { "/\($0)" } ?? "")")
-                }
-                if myRoutes.count > 5 {
-                    Text("  … and \(myRoutes.count - 5) more")
-                        .font(.system(size: 8))
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 8)
-        )
-        .frame(minWidth: 220, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            Text(label + ": ")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-                .frame(width: 60, alignment: .leading)
-            Text(Privacy.mask(value, on: privacyMode))
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-        }
     }
 
     /// Icon tint: VPN gateways blue, physical default orange, others grey.
     private var accentColor: Color {
         if gateway.isVPN { return .blue }
         return gateway.isDefault ? .orange : .secondary
-    }
-
-    /// For a VPN gateway, the physical default gateway it ultimately egresses
-    /// through (the *other* default route, not over a tunnel).
-    private var egressGateway: String? {
-        guard gateway.isVPN else { return nil }
-        return routes.first {
-            $0.isDefault && $0.gateway != gateway.id
-            && $0.gateway.contains(".")
-            && !$0.interfaceName.hasPrefix("utun")
-            && !$0.interfaceName.hasPrefix("ipsec")
-        }?.gateway
     }
 
     private var cardBackground: Color {

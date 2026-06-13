@@ -100,6 +100,20 @@ private func uniformRects(groups: [IfaceGroup], band: CGRect, w: CGFloat) -> [CG
 
 // MARK: - NetworkGraphView
 
+/// Which node the pointer is over. Tracked centrally (not per-node) so hover is
+/// immune to the tracking-area churn the 0.75s auto-refresh would otherwise cause.
+enum HoverTarget: Equatable {
+    case iface(String)
+    case port(Int)
+    case gateway(String)
+}
+
+/// Reports the rendered size of the tooltip so it can be clamped on-screen.
+private struct TipSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
+}
+
 struct NetworkGraphView: View {
     let interfaces:    [InterfaceInfo]
     let trafficStates: [String: TrafficState]
@@ -113,19 +127,33 @@ struct NetworkGraphView: View {
     // It only advances when there is traffic (no blink; just moving vs. static).
     @State private var dashPhase: CGFloat = 0
 
+    // Central pointer-driven hover (see HoverTarget).
+    @State private var pendingTarget: HoverTarget?
+    @State private var shownTarget: HoverTarget?
+    @State private var hoverTask: Task<Void, Never>?
+    @State private var tipSize: CGSize = .zero
+
     private let dashTimer = Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()
 
     var visible: [InterfaceInfo] {
         hideUnused ? interfaces.filter { !$0.isUnused } : interfaces
     }
 
+    /// BSD name → hardware-port id, derived from each port's child list.
+    private var portForBSD: [String: Int] {
+        var m: [String: Int] = [:]
+        for port in hardwarePorts {
+            for bsd in port.childBSDNames { m[bsd] = port.id }
+        }
+        return m
+    }
+
     /// True when a Physical interface should sit directly beneath a hardware
-    /// port node (TB bridge members and iPhone/iPad channels). Everything else
-    /// (Wi-Fi, USB Ethernet, VM/app adapters) is "free" and laid out separately.
+    /// port node (TB bridge members, iPhone channels, USB Ethernet adapters, …).
+    /// Everything else (Wi-Fi, VM/app adapters) is "free" and laid out separately.
     private func isAnchoredPhysical(_ iface: InterfaceInfo) -> Bool {
-        if let tb = iface.thunderboltPortNumber, hwPortPositions[tb] != nil { return true }
-        if iface.isPhoneAssociated, iface.thunderboltPortNumber == nil, hwPortPositions[0] != nil { return true }
-        return false
+        guard let port = portForBSD[iface.id] else { return false }
+        return hwPortPositions[port] != nil
     }
 
     /// Physical interfaces NOT anchored to a hardware port — grouped + labelled
@@ -154,9 +182,10 @@ struct NetworkGraphView: View {
         let hwPorts  = hwPortPositions
 
         // Anchored interfaces: spread symmetrically around their HW port's x.
+        let bsdToPort = portForBSD
         var anchored: [Int: [InterfaceInfo]] = [:]
         for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
-            anchored[iface.thunderboltPortNumber ?? 0, default: []].append(iface)
+            anchored[bsdToPort[iface.id] ?? 0, default: []].append(iface)
         }
         for (portId, ifaces) in anchored {
             guard let portPos = hwPorts[portId] else { continue }
@@ -286,7 +315,8 @@ struct NetworkGraphView: View {
                 // Hardware port nodes
                 ForEach(hardwarePorts) { port in
                     if let p = hwPortPositions[port.id] {
-                        HardwarePortNodeView(port: port).position(p).zIndex(1)
+                        HardwarePortNodeView(port: port, isHovered: shownTarget == .port(port.id))
+                            .position(p).zIndex(1)
                     }
                 }
 
@@ -295,7 +325,7 @@ struct NetworkGraphView: View {
                     if let p = ifacePositions[iface.id] {
                         InterfaceNodeView(iface: iface,
                                          traffic: trafficStates[iface.id],
-                                         routes: routes)
+                                         isHovered: shownTarget == .iface(iface.id))
                             .position(p).zIndex(1)
                     }
                 }
@@ -303,8 +333,22 @@ struct NetworkGraphView: View {
                 // Gateway nodes (positioned in sidebar column)
                 ForEach(gateways) { gw in
                     if let p = gatewayPositions[gw.id] {
-                        GatewayNodeView(gateway: gw, routes: routes).position(p).zIndex(1)
+                        GatewayNodeView(gateway: gw, isHovered: shownTarget == .gateway(gw.id))
+                            .position(p).zIndex(1)
                     }
+                }
+
+                // Single, pointer-anchored tooltip (immune to per-node hover churn).
+                tooltipLayer(in: geo.size)
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                switch phase {
+                case .active(let p):
+                    let t = targetAt(p)
+                    if t != pendingTarget { pendingTarget = t; scheduleHover(t) }
+                case .ended:
+                    pendingTarget = nil; scheduleHover(nil)
                 }
             }
             .onAppear {
@@ -321,6 +365,124 @@ struct NetworkGraphView: View {
                     dashPhase -= 2
                 }
             }
+        }
+    }
+
+    // MARK: - Central hover / tooltip
+
+    /// A single tooltip positioned right next to the hovered node and clamped so
+    /// it always stays fully on-screen (placed above the node, flipped below when
+    /// there's no room, and nudged horizontally to fit).
+    @ViewBuilder
+    private func tooltipLayer(in container: CGSize) -> some View {
+        if let t = shownTarget, let c = hoverCenter(of: t) {
+            tooltipContent
+                .fixedSize()
+                .background(GeometryReader { g in
+                    Color.clear.preference(key: TipSizeKey.self, value: g.size)
+                })
+                .onPreferenceChange(TipSizeKey.self) { tipSize = $0 }
+                .position(tipCenter(node: c, nodeSize: hoverSize(of: t),
+                                    tipWidth: tipWidth(of: t), in: container))
+                .allowsHitTesting(false)
+                .zIndex(200)
+        }
+    }
+
+    /// The fixed rendered width (content + padding) of each tooltip type — known
+    /// up front, so the horizontal clamp never depends on async measurement.
+    private func tipWidth(of t: HoverTarget) -> CGFloat {
+        switch t {
+        case .iface:   return 270
+        case .gateway: return 260
+        case .port:    return 230
+        }
+    }
+
+    /// Computes the tooltip's center so it sits adjacent to the node and never
+    /// overflows the view bounds (shifted right near the left edge, and vice versa).
+    private func tipCenter(node c: CGPoint, nodeSize n: CGSize,
+                           tipWidth w: CGFloat, in container: CGSize) -> CGPoint {
+        let h = max(tipSize.height, 40)
+        let margin: CGFloat = 10
+        let gap: CGFloat = 10
+        let W = max(container.width, w + 2 * margin)
+        let H = max(container.height, h + 2 * margin)
+
+        // Prefer above the node; flip below if it would clip the top.
+        var cy = c.y - n.height / 2 - gap - h / 2
+        if cy - h / 2 < margin {
+            cy = c.y + n.height / 2 + gap + h / 2
+        }
+        cy = min(max(cy, margin + h / 2), H - margin - h / 2)
+
+        // Horizontally aligned to the node, clamped so the full box stays on-screen.
+        let cx = min(max(c.x, margin + w / 2), W - margin - w / 2)
+        return CGPoint(x: cx, y: cy)
+    }
+
+    @ViewBuilder
+    private var tooltipContent: some View {
+        switch shownTarget {
+        case .iface(let id):
+            if let i = interfaces.first(where: { $0.id == id }) {
+                InterfaceTooltip(iface: i, routes: routes)
+            }
+        case .port(let id):
+            if let p = hardwarePorts.first(where: { $0.id == id }) {
+                HardwarePortTooltip(port: p)
+            }
+        case .gateway(let id):
+            if let g = gateways.first(where: { $0.id == id }) {
+                GatewayTooltip(gateway: g, routes: routes)
+            }
+        case .none:
+            EmptyView()
+        }
+    }
+
+    /// Hit-test the pointer against node rects (ports/gateways/interfaces don't overlap).
+    private func targetAt(_ p: CGPoint) -> HoverTarget? {
+        for port in hardwarePorts {
+            if let c = hwPortPositions[port.id], hitRect(c, 84, 62).contains(p) { return .port(port.id) }
+        }
+        for gw in gateways {
+            if let c = gatewayPositions[gw.id], hitRect(c, 100, 76).contains(p) { return .gateway(gw.id) }
+        }
+        for iface in visible {
+            if let c = ifacePositions[iface.id], hitRect(c, 100, 90).contains(p) { return .iface(iface.id) }
+        }
+        return nil
+    }
+
+    private func hitRect(_ c: CGPoint, _ w: CGFloat, _ h: CGFloat) -> CGRect {
+        CGRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h)
+    }
+
+    /// Debounced commit of the hovered target — transient (refresh-induced) hovers
+    /// are cancelled before they can open a popover.
+    private func scheduleHover(_ t: HoverTarget?) {
+        hoverTask?.cancel()
+        hoverTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: t == nil ? 200_000_000 : 180_000_000)
+            if Task.isCancelled { return }
+            if pendingTarget == t { shownTarget = t }
+        }
+    }
+
+    private func hoverCenter(of t: HoverTarget) -> CGPoint? {
+        switch t {
+        case .iface(let id):   return ifacePositions[id]
+        case .port(let id):    return hwPortPositions[id]
+        case .gateway(let id): return gatewayPositions[id]
+        }
+    }
+
+    private func hoverSize(of t: HoverTarget) -> CGSize {
+        switch t {
+        case .iface:   return CGSize(width: 100, height: 90)
+        case .port:    return CGSize(width: 84, height: 62)
+        case .gateway: return CGSize(width: 100, height: 76)
         }
     }
 
@@ -492,14 +654,18 @@ struct NetworkGraphView: View {
     private func buildLines() -> [ConnLine] {
         var lines: [ConnLine] = []
 
-        // L0 → L1: hardware port → thunderbolt / phone en* children
+        // L0 → L1: hardware port → its interfaces. Real attached USB devices
+        // (Ethernet adapters, iPhone channels) get an emphasized green link;
+        // Thunderbolt-bridge pseudo-members stay a faint grey.
         for port in hardwarePorts {
             guard let from = hwPortPositions[port.id] else { continue }
             for bsd in port.childBSDNames {
                 if let to = ifacePositions[bsd] {
+                    let isDevice = port.isPhone || port.deviceChildren.contains(bsd)
                     lines.append(ConnLine(from: from, to: to, label: "",
-                        color: port.isPhone ? .green : Color(white: 0.55),
-                        hasTraffic: hasTraffic(bsd)))
+                        color: isDevice ? .green : Color(white: 0.55),
+                        hasTraffic: hasTraffic(bsd),
+                        emphasized: isDevice))
                 }
             }
         }

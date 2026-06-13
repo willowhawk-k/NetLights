@@ -86,6 +86,8 @@ final class NetworkMonitor: ObservableObject {
         var hpmConnected: [Int: Bool] = [:]
         /// Port number → true if USB-C power (a charger) is attached.
         var hpmPower: [Int: Bool] = [:]
+        /// USB-attached network interface BSD name → physical receptacle id.
+        var deviceReceptacle: [String: Int] = [:]
     }
 
     // MARK: - Traffic LED logic
@@ -467,7 +469,43 @@ final class NetworkMonitor: ObservableObject {
         status.hpmConnected = hpm.connected
         status.hpmPower = hpm.power
 
+        // USB-attached network interfaces (e.g. a USB-C Ethernet adapter) → receptacle.
+        status.deviceReceptacle = usbNetworkReceptacles(busToReceptacle: busToReceptacle)
+
         return status
+    }
+
+    /// Maps USB-attached network interface BSD names (e.g. "en7") to the physical
+    /// receptacle they're plugged into, by walking the IOUSB registry plane and
+    /// correlating each device's locationID bus with the TB receptacle map.
+    nonisolated private static func usbNetworkReceptacles(busToReceptacle: [Int: Int]) -> [String: Int] {
+        let task = Process()
+        task.launchPath = "/usr/sbin/ioreg"
+        task.arguments  = ["-a", "-p", "IOUSB", "-l", "-w0"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError  = Pipe()
+        var map: [String: Int] = [:]
+        do {
+            try task.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+            func walk(_ node: [String: Any], _ inherited: Int?) {
+                var loc = inherited
+                if let l = node["locationID"] as? NSNumber { loc = l.intValue }
+                if let bsd = node["BSD Name"] as? String, let loc {
+                    let bus = (loc >> 24) & 0xFF
+                    if let recep = busToReceptacle[bus] { map[bsd] = recep }
+                }
+                if let kids = node["IORegistryEntryChildren"] as? [[String: Any]] {
+                    for k in kids { walk(k, loc) }
+                }
+            }
+            if let root = obj as? [String: Any] { walk(root, nil) }
+            else if let arr = obj as? [[String: Any]] { for r in arr { walk(r, nil) } }
+        } catch { return [:] }
+        return map
     }
 
     /// Reads the USB-C Power Delivery controller (AppleHPM) to learn, per port,
@@ -567,8 +605,23 @@ final class NetworkMonitor: ObservableObject {
         // empty the queries failed — only then fall back to the link heuristic.
         let haveData = !portStatus.tbConnected.isEmpty || !portStatus.hpmConnected.isEmpty
 
-        for (port, bsdNames) in byPort.sorted(by: { $0.key < $1.key }) {
+        // Real USB devices (e.g. a USB-C Ethernet adapter) grouped by receptacle,
+        // excluding iPhone channels (their own node) and TB-bridge pseudo-members.
+        var devByPort: [Int: [String]] = [:]
+        for (bsd, recep) in portStatus.deviceReceptacle {
+            guard let iface = interfaces.first(where: { $0.id == bsd }) else { continue }
+            if iface.isPhoneAssociated || iface.thunderboltPortNumber != nil { continue }
+            devByPort[recep, default: []].append(bsd)
+        }
+
+        // Ensure a port node exists for every receptacle that has a device, even
+        // if it has no Thunderbolt-bridge member interface.
+        let allPorts = Set(byPort.keys).union(devByPort.keys)
+
+        for port in allPorts.sorted() {
             let info = layout[port]
+            let tbMembers = (byPort[port] ?? []).sorted()
+            let devices   = (devByPort[port] ?? []).sorted()
             // Light the port if ANY physical attachment exists: a Thunderbolt
             // device, a USB-C cable/device/charger (AppleHPM), or the iPhone.
             let lit: Bool
@@ -576,17 +629,19 @@ final class NetworkMonitor: ObservableObject {
                 lit = (portStatus.tbConnected[port] ?? false)
                     || (portStatus.hpmConnected[port] ?? false)
                     || (portStatus.phoneReceptacle == port)
+                    || !devices.isEmpty
             } else {
-                lit = bsdNames.compactMap { n in interfaces.first { $0.id == n } }
+                lit = (tbMembers + devices).compactMap { n in interfaces.first { $0.id == n } }
                               .contains { $0.hasLink }
             }
             ports.append(HardwarePort(
                 id: port,
                 side: info?.side ?? "",
                 position: info?.position ?? "",
-                childBSDNames: bsdNames.sorted(),
+                childBSDNames: (tbMembers + devices),
                 hasConnectedDevice: lit,
-                hasPower: portStatus.hpmPower[port] ?? false
+                hasPower: portStatus.hpmPower[port] ?? false,
+                deviceChildren: devices
             ))
         }
 

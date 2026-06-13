@@ -4,7 +4,7 @@ import SwiftUI
 /// or a virtual iPhone/iPad USB-connected device node (port.isPhone == true).
 struct HardwarePortNodeView: View {
     let port: HardwarePort
-    @State private var isHovered = false
+    var isHovered: Bool = false
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -56,16 +56,6 @@ struct HardwarePortNodeView: View {
                     .help("USB-C power connected")
             }
         }
-        .onHover { isHovered = $0 }
-        .overlay(alignment: .top) {
-            if isHovered {
-                tooltip
-                    .offset(y: -110)
-                    .zIndex(100)
-                    .transition(.opacity)
-                    .animation(.easeOut(duration: 0.1), value: isHovered)
-            }
-        }
     }
 
     // MARK: - Labels
@@ -89,48 +79,6 @@ struct HardwarePortNodeView: View {
         if port.isPhone { return "USB-C" }
         guard !port.side.isEmpty else { return "" }
         return port.position.isEmpty ? port.side : "\(port.side) · \(port.position)"
-    }
-
-    // MARK: - Tooltip
-
-    private var tooltip: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(titleLabel)
-                .font(.system(.headline, design: .monospaced))
-            Divider()
-            if port.isPhone {
-                row("Type", "USB-C iPhone / iPad")
-                row("Channels", "\(port.childBSDNames.count) virtual interfaces")
-                row("en* names", port.childBSDNames.joined(separator: ", "))
-                row("Status", port.hasConnectedDevice ? "Connected" : "Disconnected")
-            } else {
-                if !port.side.isEmpty {
-                    row("Location", subtitleLabel)
-                }
-                row("Status", port.hasConnectedDevice ? "Device connected" : "No device")
-                if port.hasPower { row("Power", "USB-C charger ⚡︎") }
-                row("Virtual en*", port.childBSDNames.joined(separator: ", "))
-            }
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 8)
-        )
-        .frame(minWidth: 200, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            Text(label + ": ")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary)
-                .frame(width: 80, alignment: .leading)
-            Text(value)
-                .font(.system(.caption, design: .monospaced))
-        }
     }
 
     private var cardBackground: Color {

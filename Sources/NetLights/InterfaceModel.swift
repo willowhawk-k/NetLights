@@ -265,6 +265,7 @@ struct HardwarePort: Identifiable {
     var isPhone: Bool = false     // true for the virtual iPhone/iPad entry
     var physicalReceptacle: Int? = nil  // for iPhone: TB receptacle id it's plugged into
     var hasPower: Bool = false    // USB-C power (charger) attached to this port
+    var deviceChildren: [String] = []  // BSD names of real USB devices on this port (vs TB-bridge pseudo-members)
 }
 
 // MARK: - Mac model → port layout
@@ -277,8 +278,9 @@ func hardwarePortLayout(model: String) -> [Int: (side: String, position: String)
     // ── MacBook Pro 14-inch M4 (Mac16,6 = M4, Mac16,7 = M4 Pro/Max) ──────────
     // Left: MagSafe + TB Port 1 (front) + TB Port 2 (rear)
     // Right: TB Port 3 + HDMI 2.1 + SD
+    // Verified on Mac16,7: receptacle 1 is the *rear* left port, 2 the *front* left.
     case "Mac16,6", "Mac16,7":
-        return [1: ("Left", "Front"), 2: ("Left", "Rear"), 3: ("Right", "")]
+        return [1: ("Left", "Rear"), 2: ("Left", "Front"), 3: ("Right", "")]
 
     // ── MacBook Pro 16-inch M4 (Mac16,8 = M4 Pro/Max) ────────────────────────
     // Left: MagSafe + TB Port 1 (front) + TB Port 2 (rear)

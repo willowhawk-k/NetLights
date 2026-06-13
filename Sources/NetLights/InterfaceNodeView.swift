@@ -63,13 +63,13 @@ struct InterfaceTooltip: View {
             row("RX", formatBytes(iface.rxBytes))
             row("TX", formatBytes(iface.txBytes))
         }
+        .frame(width: 250, alignment: .leading)
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(.ultraThinMaterial)
                 .shadow(color: .black.opacity(0.3), radius: 8)
         )
-        .frame(minWidth: 240, alignment: .leading)
     }
 
     private var linkLabel: String {
@@ -109,10 +109,9 @@ struct InterfaceTooltip: View {
 struct InterfaceNodeView: View {
     let iface: InterfaceInfo
     let traffic: TrafficState?
-    let routes: [RouteEntry]
+    var isHovered: Bool = false
 
     @Environment(\.privacyMode) private var privacyMode
-    @State private var isHovered = false
 
     private var ledState: LEDView.LEDState {
         let hasTraffic = traffic?.rxActive == true || traffic?.txActive == true
@@ -158,16 +157,6 @@ struct InterfaceNodeView: View {
             // LED in top-right
             LEDView(state: ledState)
                 .offset(x: -6, y: 6)
-        }
-        .onHover { isHovered = $0 }
-        .overlay(alignment: .top) {
-            if isHovered {
-                InterfaceTooltip(iface: iface, routes: routes)
-                    .offset(y: -160)
-                    .zIndex(100)
-                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
-                    .animation(.easeOut(duration: 0.1), value: isHovered)
-            }
         }
     }
 
