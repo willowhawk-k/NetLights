@@ -61,7 +61,7 @@ struct HardwarePortNodeView: View {
     // MARK: - Labels
 
     private var iconName: String {
-        port.isPhone ? "iphone" : "bolt.fill"
+        port.isPhone ? (port.deviceName == "iPad" ? "ipad" : "iphone") : "bolt.fill"
     }
 
     private var iconColor: Color {
@@ -72,7 +72,7 @@ struct HardwarePortNodeView: View {
     }
 
     private var titleLabel: String {
-        port.isPhone ? "iPhone" : "TB Port \(port.id)"
+        port.isPhone ? port.deviceName : "TB Port \(port.id)"
     }
 
     private var subtitleLabel: String {

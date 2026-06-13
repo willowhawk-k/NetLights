@@ -17,10 +17,11 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 <br>
 
 <!-- thumbnails — click any to view full size -->
-<a href="assets/netlights_active.png"><img src="assets/netlights_active.png" alt="Live traffic" width="220"></a>
-<a href="assets/netlights_routes.png"><img src="assets/netlights_routes.png" alt="Routes table" width="220"></a>
-<a href="assets/netlights_interfaces.png"><img src="assets/netlights_interfaces.png" alt="Interfaces table" width="220"></a>
-<a href="assets/netlights_irl.png"><img src="assets/netlights_irl.png" alt="NetLights in real life" width="220"></a>
+<a href="assets/netlights_active.png"><img src="assets/netlights_active.png" alt="Live traffic" width="180"></a>
+<a href="assets/netlights_routes.png"><img src="assets/netlights_routes.png" alt="Routes table" width="180"></a>
+<a href="assets/netlights_interfaces.png"><img src="assets/netlights_interfaces.png" alt="Interfaces table" width="180"></a>
+<a href="assets/netlights_irl.png"><img src="assets/netlights_irl.png" alt="NetLights in real life" width="180"></a>
+<a href="assets/netlights_irl2.png"><img src="assets/netlights_irl2.png" alt="NetLights in real life" width="180"></a>
 
 <sub>Graph with live traffic · Routes · Interfaces · in the wild — click to enlarge</sub>
 
@@ -71,7 +72,22 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 ### Hardware ports & power
 - A port lights if **anything** is physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a **charger** — regardless of whether it carries network traffic.
 - A yellow **plug badge** (a powerplug icon) marks a port with a USB-C charger attached.
-- A USB-connected **iPhone** is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green "USB-C" link.
+- A USB-connected **iPhone** (or **iPad**) is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green "USB-C" link.
+
+### Recognizing what's attached
+NetLights classifies each USB peripheral and draws it with a fitting icon and a hover tooltip:
+
+<p align="center">
+<a href="assets/netlights_headphones.png"><img src="assets/netlights_headphones.png" alt="Audio device" width="250"></a>
+<a href="assets/netlights_apple_battery.png"><img src="assets/netlights_apple_battery.png" alt="Battery" width="250"></a>
+<a href="assets/netlights_whoop_battery.png"><img src="assets/netlights_whoop_battery.png" alt="Generic USB device with tooltip" width="250"></a>
+<br>
+<a href="assets/netlights_apple_charger.png"><img src="assets/netlights_apple_charger.png" alt="Charger device" width="250"></a>
+<a href="assets/netlights_usb-pd.png"><img src="assets/netlights_usb-pd.png" alt="USB-C power-delivery plug badge" width="160"></a>
+<a href="assets/netlights_tablet.png"><img src="assets/netlights_tablet.png" alt="iPad tether" width="250"></a>
+</p>
+
+<sub>Audio (AirPods) · Battery (MagSafe) · generic USB device (with tooltip) · charger · USB-C PD plug badge · iPad vs iPhone — click to enlarge</sub>
 
 ### Gateways & the Internet
 - The **Internet** node sits in the top row; every default gateway links up to it.

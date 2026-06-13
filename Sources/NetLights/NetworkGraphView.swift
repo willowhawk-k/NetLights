@@ -776,8 +776,8 @@ struct NetworkGraphView: View {
     private func portBracketLabel(_ p: HardwarePort) -> String {
         if p.isPhone {
             let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
-            return loc.isEmpty ? "iPhone · \(p.connectionMedium)"
-                               : "iPhone · \(p.connectionMedium) (\(loc))"
+            return loc.isEmpty ? "\(p.deviceName) · \(p.connectionMedium)"
+                               : "\(p.deviceName) · \(p.connectionMedium) (\(loc))"
         }
         guard !p.side.isEmpty else { return "TB Port \(p.id)" }
         let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"

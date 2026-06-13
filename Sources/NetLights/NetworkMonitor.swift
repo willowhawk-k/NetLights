@@ -105,6 +105,8 @@ final class NetworkMonitor: ObservableObject {
         var usbDeviceName: [Int: String] = [:]
         /// Physical receptacle the iPhone/iPad is plugged into, if any.
         var phoneReceptacle: Int? = nil
+        /// "iPhone" or "iPad" — the connected mobile device kind (USB-detected).
+        var phoneDeviceKind: String = "iPhone"
         /// Port number → true if anything is physically attached (cable/device/power),
         /// from the USB-C PD controller (AppleHPM). Authoritative connection signal.
         var hpmConnected: [Int: Bool] = [:]
@@ -485,10 +487,11 @@ final class NetworkMonitor: ObservableObject {
         }
 
         // Locate a connected iPhone/iPad and map its USB4 bus → physical receptacle.
-        if let bus = iPhoneUSBBus() {
-            let recep = busToReceptacle[bus]
+        if let m = mobileDeviceBus() {
+            let recep = busToReceptacle[m.bus]
             status.phoneReceptacle = recep
-            if let r = recep { status.usbDeviceName[r] = "iPhone" }
+            status.phoneDeviceKind = m.kind
+            if let r = recep { status.usbDeviceName[r] = m.kind }
         }
 
         // Physical attachment + power state per port, from the USB-C PD controller.
@@ -628,10 +631,10 @@ final class NetworkMonitor: ObservableObject {
         } catch { return nil }
     }
 
-    /// Returns the USB4 bus index a connected iPhone/iPad is on, parsed from the
-    /// `ioreg` node name `iPhone@<locationID>`. The locationID's high byte is the
-    /// bus number (e.g. 0x02100000 → bus 2). Returns nil if no device is found.
-    nonisolated private static func iPhoneUSBBus() -> Int? {
+    /// Returns the USB4 bus index and kind ("iPhone"/"iPad") of a connected Apple
+    /// mobile device, parsed from the `ioreg` node name `iPhone@<locationID>` /
+    /// `iPad@<locationID>`. The locationID's high byte is the bus number.
+    nonisolated private static func mobileDeviceBus() -> (bus: Int, kind: String)? {
         let task = Process()
         task.launchPath = "/usr/sbin/ioreg"
         task.arguments  = ["-p", "IOUSB", "-l", "-w0"]
@@ -646,12 +649,12 @@ final class NetworkMonitor: ObservableObject {
             guard let out = String(data: data, encoding: .utf8) else { return nil }
             for rawLine in out.split(separator: "\n") {
                 let line = String(rawLine)
-                // Match the device-tree node line: "+-o iPhone@02100000  <class ...>"
-                guard line.contains("iPhone@") || line.contains("iPad@") else { continue }
-                guard let at = line.range(of: "@") else { continue }
+                // Match the device-tree node line: "+-o iPad@02100000  <class ...>"
+                let kind = line.contains("iPad@") ? "iPad" : (line.contains("iPhone@") ? "iPhone" : nil)
+                guard let kind, let at = line.range(of: "@") else { continue }
                 let hex = line[at.upperBound...].prefix { $0.isHexDigit }
                 if let loc = UInt32(hex, radix: 16) {
-                    return Int((loc >> 24) & 0xFF)
+                    return (Int((loc >> 24) & 0xFF), kind)
                 }
             }
         } catch { return nil }
@@ -729,6 +732,7 @@ final class NetworkMonitor: ObservableObject {
                 childBSDNames: phoneIfaces.map(\.id).sorted(),
                 hasConnectedDevice: true,
                 isPhone: true,
+                deviceName: portStatus.phoneDeviceKind,
                 physicalReceptacle: portStatus.phoneReceptacle,
                 connectionMedium: medium
             ))

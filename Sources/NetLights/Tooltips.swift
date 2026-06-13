@@ -6,7 +6,7 @@ import SwiftUI
 struct HardwarePortTooltip: View {
     let port: HardwarePort
 
-    private var titleLabel: String { port.isPhone ? "iPhone" : "TB Port \(port.id)" }
+    private var titleLabel: String { port.isPhone ? port.deviceName : "TB Port \(port.id)" }
     private var location: String {
         guard !port.side.isEmpty else { return "" }
         return port.position.isEmpty ? port.side : "\(port.side) · \(port.position)"
@@ -17,7 +17,7 @@ struct HardwarePortTooltip: View {
             Text(titleLabel).font(.system(.headline, design: .monospaced))
             Divider()
             if port.isPhone {
-                row("Type", "USB-C iPhone / iPad")
+                row("Type", "USB-C \(port.deviceName)")
                 row("Channels", "\(port.childBSDNames.count) virtual interfaces")
                 row("en* names", port.childBSDNames.joined(separator: ", "))
                 row("Status", port.hasConnectedDevice ? "Connected" : "Disconnected")

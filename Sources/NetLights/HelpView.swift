@@ -28,7 +28,21 @@ struct HelpView: View {
                 section("Hardware ports & power", icon: "powerplug.fill") {
                     bullet("Lit port", "Anything physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a charger — lights the port, regardless of whether it carries network traffic.")
                     bullet("Plug badge", "A yellow plug (powerplug) badge marks a port with a USB-C charger attached — an active connection that presents no USB data device.")
-                    bullet("iPhone link", "A USB-connected iPhone is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green “USB-C” link.")
+                    bullet("iPhone / iPad link", "A USB-connected iPhone or iPad is detected via the IOKit USB tree (distinguished by name), mapped to its physical receptacle, and joined to that port with a green “USB-C” link.")
+                }
+
+                section("Recognizing attached devices", icon: "shippingbox.fill") {
+                    para("Each USB peripheral is classified and drawn with a fitting icon — hover any chip for its name, class, and port:")
+                    HStack(spacing: 16) {
+                        DeviceNodeView(device: AttachedDevice(id: "a", name: "AirPods Max", receptacle: 0, kind: .audio))
+                        DeviceNodeView(device: AttachedDevice(id: "b", name: "MagSafe Battery", receptacle: 0, kind: .battery))
+                        DeviceNodeView(device: AttachedDevice(id: "c", name: "USB PowerPack", receptacle: 0, kind: .generic))
+                        HardwarePortNodeView(port: HardwarePort(id: 1, side: "Left", position: "Front",
+                            childBSDNames: [], hasConnectedDevice: true, hasPower: true))
+                    }
+                    .padding(.vertical, 4)
+                    bullet("Plug badge", "A charger (power, no data device) adds a yellow plug to its port — see the rightmost example above.")
+                    bullet("Network devices", "A MiFi or USB-Ethernet adapter shows as a device with the interface it provides anchored beneath it.")
                 }
 
                 section("Gateways & the Internet", icon: "globe") {

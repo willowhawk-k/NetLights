@@ -98,7 +98,7 @@ struct InterfaceInfo: Identifiable, Equatable {
         // link-local NCM channels macOS keeps up for device communication.
         if isPhoneAssociated {
             if ipv4Addresses.contains(where: { $0.hasPrefix("172.20.10.") }) { return "Personal Hotspot" }
-            return "iPhone USB"
+            return "USB tether"
         }
         // Prefer IP address when present (most informative at a glance)
         if let ip = primaryIP { return ip }
@@ -276,6 +276,7 @@ struct HardwarePort: Identifiable {
     var childBSDNames: [String]   // en* interfaces that belong to this port
     var hasConnectedDevice: Bool  // any child has link up
     var isPhone: Bool = false     // true for the virtual iPhone/iPad entry
+    var deviceName: String = "iPhone"   // "iPhone" or "iPad" for the phone entry
     var physicalReceptacle: Int? = nil  // for iPhone: TB receptacle id it's plugged into
     var hasPower: Bool = false    // USB-C power (charger) attached to this port
     var deviceChildren: [String] = []  // BSD names of real USB devices on this port (vs TB-bridge pseudo-members)
