@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import SystemConfiguration
+import CoreWLAN
 
 // MARK: - NetworkMonitor
 
@@ -10,6 +11,8 @@ final class NetworkMonitor: ObservableObject {
     @Published var routes: [RouteEntry] = []
     @Published var gateways: [GatewayNode] = []
     @Published var hardwarePorts: [HardwarePort] = []
+    @Published var attachedDevices: [AttachedDevice] = []
+    @Published var egress: EgressInfo?
     @Published var trafficStates: [String: TrafficState] = [:]
 
     let macModel: String = {
@@ -43,6 +46,7 @@ final class NetworkMonitor: ObservableObject {
         let newRoutes = Self.gatherRoutes()
         routes = newRoutes
         gateways = Self.buildGatewayNodes(from: newRoutes, interfaces: newInterfaces)
+        egress = Self.computeEgress(routes: newRoutes, interfaces: newInterfaces)
 
         // Build hardware ports immediately from the *cached* port status so the
         // UI never blocks. The actual TB/USB query (system_profiler + ioreg) is
@@ -50,6 +54,7 @@ final class NetworkMonitor: ObservableObject {
         hardwarePorts = Self.buildHardwarePorts(from: newInterfaces,
                                                 macModel: macModel,
                                                 portStatus: lastPortStatus)
+        attachedDevices = lastPortStatus.attachedDevices
 
         // Re-query topology roughly every ~5s, and never run two at once.
         portQueryCounter += 1
@@ -65,6 +70,7 @@ final class NetworkMonitor: ObservableObject {
                     // Rebuild against the freshest interface list.
                     self.hardwarePorts = NetworkMonitor.buildHardwarePorts(
                         from: self.interfaces, macModel: model, portStatus: status)
+                    self.attachedDevices = status.attachedDevices
                 }
             }
         }
@@ -88,6 +94,8 @@ final class NetworkMonitor: ObservableObject {
         var hpmPower: [Int: Bool] = [:]
         /// USB-attached network interface BSD name → physical receptacle id.
         var deviceReceptacle: [String: Int] = [:]
+        /// Non-network USB peripherals attached to ports (audio, storage, …).
+        var attachedDevices: [AttachedDevice] = []
     }
 
     // MARK: - Traffic LED logic
@@ -469,23 +477,29 @@ final class NetworkMonitor: ObservableObject {
         status.hpmConnected = hpm.connected
         status.hpmPower = hpm.power
 
-        // USB-attached network interfaces (e.g. a USB-C Ethernet adapter) → receptacle.
-        status.deviceReceptacle = usbNetworkReceptacles(busToReceptacle: busToReceptacle)
+        // Walk the USB registry once: map network interfaces → receptacle, and
+        // collect non-network peripherals (audio, storage, hubs, …) as devices.
+        let scan = usbScan(busToReceptacle: busToReceptacle)
+        status.deviceReceptacle = scan.bsd
+        status.attachedDevices  = scan.devices
 
         return status
     }
 
-    /// Maps USB-attached network interface BSD names (e.g. "en7") to the physical
-    /// receptacle they're plugged into, by walking the IOUSB registry plane and
-    /// correlating each device's locationID bus with the TB receptacle map.
-    nonisolated private static func usbNetworkReceptacles(busToReceptacle: [Int: Int]) -> [String: Int] {
+    struct USBScan { var bsd: [String: Int] = [:]; var devices: [AttachedDevice] = [] }
+
+    /// Walks the IOUSB registry plane, correlating each device's locationID bus
+    /// with the TB receptacle map. Returns network-interface BSD names per
+    /// receptacle, plus classified peripheral devices (excluding phones and
+    /// network adapters, which are already shown as interfaces).
+    nonisolated private static func usbScan(busToReceptacle: [Int: Int]) -> USBScan {
         let task = Process()
         task.launchPath = "/usr/sbin/ioreg"
         task.arguments  = ["-a", "-p", "IOUSB", "-l", "-w0"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError  = Pipe()
-        var map: [String: Int] = [:]
+        var scan = USBScan()
         do {
             try task.run()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
@@ -494,18 +508,36 @@ final class NetworkMonitor: ObservableObject {
             func walk(_ node: [String: Any], _ inherited: Int?) {
                 var loc = inherited
                 if let l = node["locationID"] as? NSNumber { loc = l.intValue }
+
                 if let bsd = node["BSD Name"] as? String, let loc {
                     let bus = (loc >> 24) & 0xFF
-                    if let recep = busToReceptacle[bus] { map[bsd] = recep }
+                    if let recep = busToReceptacle[bus] { scan.bsd[bsd] = recep }
                 }
+
+                // A USB device node carries a product name; classify peripherals.
+                if let name = node["USB Product Name"] as? String, let loc {
+                    let bus = (loc >> 24) & 0xFF
+                    let lname = name.lowercased()
+                    let isPhone   = lname.contains("iphone") || lname.contains("ipad")
+                    let isNetwork = lname.contains("lan") || lname.contains("ethernet")
+                    if let recep = busToReceptacle[bus], !isPhone, !isNetwork {
+                        let cls = (node["bDeviceClass"] as? NSNumber)?.intValue ?? 0
+                        scan.devices.append(AttachedDevice(
+                            id: String(loc, radix: 16),
+                            name: name,
+                            receptacle: recep,
+                            kind: USBDeviceKind.classify(name: name, classCode: cls)))
+                    }
+                }
+
                 if let kids = node["IORegistryEntryChildren"] as? [[String: Any]] {
                     for k in kids { walk(k, loc) }
                 }
             }
             if let root = obj as? [String: Any] { walk(root, nil) }
             else if let arr = obj as? [[String: Any]] { for r in arr { walk(r, nil) } }
-        } catch { return [:] }
-        return map
+        } catch { return USBScan() }
+        return scan
     }
 
     /// Reads the USB-C Power Delivery controller (AppleHPM) to learn, per port,
@@ -649,18 +681,76 @@ final class NetworkMonitor: ObservableObject {
         let phoneIfaces = interfaces.filter { $0.isPhoneAssociated && $0.thunderboltPortNumber == nil }
         if !phoneIfaces.isEmpty {
             let info = portStatus.phoneReceptacle.flatMap { layout[$0] }
+            // How is the phone tethered? USB shows up in the IOUSB tree (a
+            // receptacle); a Wi-Fi hotspot lands a 172.20.10.x address on the
+            // Wi-Fi interface; Bluetooth PAN shows a "Bluetooth" display name.
+            let medium: String
+            if portStatus.phoneReceptacle != nil {
+                medium = "USB-C"
+            } else if phoneIfaces.contains(where: { $0.category == .wifi }) {
+                medium = "Wi-Fi"
+            } else if phoneIfaces.contains(where: { ($0.displayName ?? "").lowercased().contains("bluetooth") }) {
+                medium = "Bluetooth"
+            } else {
+                medium = "USB-C"
+            }
             ports.append(HardwarePort(
                 id: 0,
-                side: info?.side ?? "USB-C",
+                side: info?.side ?? "",
                 position: info?.position ?? "",
                 childBSDNames: phoneIfaces.map(\.id).sorted(),
                 hasConnectedDevice: true,
                 isPhone: true,
-                physicalReceptacle: portStatus.phoneReceptacle
+                physicalReceptacle: portStatus.phoneReceptacle,
+                connectionMedium: medium
             ))
         }
 
         return ports
+    }
+
+    // MARK: - Egress (uplink) detection
+
+    /// Determines the physical last hop to the internet and its network identity.
+    static func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> EgressInfo? {
+        // The physical default route (not a tunnel) is the real egress.
+        guard let r = routes.first(where: {
+            $0.isDefault && !$0.interfaceName.isEmpty
+            && !$0.interfaceName.hasPrefix("utun") && !$0.interfaceName.hasPrefix("ipsec")
+        }) else { return nil }
+
+        let ifname = r.interfaceName
+        let iface  = interfaces.first { $0.id == ifname }
+        let kind: EgressInfo.Kind
+        switch iface?.category {
+        case .wifi:                   kind = .wifi
+        case .cellular:               kind = .cellular
+        case .ethernet, .thunderbolt: kind = .wired
+        default:                      kind = .other
+        }
+
+        // Prefer the Wi-Fi SSID; otherwise a DNS search domain (wired/corp).
+        var name: String? = (kind == .wifi) ? currentSSID() : nil
+        if name == nil { name = dnsSearchDomain() }
+
+        return EgressInfo(viaInterface: ifname, kind: kind, name: name)
+    }
+
+    /// Current Wi-Fi SSID, or nil if unavailable (needs Location authorization on
+    /// recent macOS; a non-bundled `swift run` binary often returns nil).
+    static func currentSSID() -> String? {
+        guard let ssid = CWWiFiClient.shared().interface()?.ssid(), !ssid.isEmpty else { return nil }
+        return ssid
+    }
+
+    /// First DNS search domain (e.g. a corporate domain), if the network sets one.
+    static func dnsSearchDomain() -> String? {
+        guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil),
+              let dns = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any]
+        else { return nil }
+        if let domains = dns["SearchDomains"] as? [String], let first = domains.first { return first }
+        if let domain = dns["DomainName"] as? String, !domain.isEmpty { return domain }
+        return nil
     }
 
     // MARK: - Gateway node construction

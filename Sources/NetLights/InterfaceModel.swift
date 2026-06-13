@@ -266,6 +266,111 @@ struct HardwarePort: Identifiable {
     var physicalReceptacle: Int? = nil  // for iPhone: TB receptacle id it's plugged into
     var hasPower: Bool = false    // USB-C power (charger) attached to this port
     var deviceChildren: [String] = []  // BSD names of real USB devices on this port (vs TB-bridge pseudo-members)
+    var connectionMedium: String = "USB-C"  // for iPhone: "USB-C" / "Wi-Fi" / "Bluetooth"
+}
+
+// MARK: - Egress (uplink to the outside world)
+
+/// Describes how the machine reaches the internet — the last physical hop and,
+/// when known, the network's identity (Wi-Fi SSID, wired search domain, …).
+struct EgressInfo: Equatable {
+    enum Kind: Equatable {
+        case wifi, wired, cellular, other
+        var label: String {
+            switch self {
+            case .wifi:     return "Wi-Fi"
+            case .wired:    return "Wired"
+            case .cellular: return "Cellular"
+            case .other:    return "Uplink"
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .wifi:     return "wifi"
+            case .wired:    return "cable.connector"
+            case .cellular: return "antenna.radiowaves.left.and.right"
+            case .other:    return "globe"
+            }
+        }
+    }
+
+    var viaInterface: String   // last physical hop, e.g. "en0"
+    var kind: Kind
+    var name: String?          // SSID / domain when known
+
+    /// The network identity to show, falling back to the uplink type.
+    var displayName: String { name ?? kind.label }
+}
+
+// MARK: - Attached USB device (non-network peripherals)
+
+/// Classification of a USB device attached to a hardware port, for iconography.
+enum USBDeviceKind {
+    case audio, storage, hub, keyboard, pointing, display, camera, battery, generic
+
+    var systemImage: String {
+        switch self {
+        case .audio:    return "headphones"
+        case .storage:  return "externaldrive.fill"
+        case .hub:      return "powerplug.fill"
+        case .keyboard: return "keyboard.fill"
+        case .pointing: return "computermouse.fill"
+        case .display:  return "display"
+        case .camera:   return "camera.fill"
+        case .battery:  return "battery.100.bolt"
+        case .generic:  return "cube.box.fill"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .audio:    return "Audio"
+        case .storage:  return "Storage"
+        case .hub:      return "Hub / Dock"
+        case .keyboard: return "Keyboard"
+        case .pointing: return "Pointing"
+        case .display:  return "Display"
+        case .camera:   return "Camera"
+        case .battery:  return "Battery"
+        case .generic:  return "USB Device"
+        }
+    }
+
+    /// Best-guess classification from a USB product name and device class code.
+    static func classify(name: String, classCode: Int) -> USBDeviceKind {
+        let n = name.lowercased()
+        if n.contains("airpod") || n.contains("headphone") || n.contains("buds")
+            || n.contains("speaker") || n.contains("audio") || n.contains("beats") { return .audio }
+        if n.contains("keyboard") { return .keyboard }
+        if n.contains("mouse") || n.contains("trackpad") { return .pointing }
+        if n.contains("ssd") || n.contains("disk") || n.contains("drive")
+            || n.contains("storage") || n.contains("t7") || n.contains("flash") { return .storage }
+        if n.contains("hub") || n.contains("dock") { return .hub }
+        if n.contains("display") || n.contains("monitor") || n.contains("hdmi") { return .display }
+        if n.contains("camera") || n.contains("webcam") { return .camera }
+        if n.contains("battery") || n.contains("power bank") || n.contains("mophie") { return .battery }
+        switch classCode {
+        case 0x08: return .storage
+        case 0x09: return .hub
+        case 0x01: return .audio
+        case 0x0E: return .camera
+        default:   return .generic
+        }
+    }
+}
+
+/// A non-network USB peripheral attached to a hardware port (shown as a device chip).
+struct AttachedDevice: Identifiable, Equatable {
+    let id: String        // stable per device (locationID)
+    var name: String
+    var receptacle: Int   // physical port id it's plugged into
+    var kind: USBDeviceKind
+
+    var systemImage: String { kind.systemImage }
+
+    static func == (l: AttachedDevice, r: AttachedDevice) -> Bool {
+        l.id == r.id && l.name == r.name && l.receptacle == r.receptacle
+    }
 }
 
 // MARK: - Mac model → port layout

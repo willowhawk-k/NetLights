@@ -76,7 +76,7 @@ struct HardwarePortNodeView: View {
     }
 
     private var subtitleLabel: String {
-        if port.isPhone { return "USB-C" }
+        if port.isPhone { return port.connectionMedium }
         guard !port.side.isEmpty else { return "" }
         return port.position.isEmpty ? port.side : "\(port.side) · \(port.position)"
     }

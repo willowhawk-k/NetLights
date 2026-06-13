@@ -120,6 +120,8 @@ struct NetworkGraphView: View {
     let routes:        [RouteEntry]
     let gateways:      [GatewayNode]
     let hardwarePorts: [HardwarePort]
+    let attachedDevices: [AttachedDevice]
+    let egress:        EgressInfo?
     let hideUnused:    Bool
 
     @State private var viewSize: CGSize = .zero
@@ -276,11 +278,16 @@ struct NetworkGraphView: View {
         let tbPorts = hardwarePorts.filter { !$0.isPhone }.sorted { $0.id < $1.id }
         let phone   = hardwarePorts.first { $0.isPhone }
         var order: [Int] = []
-        for p in tbPorts {
-            order.append(p.id)
-            if let ph = phone, ph.physicalReceptacle == p.id { order.append(0) }
+        // The iPhone is the active egress, so keep it hard against the gateway
+        // bar (far left). Its actual receptacle port (if USB) goes right next to
+        // it so the USB-C link stays short; the rest follow.
+        if phone != nil {
+            order.append(0)
+            if let r = phone?.physicalReceptacle, tbPorts.contains(where: { $0.id == r }) {
+                order.append(r)
+            }
         }
-        if phone != nil, !order.contains(0) { order.append(0) }
+        for p in tbPorts where !order.contains(p.id) { order.append(p.id) }
 
         let sp = (bw - margin * 2) / CGFloat(max(order.count, 1))
         var result: [Int: CGPoint] = [:]
@@ -289,6 +296,35 @@ struct NetworkGraphView: View {
                                  y: band.midY)
         }
         return result
+    }
+
+    /// Peripheral device chips, placed beside their hardware port (flipped to the
+    /// inner side near the right edge), stacking down if a port has several.
+    var devicePositions: [String: CGPoint] {
+        guard bw > 0, bh > 0, !attachedDevices.isEmpty else { return [:] }
+        var result: [String: CGPoint] = [:]
+        var perPort: [Int: Int] = [:]
+        for dev in attachedDevices {
+            guard let base = hwPortPositions[dev.receptacle] else { continue }
+            let idx = perPort[dev.receptacle, default: 0]; perPort[dev.receptacle] = idx + 1
+            let dir: CGFloat = base.x > gwColWidth + bw * 0.62 ? -1 : 1
+            result[dev.id] = CGPoint(x: base.x + dir * 104, y: base.y + CGFloat(idx) * 56)
+        }
+        return result
+    }
+
+    /// The egress ("Internet") node sits at the top of the gateway sidebar.
+    var egressPosition: CGPoint? {
+        guard egress != nil, viewSize.height > 0 else { return nil }
+        return CGPoint(x: gwColWidth / 2, y: 60)
+    }
+
+    /// Where the egress link emerges: the hardware port the uplink is plugged
+    /// into, or the uplink interface itself (e.g. internal Wi-Fi).
+    private func egressAnchor() -> CGPoint? {
+        guard let e = egress else { return nil }
+        if let port = portForBSD[e.viaInterface], let p = hwPortPositions[port] { return p }
+        return ifacePositions[e.viaInterface]
     }
 
     // MARK: - Body
@@ -336,6 +372,18 @@ struct NetworkGraphView: View {
                         GatewayNodeView(gateway: gw, isHovered: shownTarget == .gateway(gw.id))
                             .position(p).zIndex(1)
                     }
+                }
+
+                // Attached peripheral devices (audio, storage, …) beside their port
+                ForEach(attachedDevices) { dev in
+                    if let p = devicePositions[dev.id] {
+                        DeviceNodeView(device: dev).position(p).zIndex(1)
+                    }
+                }
+
+                // Egress ("Internet") node at the top of the gateway sidebar
+                if let e = egress, let p = egressPosition {
+                    EgressNodeView(egress: e).position(p).zIndex(1)
                 }
 
                 // Single, pointer-anchored tooltip (immune to per-node hover churn).
@@ -604,9 +652,14 @@ struct NetworkGraphView: View {
     }
 
     private func portBracketLabel(_ p: HardwarePort) -> String {
-        guard !p.side.isEmpty else { return p.isPhone ? "iPhone" : "TB Port \(p.id)" }
+        if p.isPhone {
+            let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
+            return loc.isEmpty ? "iPhone · \(p.connectionMedium)"
+                               : "iPhone · \(p.connectionMedium) (\(loc))"
+        }
+        guard !p.side.isEmpty else { return "TB Port \(p.id)" }
         let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
-        return p.isPhone ? "iPhone (\(loc))" : "TB Port \(p.id)  (\(loc))"
+        return "TB Port \(p.id)  (\(loc))"
     }
 
     // MARK: - Connection lines
@@ -667,6 +720,15 @@ struct NetworkGraphView: View {
                         hasTraffic: hasTraffic(bsd),
                         emphasized: isDevice))
                 }
+            }
+        }
+
+        // Hardware port → attached peripheral device chip.
+        let devPos = devicePositions
+        for dev in attachedDevices {
+            if let from = hwPortPositions[dev.receptacle], let to = devPos[dev.id] {
+                lines.append(ConnLine(from: from, to: to, label: "",
+                    color: .cyan, hasTraffic: false, emphasized: true))
             }
         }
 
@@ -731,6 +793,13 @@ struct NetworkGraphView: View {
                         emphasized: gw.isVPN))
                 }
             }
+        }
+
+        // Internet egress emerges from the physical uplink (hardware port, or the
+        // uplink interface like internal Wi-Fi) — not from the gateway.
+        if let ep = egressPosition, let anchor = egressAnchor() {
+            lines.append(ConnLine(from: anchor, to: ep, label: "",
+                color: .teal, hasTraffic: false, emphasized: true))
         }
 
         // VPN gateway → physical egress gateway (10.2.81.187 → 10.59.0.1):

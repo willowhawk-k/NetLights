@@ -25,6 +25,8 @@ struct ContentView: View {
                     routes: monitor.routes,
                     gateways: monitor.gateways,
                     hardwarePorts: monitor.hardwarePorts,
+                    attachedDevices: monitor.attachedDevices,
+                    egress: monitor.egress,
                     hideUnused: hideUnused
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
