@@ -48,6 +48,7 @@ struct HelpView: View {
                     bullet("Link speed", "Reported via the interface's 32-bit baud field, so values above ~4.3 Gbps may read low on some links.")
                     bullet("Port front/rear labels", "Receptacle position labels come from a hand-curated per-model table and may be approximate on some Macs — connection/power state itself is read live and accurate.")
                     bullet("iPhone visibility", "A locked iPhone is hidden from system_profiler's USB list; NetLights falls back to the IOKit registry to find it.")
+                    bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\").")
                 }
 
                 Divider()

@@ -26,8 +26,15 @@ final class NetworkMonitor: ObservableObject {
     private var pollTimer: Timer?
     private var trafficClearTimers: [String: Timer] = [:]
     private var previousBytes: [String: (rx: UInt64, tx: UInt64)] = [:]
+    private let locationAuth = LocationAuth()
 
     func start() {
+        // Ask for Location access solely to read the Wi-Fi SSID (see LocationAuth);
+        // re-refresh when the grant lands so the network name appears.
+        locationAuth.onAuthorizationChange = { [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
+        locationAuth.request()
         refresh()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -497,14 +504,15 @@ final class NetworkMonitor: ObservableObject {
 
     struct USBScan { var bsd: [String: Int] = [:]; var devices: [AttachedDevice] = [] }
 
-    /// Walks the IOUSB registry plane, correlating each device's locationID bus
-    /// with the TB receptacle map. Returns network-interface BSD names per
-    /// receptacle, plus classified peripheral devices (excluding phones and
-    /// network adapters, which are already shown as interfaces).
+    /// Walks the IOService registry plane (where BSD names live) and correlates
+    /// each USB device's locationID bus with the TB receptacle map. A locationID
+    /// is only inherited from an actual USB device node (one with a USB product
+    /// name) so built-in interfaces aren't mis-mapped. Returns network-interface
+    /// BSD names per receptacle, plus classified peripheral devices.
     nonisolated private static func usbScan(busToReceptacle: [Int: Int]) -> USBScan {
         let task = Process()
         task.launchPath = "/usr/sbin/ioreg"
-        task.arguments  = ["-a", "-p", "IOUSB", "-l", "-w0"]
+        task.arguments  = ["-a", "-l", "-w0"]
         let pipe = Pipe()
         task.standardOutput = pipe
         task.standardError  = Pipe()
@@ -514,28 +522,35 @@ final class NetworkMonitor: ObservableObject {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             task.waitUntilExit()
             let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-            func walk(_ node: [String: Any], _ inherited: Int?) {
-                var loc = inherited
-                if let l = node["locationID"] as? NSNumber { loc = l.intValue }
+            var locToBSD = [String: String]()   // device locationID hex → its network BSD name
+            func walk(_ node: [String: Any], _ usbLoc: Int?) {
+                var loc = usbLoc
 
-                if let bsd = node["BSD Name"] as? String, let loc {
-                    let bus = (loc >> 24) & 0xFF
-                    if let recep = busToReceptacle[bus] { scan.bsd[bsd] = recep }
-                }
-
-                // A USB device node carries a product name; classify peripherals.
-                if let name = node["USB Product Name"] as? String, let loc {
-                    let bus = (loc >> 24) & 0xFF
+                // A USB device node carries a product name + locationID. It (re)sets
+                // the inherited USB location for its whole subtree.
+                if let name = node["USB Product Name"] as? String,
+                   let l = node["locationID"] as? NSNumber {
+                    loc = l.intValue
+                    let bus = (l.intValue >> 24) & 0xFF
                     let lname = name.lowercased()
-                    let isPhone   = lname.contains("iphone") || lname.contains("ipad")
-                    let isNetwork = lname.contains("lan") || lname.contains("ethernet")
-                    if let recep = busToReceptacle[bus], !isPhone, !isNetwork {
+                    let isPhone = lname.contains("iphone") || lname.contains("ipad")
+                    if let recep = busToReceptacle[bus], !isPhone {
                         let cls = (node["bDeviceClass"] as? NSNumber)?.intValue ?? 0
                         scan.devices.append(AttachedDevice(
-                            id: String(loc, radix: 16),
+                            id: String(l.intValue, radix: 16),
                             name: name,
                             receptacle: recep,
                             kind: USBDeviceKind.classify(name: name, classCode: cls)))
+                    }
+                }
+
+                // A BSD name under a USB device maps to that device's receptacle.
+                if let bsd = node["BSD Name"] as? String, let loc {
+                    let bus = (loc >> 24) & 0xFF
+                    let hex = String(loc, radix: 16)
+                    if let recep = busToReceptacle[bus] {
+                        scan.bsd[bsd] = recep
+                        if locToBSD[hex] == nil { locToBSD[hex] = bsd }
                     }
                 }
 
@@ -545,6 +560,17 @@ final class NetworkMonitor: ObservableObject {
             }
             if let root = obj as? [String: Any] { walk(root, nil) }
             else if let arr = obj as? [[String: Any]] { for r in arr { walk(r, nil) } }
+
+            // De-duplicate composite devices (they appear under several USB nodes),
+            // and tag network devices with the interface they provide + a network kind.
+            var seen = Set<String>()
+            scan.devices = scan.devices.compactMap { d in
+                guard !seen.contains(d.id) else { return nil }
+                seen.insert(d.id)
+                var d = d
+                if let bsd = locToBSD[d.id] { d.interfaceBSD = bsd; d.kind = .network }
+                return d
+            }
         } catch { return USBScan() }
         return scan
     }
@@ -646,43 +672,33 @@ final class NetworkMonitor: ObservableObject {
         // empty the queries failed — only then fall back to the link heuristic.
         let haveData = !portStatus.tbConnected.isEmpty || !portStatus.hpmConnected.isEmpty
 
-        // Real USB devices (e.g. a USB-C Ethernet adapter) grouped by receptacle,
-        // excluding iPhone channels (their own node) and TB-bridge pseudo-members.
-        var devByPort: [Int: [String]] = [:]
-        for (bsd, recep) in portStatus.deviceReceptacle {
-            guard let iface = interfaces.first(where: { $0.id == bsd }) else { continue }
-            if iface.isPhoneAssociated || iface.thunderboltPortNumber != nil { continue }
-            devByPort[recep, default: []].append(bsd)
-        }
+        // USB network devices (MiFi, Ethernet dongle) are rendered as device chips
+        // with their interface anchored beneath them (handled in the graph), so they
+        // are NOT folded into the port here.
+        let deviceReceptacles = Set(portStatus.attachedDevices.map { $0.receptacle })
 
-        // Ensure a port node exists for every receptacle that has a device, even
-        // if it has no Thunderbolt-bridge member interface.
-        let allPorts = Set(byPort.keys).union(devByPort.keys)
-
-        for port in allPorts.sorted() {
+        for port in byPort.keys.sorted() {
             let info = layout[port]
             let tbMembers = (byPort[port] ?? []).sorted()
-            let devices   = (devByPort[port] ?? []).sorted()
             // Light the port if ANY physical attachment exists: a Thunderbolt
-            // device, a USB-C cable/device/charger (AppleHPM), or the iPhone.
+            // device, a USB-C cable/device/charger (AppleHPM), or an attached device.
             let lit: Bool
             if haveData {
                 lit = (portStatus.tbConnected[port] ?? false)
                     || (portStatus.hpmConnected[port] ?? false)
                     || (portStatus.phoneReceptacle == port)
-                    || !devices.isEmpty
+                    || deviceReceptacles.contains(port)
             } else {
-                lit = (tbMembers + devices).compactMap { n in interfaces.first { $0.id == n } }
+                lit = tbMembers.compactMap { n in interfaces.first { $0.id == n } }
                               .contains { $0.hasLink }
             }
             ports.append(HardwarePort(
                 id: port,
                 side: info?.side ?? "",
                 position: info?.position ?? "",
-                childBSDNames: (tbMembers + devices),
+                childBSDNames: tbMembers,
                 hasConnectedDevice: lit,
-                hasPower: portStatus.hpmPower[port] ?? false,
-                deviceChildren: devices
+                hasPower: portStatus.hpmPower[port] ?? false
             ))
         }
 
@@ -738,10 +754,9 @@ final class NetworkMonitor: ObservableObject {
         default:                      kind = .other
         }
 
-        // Prefer the Wi-Fi SSID; otherwise a DNS search domain (wired/corp).
-        var name: String? = (kind == .wifi) ? currentSSID() : nil
-        if name == nil { name = dnsSearchDomain() }
-
+        // Only the Wi-Fi SSID is a trustworthy network identity. (DNS search
+        // domains were misleading — corporate domains persist even off-VPN.)
+        let name: String? = (kind == .wifi) ? currentSSID() : nil
         return EgressInfo(viaInterface: ifname, kind: kind, name: name)
     }
 
@@ -752,15 +767,6 @@ final class NetworkMonitor: ObservableObject {
         return ssid
     }
 
-    /// First DNS search domain (e.g. a corporate domain), if the network sets one.
-    static func dnsSearchDomain() -> String? {
-        guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil),
-              let dns = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any]
-        else { return nil }
-        if let domains = dns["SearchDomains"] as? [String], let first = domains.first { return first }
-        if let domain = dns["DomainName"] as? String, !domain.isEmpty { return domain }
-        return nil
-    }
 
     // MARK: - Gateway node construction
 
@@ -792,13 +798,39 @@ final class NetworkMonitor: ObservableObject {
                 byIP[gw]?.reachableVia.append(route.interfaceName)
             }
         }
-        // Sort: default gateways first, then physical before VPN, then by IP.
-        // (Puts the physical default GW above the VPN GW in the sidebar.)
-        return Array(byIP.values).sorted {
-            if $0.isDefault != $1.isDefault { return $0.isDefault }
-            if $0.isVPN != $1.isVPN { return !$0.isVPN }
-            return $0.id < $1.id
+        // Precedence among DEFAULT gateways (which one wins the 0.0.0.0/0 race):
+        // the gateway on the OS primary interface is #1, the rest follow in
+        // routing-table order.
+        var defaultOrder: [String] = []
+        for r in routes where r.isDefault {
+            let g = r.gateway
+            guard g.contains("."), byIP[g] != nil, !defaultOrder.contains(g) else { continue }
+            defaultOrder.append(g)
         }
+        if let primaryIf = primaryInterface(),
+           let winner = byIP.values.first(where: { $0.isDefault && $0.reachableVia.contains(primaryIf) }) {
+            defaultOrder.removeAll { $0 == winner.id }
+            defaultOrder.insert(winner.id, at: 0)
+        }
+        for (i, ip) in defaultOrder.enumerated() { byIP[ip]?.precedence = i + 1 }
+
+        // Sort: by precedence (winning default first), then non-defaults by IP.
+        return Array(byIP.values).sorted {
+            switch ($0.precedence, $1.precedence) {
+            case let (a?, b?): return a < b
+            case (_?, nil):    return true
+            case (nil, _?):    return false
+            default:           return $0.id < $1.id
+            }
+        }
+    }
+
+    /// The OS primary network interface (its default gateway is the active one).
+    static func primaryInterface() -> String? {
+        guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil),
+              let info = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
+        else { return nil }
+        return info["PrimaryInterface"] as? String
     }
 
     private static func sockaddrToString(buf: [UInt8], offset: Int, family: UInt8) -> String {

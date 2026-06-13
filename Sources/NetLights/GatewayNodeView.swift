@@ -10,15 +10,15 @@ struct GatewayNodeView: View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 5) {
                 Image(systemName: gateway.systemImage)
-                    .font(.system(size: 22, weight: .light))
+                    .font(.system(size: 20, weight: .light))
                     .foregroundColor(accentColor)
 
-                Text(Privacy.mask(gateway.id, on: privacyMode))
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.primary)
+                Text(gateway.titleLabel)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.primary.opacity(0.85))
 
-                Text(gateway.roleLabel)
-                    .font(.system(size: 8))
+                Text(Privacy.mask(gateway.id, on: privacyMode))
+                    .font(.system(size: 8, design: .monospaced))
                     .foregroundColor(.secondary)
 
                 if let n = gateway.networkName {

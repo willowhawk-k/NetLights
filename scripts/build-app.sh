@@ -64,6 +64,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key>  <string>13.0</string>
     <key>NSHighResolutionCapable</key> <true/>
     <key>LSApplicationCategoryType</key> <string>public.app-category.utilities</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>NetLights uses your location only to read the current Wi-Fi network name (SSID), which macOS protects behind location access. No location coordinates are read, stored, or shared.</string>
 </dict>
 </plist>
 PLIST

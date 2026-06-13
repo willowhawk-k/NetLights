@@ -2,8 +2,13 @@ import SwiftUI
 
 // MARK: - Constants
 
-/// Width of the left gateway sidebar column.
-private let gwColWidth: CGFloat = 120
+/// Gateway sidebar removed — gateways are now chips pinned to their host device.
+/// Kept at 0 so existing `+ gwColWidth` offsets simply become no-ops.
+private let gwColWidth: CGFloat = 0
+/// Tiers reserved above the bands: the Internet row, then the gateway-chip tier.
+private let internetRowHeight: CGFloat = 52
+private let gwTierHeight: CGFloat = 78
+private let headerHeight: CGFloat = 130
 
 // MARK: - Band layout (no Gateways — moved to sidebar)
 
@@ -23,9 +28,11 @@ private let allBands: [LayerBand] = [
 ]
 
 private func bandRect(named name: String, h: CGFloat) -> CGRect {
-    var y: CGFloat = 0
+    // Reserve the top header (Internet row + gateway-chip tier); bands fill the rest.
+    let usable = max(h - headerHeight, 0)
+    var y: CGFloat = headerHeight
     for band in allBands {
-        let bh = band.heightFraction * h
+        let bh = band.heightFraction * usable
         if band.name == name { return CGRect(x: 0, y: y, width: 0, height: bh) }
         y += bh
     }
@@ -150,12 +157,20 @@ struct NetworkGraphView: View {
         return m
     }
 
-    /// True when a Physical interface should sit directly beneath a hardware
-    /// port node (TB bridge members, iPhone channels, USB Ethernet adapters, …).
-    /// Everything else (Wi-Fi, VM/app adapters) is "free" and laid out separately.
+    /// BSD names of interfaces provided by a USB network device (MiFi, dongle) →
+    /// they anchor under their device chip rather than a port.
+    private var deviceInterfaceBSDs: Set<String> {
+        Set(attachedDevices.compactMap { $0.interfaceBSD })
+    }
+
+    /// True when a Physical interface sits beneath a hardware entity: a port
+    /// (TB members, iPhone channels), the Wi-Fi entity (en0), or a device chip
+    /// (MiFi/dongle interface). Everything else (VM/app adapters) is "free".
     private func isAnchoredPhysical(_ iface: InterfaceInfo) -> Bool {
-        guard let port = portForBSD[iface.id] else { return false }
-        return hwPortPositions[port] != nil
+        if let port = portForBSD[iface.id], hwPortPositions[port] != nil { return true }
+        if iface.id == wifiUplinkInterface, hwPortPositions[-1] != nil { return true }
+        if deviceInterfaceBSDs.contains(iface.id) { return true }
+        return false
     }
 
     /// Physical interfaces NOT anchored to a hardware port — grouped + labelled
@@ -185,9 +200,24 @@ struct NetworkGraphView: View {
 
         // Anchored interfaces: spread symmetrically around their HW port's x.
         let bsdToPort = portForBSD
+        let devPos = devicePositions
+        // interface BSD → its device chip id (MiFi/dongle).
+        let devForBSD: [String: String] = Dictionary(
+            attachedDevices.compactMap { d in d.interfaceBSD.map { ($0, d.id) } },
+            uniquingKeysWith: { a, _ in a })
         var anchored: [Int: [InterfaceInfo]] = [:]
+        var special: [(InterfaceInfo, CGFloat)] = []   // Wi-Fi / device-chip aligned
         for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
-            anchored[bsdToPort[iface.id] ?? 0, default: []].append(iface)
+            if let port = bsdToPort[iface.id] {
+                anchored[port, default: []].append(iface)
+            } else if iface.id == wifiUplinkInterface, let wp = hwPorts[-1] {
+                special.append((iface, wp.x))
+            } else if let devId = devForBSD[iface.id], let p = devPos[devId] {
+                special.append((iface, p.x))
+            }
+        }
+        for (iface, x) in special {
+            result[iface.id] = CGPoint(x: x, y: upperY)
         }
         for (portId, ifaces) in anchored {
             guard let portPos = hwPorts[portId] else { continue }
@@ -253,22 +283,57 @@ struct NetworkGraphView: View {
         return result
     }
 
+    /// Gateways are chips pinned to their host: default gateways sit in the top
+    /// gateway tier above the column of the device/interface they live on; a VPN
+    /// gateway pins just above its tunnel interface down in the Virtual row.
     var gatewayPositions: [String: CGPoint] {
-        guard viewSize.height > 0, !gateways.isEmpty else { return [:] }
-        let h = viewSize.height
-        let spacing  = min(96, (h - 104) / CGFloat(gateways.count))
-        // Center the whole stack vertically in the sidebar.
-        let startY = (h - spacing * CGFloat(gateways.count)) / 2
+        guard bw > 0, bh > 0, !gateways.isEmpty else { return [:] }
+        let tierY = internetRowHeight + gwTierHeight / 2
         var result: [String: CGPoint] = [:]
-        for (i, gw) in gateways.enumerated() {
-            result[gw.id] = CGPoint(x: gwColWidth / 2,
-                                    y: startY + spacing * (CGFloat(i) + 0.5))
+        for gw in gateways {
+            if gw.isVPN {
+                if let tun = gw.reachableVia.first(where: { ifacePositions[$0] != nil }),
+                   let p = ifacePositions[tun] {
+                    result[gw.id] = CGPoint(x: p.x, y: p.y - 62)
+                }
+            } else if let hx = gatewayHostX(gw) {
+                result[gw.id] = CGPoint(x: hx, y: tierY)
+            }
         }
         return result
     }
 
+    /// The x-column of the host a default gateway lives on (iPhone, the uplink's
+    /// hardware port, or the uplink interface itself).
+    private func gatewayHostX(_ gw: GatewayNode) -> CGFloat? {
+        let phoneIfaces = Set(hardwarePorts.first { $0.isPhone }?.childBSDNames ?? [])
+        if gw.id.hasPrefix("172.20.10.") || !Set(gw.reachableVia).isDisjoint(with: phoneIfaces) {
+            return hwPortPositions[0]?.x
+        }
+        if let wifi = wifiUplinkInterface, gw.reachableVia.contains(wifi) {
+            return hwPortPositions[-1]?.x
+        }
+        for ifn in gw.reachableVia {
+            if let port = portForBSD[ifn], let p = hwPortPositions[port] { return p.x }
+            if let p = ifacePositions[ifn] { return p.x }
+        }
+        return egress.flatMap { ifacePositions[$0.viaInterface]?.x }
+    }
+
+    /// The Wi-Fi interface carrying a default route — its AP becomes a Hardware-row
+    /// entity (id -1 in hwPortPositions).
+    private var wifiUplinkInterface: String? {
+        for gw in gateways where gw.isDefault && !gw.isVPN {
+            for ifn in gw.reachableVia where interfaces.first(where: { $0.id == ifn })?.category == .wifi {
+                return ifn
+            }
+        }
+        return nil
+    }
+
     var hwPortPositions: [Int: CGPoint] {
-        guard bw > 0, bh > 0, !hardwarePorts.isEmpty else { return [:] }
+        let hasWifi = wifiUplinkInterface != nil
+        guard bw > 0, bh > 0, (!hardwarePorts.isEmpty || hasWifi) else { return [:] }
         let band   = bandRect(named: "Hardware", h: bh)
         let margin: CGFloat = 60
 
@@ -288,6 +353,7 @@ struct NetworkGraphView: View {
             }
         }
         for p in tbPorts where !order.contains(p.id) { order.append(p.id) }
+        if hasWifi { order.append(-1) }   // Wi-Fi network entity slot
 
         let sp = (bw - margin * 2) / CGFloat(max(order.count, 1))
         var result: [Int: CGPoint] = [:]
@@ -313,18 +379,10 @@ struct NetworkGraphView: View {
         return result
     }
 
-    /// The egress ("Internet") node sits at the top of the gateway sidebar.
+    /// The egress ("Internet") node sits centered in the top row.
     var egressPosition: CGPoint? {
-        guard egress != nil, viewSize.height > 0 else { return nil }
-        return CGPoint(x: gwColWidth / 2, y: 60)
-    }
-
-    /// Where the egress link emerges: the hardware port the uplink is plugged
-    /// into, or the uplink interface itself (e.g. internal Wi-Fi).
-    private func egressAnchor() -> CGPoint? {
-        guard let e = egress else { return nil }
-        if let port = portForBSD[e.viaInterface], let p = hwPortPositions[port] { return p }
-        return ifacePositions[e.viaInterface]
+        guard egress != nil, viewSize.width > 0 else { return nil }
+        return CGPoint(x: viewSize.width / 2, y: internetRowHeight / 2)
     }
 
     // MARK: - Body
@@ -332,21 +390,16 @@ struct NetworkGraphView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
-                // Left sidebar: gateways
-                gatewaySidebar(h: geo.size.height)
-
-                // Vertical divider
-                Path { p in
-                    p.move(to:    CGPoint(x: gwColWidth, y: 0))
-                    p.addLine(to: CGPoint(x: gwColWidth, y: max(geo.size.height, 520)))
-                }
-                .stroke(Color(white: 0.4).opacity(0.2), lineWidth: 0.5)
-
-                // Band backgrounds (offset right of sidebar)
+                // Band backgrounds
                 bandBGs(w: geo.size.width, h: geo.size.height)
                 groupLabels(w: geo.size.width, h: geo.size.height)
                 tbBrackets(h: geo.size.height)
                 connectionLineViews()
+
+                // Wi-Fi network entity (the AP), if Wi-Fi carries a default route.
+                if let wp = hwPortPositions[-1] {
+                    WifiEntityView(ssid: egress?.name).position(wp).zIndex(1)
+                }
 
                 // Hardware port nodes
                 ForEach(hardwarePorts) { port in
@@ -534,28 +587,6 @@ struct NetworkGraphView: View {
         }
     }
 
-    // MARK: - Gateway sidebar
-
-    @ViewBuilder
-    private func gatewaySidebar(h: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Gateways")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.secondary.opacity(0.45))
-                .padding(.leading, 8)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
-            Spacer()
-            Text("OSI ext")
-                .font(.system(size: 8))
-                .foregroundColor(.secondary.opacity(0.25))
-                .padding(.leading, 8)
-                .padding(.bottom, 6)
-        }
-        .frame(width: gwColWidth, height: max(h, 520))
-        .background(Color.orange.opacity(0.025))
-    }
-
     // MARK: - Band backgrounds
 
     @ViewBuilder
@@ -723,12 +754,17 @@ struct NetworkGraphView: View {
             }
         }
 
-        // Hardware port → attached peripheral device chip.
+        // Hardware port → attached device chip, and (for network devices) the
+        // chip → the interface it provides (e.g. MiFi → en10).
         let devPos = devicePositions
         for dev in attachedDevices {
             if let from = hwPortPositions[dev.receptacle], let to = devPos[dev.id] {
                 lines.append(ConnLine(from: from, to: to, label: "",
                     color: .cyan, hasTraffic: false, emphasized: true))
+            }
+            if let bsd = dev.interfaceBSD, let from = devPos[dev.id], let to = ifacePositions[bsd] {
+                lines.append(ConnLine(from: from, to: to, label: "",
+                    color: .green, hasTraffic: hasTraffic(bsd), emphasized: true))
             }
         }
 
@@ -782,12 +818,16 @@ struct NetworkGraphView: View {
         // Interface → gateway (lines go left into the sidebar):
         //   • VPN tunnel (utun8) → VPN gateway
         //   • Wi-Fi (en0)       → Wi-Fi default gateway
+        let wifiUplink = wifiUplinkInterface
         for gw in gateways {
             guard let gwP = gatewayPositions[gw.id] else { continue }
             for ifName in gw.reachableVia {
+                // The Wi-Fi uplink routes through its AP entity (drawn below), not
+                // straight to the chip — skip the direct line here.
+                if ifName == wifiUplink, gw.isDefault, !gw.isVPN { continue }
                 if let ifP = ifacePositions[ifName] {
                     lines.append(ConnLine(from: ifP, to: gwP,
-                        label: gw.isVPN ? "VPN" : (gw.isDefault ? "default" : ""),
+                        label: gw.isVPN ? "VPN" : "",
                         color: gw.isVPN ? .blue : (gw.isDefault ? .orange : Color(white: 0.45)),
                         hasTraffic: hasTraffic(ifName),
                         emphasized: gw.isVPN))
@@ -795,33 +835,34 @@ struct NetworkGraphView: View {
             }
         }
 
-        // Internet egress emerges from the physical uplink (hardware port, or the
-        // uplink interface like internal Wi-Fi) — not from the gateway.
-        if let ep = egressPosition, let anchor = egressAnchor() {
-            lines.append(ConnLine(from: anchor, to: ep, label: "",
-                color: .teal, hasTraffic: false, emphasized: true))
-        }
-
-        // Option A: bind a phone-hosted default gateway to the iPhone entity
-        // (the gateway IS that device) with a dashed connector.
-        if let phonePort = hardwarePorts.first(where: { $0.isPhone }),
-           let phonePos = hwPortPositions[0] {
-            let phoneIfaces = Set(phonePort.childBSDNames)
-            if let gw = gateways.first(where: {
-                   $0.isDefault && ($0.id.hasPrefix("172.20.10.")
-                   || !Set($0.reachableVia).isDisjoint(with: phoneIfaces))
-               }), let gwPos = gatewayPositions[gw.id] {
-                lines.append(ConnLine(from: gwPos, to: phonePos, label: "hosts",
+        // Wi-Fi: interface → AP entity → its gateway chip.
+        if let wifi = wifiUplink, let wp = hwPortPositions[-1] {
+            if let ifP = ifacePositions[wifi] {
+                lines.append(ConnLine(from: ifP, to: wp, label: "",
+                    color: Color(white: 0.55), hasTraffic: hasTraffic(wifi)))
+            }
+            if let gw = gateways.first(where: { $0.isDefault && !$0.isVPN && $0.reachableVia.contains(wifi) }),
+               let gp = gatewayPositions[gw.id] {
+                lines.append(ConnLine(from: wp, to: gp, label: "",
                     color: .orange, hasTraffic: false, emphasized: true))
             }
         }
 
-        // VPN gateway → physical egress gateway (10.2.81.187 → 10.59.0.1):
-        // completes the chain utun8 → VPN GW → Wi-Fi GW → en0.
+        // Each default gateway chip → the Internet node at the top.
+        if let ep = egressPosition {
+            for gw in gateways where gw.isDefault && !gw.isVPN {
+                if let gp = gatewayPositions[gw.id] {
+                    lines.append(ConnLine(from: gp, to: ep, label: "",
+                        color: .teal, hasTraffic: false, emphasized: true))
+                }
+            }
+        }
+
+        // VPN gateway chip → the physical default gateway chip (egress chain).
         if let vpnGW = gateways.first(where: { $0.isVPN }),
-           let egress = gateways.first(where: { $0.isDefault && !$0.isVPN }),
+           let physGW = gateways.first(where: { $0.isDefault && !$0.isVPN }),
            let vP = gatewayPositions[vpnGW.id],
-           let eP = gatewayPositions[egress.id] {
+           let eP = gatewayPositions[physGW.id] {
             lines.append(ConnLine(from: vP, to: eP, label: "egress",
                 color: .blue, hasTraffic: false, emphasized: true))
         }

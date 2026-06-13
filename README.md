@@ -94,6 +94,11 @@ configuration.
   is read live and accurate.
 - **Locked iPhone** — hidden from `system_profiler`'s USB list, so NetLights falls
   back to the IOKit registry to find it.
+- **Wi-Fi network name (Location)** — macOS only reveals the current SSID to apps
+  with Location access, so NetLights requests it **solely to label the Wi-Fi
+  uplink**. No location coordinates are ever read, stored, or shared; declining is
+  fine (the uplink just shows "Wi-Fi"). The prompt only appears in the packaged
+  app, not under `swift run`.
 
 ---
 

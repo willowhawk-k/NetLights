@@ -94,6 +94,12 @@ struct InterfaceInfo: Identifiable, Equatable {
     var subtitleLabel: String {
         // Virtual app adapters: show the app name rather than a generic label
         if isVirtualAdapter { return virtualAdapterAppName }
+        // iPhone USB channels: one carries Personal Hotspot, the others are the
+        // link-local NCM channels macOS keeps up for device communication.
+        if isPhoneAssociated {
+            if ipv4Addresses.contains(where: { $0.hasPrefix("172.20.10.") }) { return "Personal Hotspot" }
+            return "iPhone USB"
+        }
         // Prefer IP address when present (most informative at a glance)
         if let ip = primaryIP { return ip }
         // Use SC hardware port name when available, with some shortening
@@ -237,19 +243,25 @@ struct GatewayNode: Identifiable, Equatable {
     var reachableVia: [String]  // BSD interface names that have a route to this gateway
     var isVPN: Bool = false      // gateway reached over a VPN/tunnel interface
     var networkName: String? = nil   // SSID / search domain (egress gateway), Option A
+    var precedence: Int? = nil   // 1 = the winning default route, 2 = next, …
 
     var systemImage: String {
         if isVPN { return isDefault ? "lock.shield.fill" : "lock.shield" }
         return isDefault ? "diamond.fill" : "diamond"
     }
     var label: String { isDefault ? "\(id) ✦" : id }
+
+    /// Primary chip label: "GW #1" / "VPN GW #2" — precedence makes the winner clear.
+    var titleLabel: String {
+        let base = isVPN ? "VPN GW" : "GW"
+        if let p = precedence { return "\(base) #\(p)" }
+        return base
+    }
+
+    /// Longer descriptor for tooltips (no "Default" noise).
     var roleLabel: String {
-        switch (isVPN, isDefault) {
-        case (true, true):   return "VPN Default GW"
-        case (true, false):  return "VPN Gateway"
-        case (false, true):  return "Default GW"
-        case (false, false): return "Gateway"
-        }
+        if isVPN { return isDefault ? "VPN gateway" : "VPN next hop" }
+        return isDefault ? "Gateway" : "Next hop"
     }
 }
 
@@ -307,7 +319,7 @@ struct EgressInfo: Equatable {
 
 /// Classification of a USB device attached to a hardware port, for iconography.
 enum USBDeviceKind {
-    case audio, storage, hub, keyboard, pointing, display, camera, battery, generic
+    case audio, storage, hub, keyboard, pointing, display, camera, battery, network, generic
 
     var systemImage: String {
         switch self {
@@ -319,6 +331,7 @@ enum USBDeviceKind {
         case .display:  return "display"
         case .camera:   return "camera.fill"
         case .battery:  return "battery.100.bolt"
+        case .network:  return "antenna.radiowaves.left.and.right"
         case .generic:  return "cube.box.fill"
         }
     }
@@ -333,6 +346,7 @@ enum USBDeviceKind {
         case .display:  return "Display"
         case .camera:   return "Camera"
         case .battery:  return "Battery"
+        case .network:  return "Network"
         case .generic:  return "USB Device"
         }
     }
@@ -366,11 +380,13 @@ struct AttachedDevice: Identifiable, Equatable {
     var name: String
     var receptacle: Int   // physical port id it's plugged into
     var kind: USBDeviceKind
+    var interfaceBSD: String? = nil   // the network interface it provides (e.g. MiFi → en10)
 
     var systemImage: String { kind.systemImage }
+    var isNetwork: Bool { interfaceBSD != nil }
 
     static func == (l: AttachedDevice, r: AttachedDevice) -> Bool {
-        l.id == r.id && l.name == r.name && l.receptacle == r.receptacle
+        l.id == r.id && l.name == r.name && l.receptacle == r.receptacle && l.interfaceBSD == r.interfaceBSD
     }
 }
 
