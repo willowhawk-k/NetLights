@@ -84,6 +84,7 @@ private struct ConnLine: Identifiable {
     let hasTraffic: Bool
     var emphasized: Bool = false   // always-visible link (e.g. iPhone ↔ its port)
     var style: LinkStyle = .data
+    var dominant: Bool = false     // part of the primary path most packets take
 }
 
 /// How a connector reads:
@@ -371,6 +372,20 @@ struct NetworkGraphView: View {
         return nil
     }
 
+    /// If Wi-Fi shares a gateway with a wired interface, the TB receptacle that
+    /// wired buddy sits on — so the Wi-Fi entity can be placed right beside it and
+    /// its gateway link doesn't cross unrelated ones.
+    private var wifiBuddyPort: Int? {
+        guard let wifi = wifiUplinkInterface,
+              let gw = gateways.first(where: { $0.isDefault && $0.reachableVia.contains(wifi) && $0.reachableVia.count > 1 })
+        else { return nil }
+        for ifn in gw.reachableVia where ifn != wifi {
+            if let dev = attachedDevices.first(where: { $0.interfaceBSD == ifn }) { return dev.receptacle }
+            if let port = portForBSD[ifn] { return port }
+        }
+        return nil
+    }
+
     var hwPortPositions: [Int: CGPoint] {
         let hasWifi = wifiUplinkInterface != nil
         guard bw > 0, bh > 0, (!hardwarePorts.isEmpty || hasWifi) else { return [:] }
@@ -393,7 +408,15 @@ struct NetworkGraphView: View {
             }
         }
         for p in tbPorts where !order.contains(p.id) { order.append(p.id) }
-        if hasWifi { order.append(-1) }   // Wi-Fi network entity slot
+        if hasWifi {
+            // Place the Wi-Fi entity beside the wired interface it shares a gateway
+            // with (so their gateway links sit together), else at the end.
+            if let buddy = wifiBuddyPort, let idx = order.firstIndex(of: buddy) {
+                order.insert(-1, at: idx + 1)
+            } else {
+                order.append(-1)
+            }
+        }
 
         let sp = (bw - margin * 2) / CGFloat(max(order.count, 1))
         var result: [Int: CGPoint] = [:]
@@ -775,13 +798,24 @@ struct NetworkGraphView: View {
                 p.addQuadCurve(to: line.to, control: ctrl)
             }
             .stroke(
-                drawSolid ? line.color.opacity(0.5)
-                          : line.color.opacity(active ? 0.55 : (line.emphasized ? 0.55 : 0.18)),
-                style: drawSolid
-                    ? StrokeStyle(lineWidth: line.style == .physical ? 1.4 : 1.5)
-                    : StrokeStyle(lineWidth: active ? 1.8 : (line.emphasized ? 1.6 : 0.9),
-                                  dash: [5, 5], dashPhase: active ? dashPhase : 0)
+                line.color.opacity({
+                    let base = drawSolid ? 0.5 : (active ? 0.55 : (line.emphasized ? 0.55 : 0.18))
+                    return line.dominant ? max(base, 0.85) : base
+                }()),
+                style: {
+                    let base = drawSolid ? (line.style == .physical ? 1.4 : 1.5)
+                                         : (active ? 1.8 : (line.emphasized ? 1.6 : 0.9))
+                    let w = line.dominant ? base + 1.6 : base
+                    return drawSolid
+                        ? StrokeStyle(lineWidth: w)
+                        : StrokeStyle(lineWidth: w, dash: [5, 5], dashPhase: active ? dashPhase : 0)
+                }()
             )
+            // A faded halo around the dominant path — fancy is cool.
+            .shadow(color: line.dominant ? line.color.opacity(0.9) : .clear,
+                    radius: line.dominant ? 6 : 0)
+            .shadow(color: line.dominant ? line.color.opacity(0.5) : .clear,
+                    radius: line.dominant ? 13 : 0)
             .animation(.easeInOut(duration: 0.35), value: active)
 
             if !line.label.isEmpty {
@@ -819,18 +853,27 @@ struct NetworkGraphView: View {
     private func buildLines() -> [ConnLine] {
         var lines: [ConnLine] = []
 
+        // The dominant path most packets take: the winning physical default
+        // gateway (precedence-sorted first non-VPN), its best interface, and the
+        // VPN that rides it (if any). These links are drawn extra-bold.
+        let physDefault = gateways.first { $0.isDefault && !$0.isVPN }
+        let domGwID = physDefault?.id
+        let domIface = physDefault?.reachableVia.first
+        let domVpnID = gateways.first { $0.isDefault && $0.isVPN }?.id
+
         // L0 → L1: hardware port → its interfaces. Real attached USB devices
         // (Ethernet adapters, iPhone channels) get an emphasized green link;
         // Thunderbolt-bridge pseudo-members stay a faint grey.
         for port in hardwarePorts {
-            guard let from = hwPortPositions[port.id] else { continue }
+            guard let portP = hwPortPositions[port.id] else { continue }
             for bsd in port.childBSDNames {
-                if let to = ifacePositions[bsd] {
+                if let ifaceP = ifacePositions[bsd] {
                     let isDevice = port.isPhone || port.deviceChildren.contains(bsd)
-                    lines.append(ConnLine(from: from, to: to, label: "",
+                    // interface → hardware entity, so the ant-crawl flows OUTBOUND (up).
+                    lines.append(ConnLine(from: ifaceP, to: portP, label: "",
                         color: isDevice ? .green : Color(white: 0.55),
                         hasTraffic: hasTraffic(bsd),
-                        emphasized: isDevice, style: .link))
+                        emphasized: isDevice, style: .link, dominant: bsd == domIface))
                 }
             }
         }
@@ -847,9 +890,11 @@ struct NetworkGraphView: View {
             }
             // Device chip → the interface it provides: a hard link that ant-crawls
             // only when there's traffic.
-            if let bsd = dev.interfaceBSD, let from = devPos[dev.id], let to = ifacePositions[bsd] {
-                lines.append(ConnLine(from: from, to: to, label: "",
-                    color: .green, hasTraffic: hasTraffic(bsd), emphasized: true, style: .link))
+            if let bsd = dev.interfaceBSD, let chip = devPos[dev.id], let ifaceP = ifacePositions[bsd] {
+                // interface → device chip, so the ant-crawl flows OUTBOUND (up).
+                lines.append(ConnLine(from: ifaceP, to: chip, label: "",
+                    color: .green, hasTraffic: hasTraffic(bsd), emphasized: true,
+                    style: .link, dominant: bsd == domIface))
             }
         }
 
@@ -921,14 +966,16 @@ struct NetworkGraphView: View {
                     label: primary ? (gw.isVPN ? "VPN" : "") : "\(i + 1)·\(ifn)",
                     color: gw.isVPN ? .blue : (primary ? .orange : Color(white: 0.4)),
                     hasTraffic: hasTraffic(ifn),
-                    emphasized: primary && (gw.isVPN || gw.isDefault)))
+                    emphasized: primary && (gw.isVPN || gw.isDefault),
+                    dominant: primary && (gw.id == domGwID || gw.id == domVpnID)))
             }
         }
 
         // The Wi-Fi interface (en0) connects up to its AP entity.
         if let wifi = wifiUplink, let wp = hwPortPositions[-1], let ifP = ifacePositions[wifi] {
             lines.append(ConnLine(from: ifP, to: wp, label: "",
-                color: Color(white: 0.55), hasTraffic: hasTraffic(wifi), style: .link))
+                color: Color(white: 0.55), hasTraffic: hasTraffic(wifi),
+                style: .link, dominant: wifi == domIface))
         }
 
         // Each default gateway chip → the Internet node at the top.
@@ -936,18 +983,19 @@ struct NetworkGraphView: View {
             for gw in gateways where gw.isDefault && !gw.isVPN {
                 if let gp = gatewayPositions[gw.id] {
                     lines.append(ConnLine(from: gp, to: ep, label: "",
-                        color: .teal, hasTraffic: gatewayActive(gw), emphasized: true))
+                        color: .teal, hasTraffic: gatewayActive(gw), emphasized: true,
+                        dominant: gw.id == domGwID))
                 }
             }
         }
 
-        // VPN gateway chip → the physical default gateway chip (egress chain).
+        // VPN gateway → the L1 interface it egresses through (its encrypted
+        // traffic enters the physical stack there, then rides that interface out).
         if let vpnGW = gateways.first(where: { $0.isVPN }),
-           let physGW = gateways.first(where: { $0.isDefault && !$0.isVPN }),
            let vP = gatewayPositions[vpnGW.id],
-           let eP = gatewayPositions[physGW.id] {
-            lines.append(ConnLine(from: vP, to: eP, label: "egress",
-                color: .blue, hasTraffic: gatewayActive(vpnGW), emphasized: true))
+           let dIface = domIface, let to = ifacePositions[dIface] {
+            lines.append(ConnLine(from: vP, to: to, label: "egress",
+                color: .blue, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true))
         }
 
         return lines

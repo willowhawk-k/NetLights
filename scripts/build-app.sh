@@ -12,8 +12,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="NetLights"
-VERSION="1.1.0"
-BUILD="2"
+VERSION="1.2.0"
+BUILD="3"
 BUNDLE_ID="com.willowhawk.netlights"
 
 DIST="dist"
@@ -70,15 +70,34 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc codesign so the bundle is at least internally consistent. (This is NOT
-# Developer-ID signing/notarization — users will still need to right-click→Open.)
-echo "▸ Ad-hoc signing…"
-codesign --force --deep --sign - "$APP" 2>/dev/null || echo "  (codesign skipped)"
+# Signing. Set SIGN_IDENTITY to a "Developer ID Application: …" identity for a
+# real, distributable signature; otherwise an ad-hoc signature is used (users
+# then right-click → Open the first time).
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  echo "▸ Signing with Developer ID (hardened runtime)…"
+  codesign --force --deep --options runtime --timestamp \
+    --sign "$SIGN_IDENTITY" "$APP"
+else
+  echo "▸ Ad-hoc signing (set SIGN_IDENTITY for a notarizable build)…"
+  codesign --force --deep --sign - "$APP" 2>/dev/null || echo "  (codesign skipped)"
+fi
 
 echo "▸ Zipping…"
 ZIP="$DIST/$APP_NAME-$VERSION.zip"
 rm -f "$ZIP"
 ( cd "$DIST" && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME.app" "$APP_NAME-$VERSION.zip" )
+
+# Notarize + staple when a notary keychain profile is provided (set up once via
+# `xcrun notarytool store-credentials NetLights-notary --apple-id … --team-id … --password …`).
+if [ -n "${SIGN_IDENTITY:-}" ] && [ -n "${NOTARY_PROFILE:-}" ]; then
+  echo "▸ Notarizing (this can take a few minutes)…"
+  xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
+  echo "▸ Stapling…"
+  xcrun stapler staple "$APP"
+  rm -f "$ZIP"
+  ( cd "$DIST" && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME.app" "$APP_NAME-$VERSION.zip" )
+  echo "  (stapled; re-zipped)"
+fi
 
 echo "✓ Done:"
 echo "   $APP"

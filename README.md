@@ -6,13 +6,23 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.0-orange)
+![version](https://img.shields.io/badge/version-1.2-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
 tunnels at the bottom — and lights up live link, traffic, device, and power state.
 
-<img src="assets/screenshot.png" alt="NetLights graph view" width="900">
+<img src="assets/netlights_all.png" alt="NetLights graph view" width="900">
+
+<br>
+
+<!-- thumbnails — click any to view full size -->
+<a href="assets/netlights_active.png"><img src="assets/netlights_active.png" alt="Live traffic" width="220"></a>
+<a href="assets/netlights_routes.png"><img src="assets/netlights_routes.png" alt="Routes table" width="220"></a>
+<a href="assets/netlights_interfaces.png"><img src="assets/netlights_interfaces.png" alt="Interfaces table" width="220"></a>
+<a href="assets/netlights_irl.png"><img src="assets/netlights_irl.png" alt="NetLights in real life" width="220"></a>
+
+<sub>Graph with live traffic · Routes · Interfaces · in the wild — click to enlarge</sub>
 
 </div>
 
