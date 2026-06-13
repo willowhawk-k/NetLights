@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct AboutView: View {
     var body: some View {
@@ -40,6 +41,17 @@ struct AboutView: View {
                 .foregroundColor(.secondary.opacity(0.8))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
+            } label: {
+                Label("Support free software ☕️ 🌮", systemImage: "heart.fill")
+                    .font(.callout.weight(.medium))
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.pink)
+            .padding(.top, 4)
+            .help(AppInfo.sponsorTitle)
         }
         .padding(28)
         .frame(width: 380)

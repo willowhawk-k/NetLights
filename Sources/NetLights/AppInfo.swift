@@ -14,6 +14,9 @@ enum AppInfo {
     /// Short credit line shown in About.
     static let coauthor = "Pair-programmed with Claude (Anthropic)"
 
+    static let sponsorURL   = "https://github.com/sponsors/willowhawk-k"
+    static let sponsorTitle = "Support free software (because tacos and coffee run the world!)"
+
     static var versionString: String { "Version \(version) (\(build)) · \(releaseDate)" }
     static var copyright: String { "© \(year) \(author)" }
 }

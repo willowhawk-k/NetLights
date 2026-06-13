@@ -14,8 +14,14 @@ struct NetLightsApp: App {
         .commands {
             // Replace the default "About NetLights" with our custom window.
             CommandGroup(replacing: .appInfo) { AboutMenuButton() }
-            // Replace the default Help with our in-app guide.
-            CommandGroup(replacing: .help) { HelpMenuButton() }
+            // Replace the default Help with our in-app guide + a sponsor link.
+            CommandGroup(replacing: .help) {
+                HelpMenuButton()
+                Divider()
+                Button(AppInfo.sponsorTitle) {
+                    if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
+                }
+            }
         }
 
         Window("About \(AppInfo.name)", id: "about") {
