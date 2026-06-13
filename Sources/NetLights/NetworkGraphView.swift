@@ -324,21 +324,30 @@ struct NetworkGraphView: View {
         return result
     }
 
-    /// The x-column of the host a default gateway lives on (iPhone, the uplink's
-    /// hardware port, or the uplink interface itself).
-    private func gatewayHostX(_ gw: GatewayNode) -> CGFloat? {
+    private func gatewayHostX(_ gw: GatewayNode) -> CGFloat? { gatewayHostAnchor(gw)?.x }
+
+    /// The HARDWARE-row entity a default gateway lives on — the iPhone node, the
+    /// Wi-Fi entity, a USB device chip (MiFi/dongle), or a TB port. The gateway's
+    /// link emerges from here (not the L1 interface), so the flow reads
+    /// interface → hardware entity → gateway → Internet.
+    private func gatewayHostAnchor(_ gw: GatewayNode) -> CGPoint? {
         let phoneIfaces = Set(hardwarePorts.first { $0.isPhone }?.childBSDNames ?? [])
         if gw.id.hasPrefix("172.20.10.") || !Set(gw.reachableVia).isDisjoint(with: phoneIfaces) {
-            return hwPortPositions[0]?.x
+            return hwPortPositions[0]
         }
         if let wifi = wifiUplinkInterface, gw.reachableVia.contains(wifi) {
-            return hwPortPositions[-1]?.x
+            return hwPortPositions[-1]
         }
         for ifn in gw.reachableVia {
-            if let port = portForBSD[ifn], let p = hwPortPositions[port] { return p.x }
-            if let p = ifacePositions[ifn] { return p.x }
+            if let dev = attachedDevices.first(where: { $0.interfaceBSD == ifn }),
+               let p = devicePositions[dev.id] { return p }      // device chip (MiFi/dongle)
+            if let port = portForBSD[ifn], let p = hwPortPositions[port] { return p }  // TB port
         }
-        return egress.flatMap { ifacePositions[$0.viaInterface]?.x }
+        // Fall back to the interface itself (e.g. a VPN tunnel).
+        for ifn in gw.reachableVia {
+            if let p = ifacePositions[ifn] { return p }
+        }
+        return egress.flatMap { ifacePositions[$0.viaInterface] }
     }
 
     /// The Wi-Fi interface carrying a default route — its AP becomes a Hardware-row
@@ -878,37 +887,24 @@ struct NetworkGraphView: View {
             }
         }
 
-        // Interface → gateway (lines go left into the sidebar):
-        //   • VPN tunnel (utun8) → VPN gateway
-        //   • Wi-Fi (en0)       → Wi-Fi default gateway
+        // Gateway → its host. The link emerges from the HARDWARE-row entity the
+        // uplink lives on (device chip / port / iPhone / Wi-Fi entity); the L1
+        // interface connects up to that entity separately, so the flow reads
+        // interface → hardware entity → gateway → Internet.
         let wifiUplink = wifiUplinkInterface
         for gw in gateways {
-            guard let gwP = gatewayPositions[gw.id] else { continue }
-            for ifName in gw.reachableVia {
-                // The Wi-Fi uplink routes through its AP entity (drawn below), not
-                // straight to the chip — skip the direct line here.
-                if ifName == wifiUplink, gw.isDefault, !gw.isVPN { continue }
-                if let ifP = ifacePositions[ifName] {
-                    lines.append(ConnLine(from: ifP, to: gwP,
-                        label: gw.isVPN ? "VPN" : "",
-                        color: gw.isVPN ? .blue : (gw.isDefault ? .orange : Color(white: 0.45)),
-                        hasTraffic: hasTraffic(ifName),
-                        emphasized: gw.isVPN))
-                }
-            }
+            guard let gwP = gatewayPositions[gw.id], let host = gatewayHostAnchor(gw) else { continue }
+            lines.append(ConnLine(from: host, to: gwP,
+                label: gw.isVPN ? "VPN" : "",
+                color: gw.isVPN ? .blue : (gw.isDefault ? .orange : Color(white: 0.45)),
+                hasTraffic: false,
+                emphasized: gw.isVPN || gw.isDefault))
         }
 
-        // Wi-Fi: interface → AP entity → its gateway chip.
-        if let wifi = wifiUplink, let wp = hwPortPositions[-1] {
-            if let ifP = ifacePositions[wifi] {
-                lines.append(ConnLine(from: ifP, to: wp, label: "",
-                    color: Color(white: 0.55), hasTraffic: hasTraffic(wifi)))
-            }
-            if let gw = gateways.first(where: { $0.isDefault && !$0.isVPN && $0.reachableVia.contains(wifi) }),
-               let gp = gatewayPositions[gw.id] {
-                lines.append(ConnLine(from: wp, to: gp, label: "",
-                    color: .orange, hasTraffic: false, emphasized: true))
-            }
+        // The Wi-Fi interface (en0) connects up to its AP entity.
+        if let wifi = wifiUplink, let wp = hwPortPositions[-1], let ifP = ifacePositions[wifi] {
+            lines.append(ConnLine(from: ifP, to: wp, label: "",
+                color: Color(white: 0.55), hasTraffic: hasTraffic(wifi)))
         }
 
         // Each default gateway chip → the Internet node at the top.
