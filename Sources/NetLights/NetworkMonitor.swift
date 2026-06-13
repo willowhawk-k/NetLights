@@ -13,6 +13,7 @@ final class NetworkMonitor: ObservableObject {
     @Published var hardwarePorts: [HardwarePort] = []
     @Published var attachedDevices: [AttachedDevice] = []
     @Published var egress: EgressInfo?
+    @Published var serviceRank: [String: Int] = [:]   // interface → macOS service-order rank
     @Published var trafficStates: [String: TrafficState] = [:]
 
     let macModel: String = {
@@ -63,6 +64,7 @@ final class NetworkMonitor: ObservableObject {
         }
         gateways = newGateways
         egress = newEgress
+        serviceRank = Self.serviceOrder()
 
         // Build hardware ports immediately from the *cached* port status so the
         // UI never blocks. The actual TB/USB query (system_profiler + ioreg) is
@@ -140,9 +142,10 @@ final class NetworkMonitor: ObservableObject {
 
     private func scheduleTrafficClear(name: String) {
         trafficClearTimers[name]?.invalidate()
-        // 3s window: lines/LEDs stay lit as long as traffic keeps arriving every 0.75s.
-        // When traffic stops the line dims after 3s — no visible blinking.
-        trafficClearTimers[name] = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+        // 5s window: keeps a line continuously lit during sustained traffic even
+        // when an interface reports its byte counters in bursts (e.g. iPhone USB
+        // NCM / tunnel interfaces), without blinking. Dims 5s after traffic stops.
+        trafficClearTimers[name] = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.trafficStates[name]?.rxActive = false
                 self?.trafficStates[name]?.txActive = false
@@ -798,21 +801,26 @@ final class NetworkMonitor: ObservableObject {
                 byIP[gw]?.reachableVia.append(route.interfaceName)
             }
         }
-        // Precedence among DEFAULT gateways (which one wins the 0.0.0.0/0 race):
-        // the gateway on the OS primary interface is #1, the rest follow in
-        // routing-table order.
-        var defaultOrder: [String] = []
-        for r in routes where r.isDefault {
-            let g = r.gateway
-            guard g.contains("."), byIP[g] != nil, !defaultOrder.contains(g) else { continue }
-            defaultOrder.append(g)
+        // Order each gateway's interfaces by the macOS network SERVICE ORDER (the
+        // System Settings drag-list — macOS's actual source of truth, since it
+        // exposes no numeric route metric), so a gateway shared by several uplinks
+        // anchors to whichever the OS prefers.
+        let rank = serviceOrder()
+        for (ip, var node) in byIP {
+            node.reachableVia.sort { (rank[$0] ?? Int.max) < (rank[$1] ?? Int.max) }
+            byIP[ip] = node
         }
-        if let primaryIf = primaryInterface(),
-           let winner = byIP.values.first(where: { $0.isDefault && $0.reachableVia.contains(primaryIf) }) {
-            defaultOrder.removeAll { $0 == winner.id }
-            defaultOrder.insert(winner.id, at: 0)
+
+        // Precedence among DEFAULT gateways: VPN tunnels (which capture 0.0.0.0/0)
+        // first, then physical defaults ranked by their best interface's service
+        // order. So GW #1 is the active uplink and the VPN egresses through it.
+        func bestRank(_ id: String) -> Int {
+            (byIP[id]?.reachableVia.compactMap { rank[$0] }.min()) ?? Int.max
         }
-        for (i, ip) in defaultOrder.enumerated() { byIP[ip]?.precedence = i + 1 }
+        let vpnDefaults  = byIP.values.filter { $0.isDefault &&  $0.isVPN }.map(\.id).sorted()
+        let physDefaults = byIP.values.filter { $0.isDefault && !$0.isVPN }.map(\.id)
+            .sorted { bestRank($0) != bestRank($1) ? bestRank($0) < bestRank($1) : $0 < $1 }
+        for (i, ip) in (vpnDefaults + physDefaults).enumerated() { byIP[ip]?.precedence = i + 1 }
 
         // Sort: by precedence (winning default first), then non-defaults by IP.
         return Array(byIP.values).sorted {
@@ -831,6 +839,23 @@ final class NetworkMonitor: ObservableObject {
               let info = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
         else { return nil }
         return info["PrimaryInterface"] as? String
+    }
+
+    /// Interface (BSD name) → its rank in the macOS network service order
+    /// (0 = highest priority). Mirrors System Settings ▸ Network ▸ Set Service Order.
+    static func serviceOrder() -> [String: Int] {
+        guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil),
+              let global = SCDynamicStoreCopyValue(store, "Setup:/Network/Global/IPv4" as CFString) as? [String: Any],
+              let order = global["ServiceOrder"] as? [String] else { return [:] }
+        var rank: [String: Int] = [:]
+        for (i, serviceID) in order.enumerated() {
+            let key = "Setup:/Network/Service/\(serviceID)/Interface" as CFString
+            if let svc = SCDynamicStoreCopyValue(store, key) as? [String: Any],
+               let dev = svc["DeviceName"] as? String, rank[dev] == nil {
+                rank[dev] = i
+            }
+        }
+        return rank
     }
 
     private static func sockaddrToString(buf: [UInt8], offset: Int, family: UInt8) -> String {

@@ -92,7 +92,10 @@ struct GatewayTooltip: View {
                 .font(.system(.headline, design: .monospaced))
             Divider()
             row("Role", gateway.roleLabel)
-            row("Via", gateway.reachableVia.joined(separator: ", "))
+            let vias = gateway.reachableVia
+            row(vias.count > 1 ? "Via (priority)" : "Via",
+                vias.enumerated().map { vias.count > 1 ? "\($0.offset + 1). \($0.element)" : $0.element }
+                    .joined(separator: "  "))
             if let eg = egressGateway { row("Egress", "via \(eg)") }
 
             let myRoutes = routes.filter { $0.gateway == gateway.id }

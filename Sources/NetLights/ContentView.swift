@@ -151,6 +151,18 @@ struct ContentView: View {
             }
             .width(min: 70, ideal: 90)
 
+            TableColumn("Svc order") { r in
+                // macOS has no numeric route metric; the network service order is
+                // what decides which default wins. Lower = higher priority.
+                if let rank = monitor.serviceRank[r.interfaceName] {
+                    Text("\(rank + 1)").font(.system(.body, design: .monospaced))
+                        .foregroundColor(r.isDefault ? .primary : .secondary)
+                } else {
+                    Text("—").foregroundColor(.secondary)
+                }
+            }
+            .width(min: 60, ideal: 70)
+
             TableColumn("Flags") { r in
                 Text(r.flags).font(.system(.body, design: .monospaced)).foregroundColor(.secondary)
             }
