@@ -20,10 +20,17 @@ struct GatewayNodeView: View {
                 Text(gateway.roleLabel)
                     .font(.system(size: 8))
                     .foregroundColor(.secondary)
+
+                if let n = gateway.networkName {
+                    Text(privacyMode ? "••••" : n)
+                        .font(.system(size: 8))
+                        .foregroundColor(.teal)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
-            .frame(width: 100, height: 76)
+            .frame(width: 100, height: gateway.networkName == nil ? 76 : 90)
             .background(
                 RoundedRectangle(cornerRadius: 8)
                     .fill(cardBackground)

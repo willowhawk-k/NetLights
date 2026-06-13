@@ -45,8 +45,17 @@ final class NetworkMonitor: ObservableObject {
         interfaces = newInterfaces
         let newRoutes = Self.gatherRoutes()
         routes = newRoutes
-        gateways = Self.buildGatewayNodes(from: newRoutes, interfaces: newInterfaces)
-        egress = Self.computeEgress(routes: newRoutes, interfaces: newInterfaces)
+        var newGateways = Self.buildGatewayNodes(from: newRoutes, interfaces: newInterfaces)
+        let newEgress = Self.computeEgress(routes: newRoutes, interfaces: newInterfaces)
+        // Option A: tag the egress gateway with the network's name (SSID/domain).
+        if let e = newEgress,
+           let gi = newGateways.firstIndex(where: {
+               $0.isDefault && !$0.isVPN && $0.reachableVia.contains(e.viaInterface)
+           }) {
+            newGateways[gi].networkName = e.name
+        }
+        gateways = newGateways
+        egress = newEgress
 
         // Build hardware ports immediately from the *cached* port status so the
         // UI never blocks. The actual TB/USB query (system_profiler + ioreg) is

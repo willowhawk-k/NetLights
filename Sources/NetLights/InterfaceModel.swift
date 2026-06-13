@@ -236,6 +236,7 @@ struct GatewayNode: Identifiable, Equatable {
     var isDefault: Bool         // appears as a default (0.0.0.0) route gateway
     var reachableVia: [String]  // BSD interface names that have a route to this gateway
     var isVPN: Bool = false      // gateway reached over a VPN/tunnel interface
+    var networkName: String? = nil   // SSID / search domain (egress gateway), Option A
 
     var systemImage: String {
         if isVPN { return isDefault ? "lock.shield.fill" : "lock.shield" }

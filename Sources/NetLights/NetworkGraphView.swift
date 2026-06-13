@@ -802,6 +802,20 @@ struct NetworkGraphView: View {
                 color: .teal, hasTraffic: false, emphasized: true))
         }
 
+        // Option A: bind a phone-hosted default gateway to the iPhone entity
+        // (the gateway IS that device) with a dashed connector.
+        if let phonePort = hardwarePorts.first(where: { $0.isPhone }),
+           let phonePos = hwPortPositions[0] {
+            let phoneIfaces = Set(phonePort.childBSDNames)
+            if let gw = gateways.first(where: {
+                   $0.isDefault && ($0.id.hasPrefix("172.20.10.")
+                   || !Set($0.reachableVia).isDisjoint(with: phoneIfaces))
+               }), let gwPos = gatewayPositions[gw.id] {
+                lines.append(ConnLine(from: gwPos, to: phonePos, label: "hosts",
+                    color: .orange, hasTraffic: false, emphasized: true))
+            }
+        }
+
         // VPN gateway → physical egress gateway (10.2.81.187 → 10.59.0.1):
         // completes the chain utun8 → VPN GW → Wi-Fi GW → en0.
         if let vpnGW = gateways.first(where: { $0.isVPN }),
