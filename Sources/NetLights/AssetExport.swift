@@ -17,7 +17,9 @@ enum AssetExport {
         for (pt, retina) in specs {
             let px = CGFloat(pt) * (retina ? 2 : 1)
             let name = "icon_\(pt)x\(pt)\(retina ? "@2x" : "").png"
-            writePNG(of: AppIconView(), pixels: px, to: dir.appendingPathComponent(name))
+            // Render on Apple's icon grid (transparent margin) so the app icon
+            // sizes consistently with system icons in the Dock / ⌘-Tab switcher.
+            writePNG(of: AppIconCanvas(), pixels: px, to: dir.appendingPathComponent(name))
         }
     }
 

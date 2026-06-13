@@ -125,6 +125,25 @@ struct AppIconView: View {
     }
 }
 
+/// The app icon placed on Apple's macOS icon grid: the artwork fills ~80% of a
+/// transparent square canvas, matching the margin every system app icon leaves.
+/// Without this, our edge-to-edge art renders visibly larger than its neighbors
+/// in the Dock and ⌘-Tab switcher (which scale each icon's bitmap to one box).
+struct AppIconCanvas: View {
+    /// Fraction of the canvas the squircle occupies. Apple's grid is 824/1024.
+    static let contentScale: CGFloat = 0.805
+
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height)
+            AppIconView()
+                .frame(width: s * Self.contentScale, height: s * Self.contentScale)
+                .frame(width: s, height: s)   // transparent margin around it
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
 // MARK: - Dock icon rasterization
 
 enum AppIconRenderer {
@@ -133,7 +152,7 @@ enum AppIconRenderer {
     @MainActor
     static func dockIcon(size: CGFloat = 512) -> NSImage? {
         let renderer = ImageRenderer(content:
-            AppIconView().frame(width: size, height: size))
+            AppIconCanvas().frame(width: size, height: size))
         renderer.scale = 2
         return renderer.nsImage
     }
