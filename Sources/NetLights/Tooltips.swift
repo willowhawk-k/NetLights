@@ -24,7 +24,7 @@ struct HardwarePortTooltip: View {
             } else {
                 if !location.isEmpty { row("Location", location) }
                 row("Status", port.hasConnectedDevice ? "Device connected" : "No device")
-                if port.hasPower { row("Power", "USB-C charger ⚡︎") }
+                if port.hasPower { row("Power", "USB-C charger (plug)") }
                 row("Interfaces", port.childBSDNames.joined(separator: ", "))
             }
         }
@@ -38,6 +38,34 @@ struct HardwarePortTooltip: View {
         HStack(alignment: .top, spacing: 0) {
             Text(label + ": ").font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary).frame(width: 84, alignment: .leading)
+            Text(value).font(.system(.caption, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+struct DeviceTooltip: View {
+    let device: AttachedDevice
+    let portLabel: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(device.name).font(.system(.headline, design: .monospaced))
+            Divider()
+            row("Class", device.kind.label)
+            if let loc = portLabel { row("Port", loc) }
+            if let bsd = device.interfaceBSD { row("Interface", bsd) }
+        }
+        .frame(width: 210, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial)
+            .shadow(color: .black.opacity(0.3), radius: 8))
+    }
+
+    @ViewBuilder private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(label + ": ").font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary).frame(width: 72, alignment: .leading)
             Text(value).font(.system(.caption, design: .monospaced))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

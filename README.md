@@ -43,9 +43,11 @@ Requires Xcode command-line tools (Swift 5.9+) on macOS 13 or later.
 ## What you're looking at
 
 ### The layer bands
+A top row holds the **Internet** node and a tier of **gateway chips**; below it the OSI bands:
+
 | Band | OSI | Contents |
 |------|-----|----------|
-| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, plus directly-attached devices (e.g. an iPhone). Position labels come from a per-model layout table. |
+| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, the Wi-Fi network entity, plus directly-attached devices (iPhone, MiFi, dongles). Position labels come from a per-model layout table. |
 | **Physical** | L1 | Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (`en1`–`en3`), USB Ethernet, and app/VM virtual adapters. TB & iPhone interfaces sit under their hardware port. |
 | **Data Link** | L2 | Bridges and VLANs (e.g. `bridge0`, the Thunderbolt Bridge), centered over their members. |
 | **Virtual** | L3+ | Software-defined interfaces: VPN/`utun` tunnels, loopback, AWDL (AirDrop), Continuity, system interfaces. |
@@ -58,14 +60,17 @@ Requires Xcode command-line tools (Swift 5.9+) on macOS 13 or later.
 
 ### Hardware ports & power
 - A port lights if **anything** is physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a **charger** — regardless of whether it carries network traffic.
-- A yellow **⚡︎ plug badge** marks a port with a USB-C charger attached.
+- A yellow **plug badge** (a powerplug icon) marks a port with a USB-C charger attached.
 - A USB-connected **iPhone** is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green "USB-C" link.
 
-### Gateways (left sidebar)
-- **Default GW (orange)** — your primary next hop (typically the router).
-- **VPN GW (blue)** — a default route that egresses over a tunnel. The chain
-  `utun → VPN GW → Wi-Fi GW → Wi-Fi port` is drawn explicitly, and the tooltip
-  shows the physical gateway it ultimately exits through.
+### Gateways & the Internet
+- The **Internet** node sits in the top row; every default gateway links up to it.
+- **GW #1, #2, … (orange)** — default-route gateways, each pinned in a tier above
+  the host it lives on (iPhone, Wi-Fi router, dongle). The number is **precedence** —
+  `GW #1` wins the `0.0.0.0/0` race (the active uplink), so you can see at a glance
+  which gateway actually carries your traffic.
+- **VPN GW (blue)** — a default route over a tunnel, pinned next to its `utun` down
+  in the Virtual row, with an egress link to the physical gateway it exits through.
 
 ---
 

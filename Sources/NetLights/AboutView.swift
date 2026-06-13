@@ -28,18 +28,22 @@ struct AboutView: View {
                 creditRow("Copyright", AppInfo.copyright)
             }
 
-            Text("Built with SwiftUI on macOS. Reads live interface, routing, and\nport-topology data directly from the system — no elevated privileges.")
+            Text("Built with SwiftUI on macOS. Reads live interface, routing, and port-topology data directly from the system — no elevated privileges.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
 
             Text("🤖 Designed and coded in pairing sessions with Claude (Anthropic).")
                 .font(.caption2)
                 .foregroundColor(.secondary.opacity(0.8))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(28)
         .frame(width: 380)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 

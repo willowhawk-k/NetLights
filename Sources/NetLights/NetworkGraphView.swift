@@ -113,6 +113,7 @@ enum HoverTarget: Equatable {
     case iface(String)
     case port(Int)
     case gateway(String)
+    case device(String)
 }
 
 /// Reports the rendered size of the tooltip so it can be clamped on-screen.
@@ -265,22 +266,42 @@ struct NetworkGraphView: View {
             result[iface.id] = CGPoint(x: lx, y: dlBand.midY)
         }
 
-        // Virtual (L3+)
-        let virtBand   = bandRect(named: "Virtual", h: bh)
-        let virtNodeY  = virtBand.minY + virtBand.height * 0.45
-        let virtGroups = subgroups(layer: "Virtual", ifaces: visible)
-        let virtRects  = uniformRects(groups: virtGroups, band: virtBand, w: bw)
-        for (gi, group) in virtGroups.enumerated() {
-            guard gi < virtRects.count else { continue }
-            let rect = virtRects[gi]
+        // Virtual (L3+) — two rows, groups balanced across them (like Hardware).
+        for (group, rect) in virtualGroupLayout(w: bw) {
             let sp = rect.width / CGFloat(group.interfaces.count)
+            let nodeY = rect.minY + rect.height * 0.62
             for (ni, iface) in group.interfaces.enumerated() {
                 let localX = rect.minX + sp * (CGFloat(ni) + 0.5)
-                result[iface.id] = CGPoint(x: localX + gwColWidth, y: virtNodeY)
+                result[iface.id] = CGPoint(x: localX + gwColWidth, y: nodeY)
             }
         }
 
         return result
+    }
+
+    /// Lays the Virtual-band subgroups across TWO rows (balanced by interface
+    /// count). Returns each group with its x-rect (whose y/height encode its row),
+    /// shared by node placement and the group headers.
+    private func virtualGroupLayout(w: CGFloat) -> [(group: IfaceGroup, rect: CGRect)] {
+        let band = bandRect(named: "Virtual", h: max(viewSize.height, 520))
+        let groups = subgroups(layer: "Virtual", ifaces: visible)
+        guard !groups.isEmpty else { return [] }
+        let total = groups.reduce(0) { $0 + $1.interfaces.count }
+        let half  = (total + 1) / 2
+        var rows: [[IfaceGroup]] = [[], []]
+        var counts = [0, 0]
+        for g in groups {
+            let r = counts[0] < half ? 0 : 1
+            rows[r].append(g); counts[r] += g.interfaces.count
+        }
+        let rowH = band.height / 2
+        var out: [(IfaceGroup, CGRect)] = []
+        for r in 0..<2 {
+            let rb = CGRect(x: 0, y: band.minY + CGFloat(r) * rowH, width: 0, height: rowH)
+            let rects = uniformRects(groups: rows[r], band: rb, w: w)
+            for (i, g) in rows[r].enumerated() where i < rects.count { out.append((g, rects[i])) }
+        }
+        return out.map { (group: $0.0, rect: $0.1) }
     }
 
     /// Gateways are chips pinned to their host: default gateways sit in the top
@@ -497,6 +518,7 @@ struct NetworkGraphView: View {
         case .iface:   return 270
         case .gateway: return 260
         case .port:    return 230
+        case .device:  return 230
         }
     }
 
@@ -537,9 +559,19 @@ struct NetworkGraphView: View {
             if let g = gateways.first(where: { $0.id == id }) {
                 GatewayTooltip(gateway: g, routes: routes)
             }
+        case .device(let id):
+            if let d = attachedDevices.first(where: { $0.id == id }) {
+                DeviceTooltip(device: d, portLabel: portLabel(d.receptacle))
+            }
         case .none:
             EmptyView()
         }
+    }
+
+    /// "Left · Front" style label for a receptacle, for device tooltips.
+    private func portLabel(_ receptacle: Int) -> String? {
+        guard let p = hardwarePorts.first(where: { $0.id == receptacle }), !p.side.isEmpty else { return nil }
+        return p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
     }
 
     /// Hit-test the pointer against node rects (ports/gateways/interfaces don't overlap).
@@ -549,6 +581,10 @@ struct NetworkGraphView: View {
         }
         for gw in gateways {
             if let c = gatewayPositions[gw.id], hitRect(c, 100, 76).contains(p) { return .gateway(gw.id) }
+        }
+        let dp = devicePositions
+        for dev in attachedDevices {
+            if let c = dp[dev.id], hitRect(c, 74, 52).contains(p) { return .device(dev.id) }
         }
         for iface in visible {
             if let c = ifacePositions[iface.id], hitRect(c, 100, 90).contains(p) { return .iface(iface.id) }
@@ -576,6 +612,7 @@ struct NetworkGraphView: View {
         case .iface(let id):   return ifacePositions[id]
         case .port(let id):    return hwPortPositions[id]
         case .gateway(let id): return gatewayPositions[id]
+        case .device(let id):  return devicePositions[id]
         }
     }
 
@@ -584,6 +621,7 @@ struct NetworkGraphView: View {
         case .iface:   return CGSize(width: 100, height: 90)
         case .port:    return CGSize(width: 84, height: 62)
         case .gateway: return CGSize(width: 100, height: 76)
+        case .device:  return CGSize(width: 74, height: 52)
         }
     }
 
@@ -627,10 +665,21 @@ struct NetworkGraphView: View {
         labelRow(groups: subgroups(layer: "Physical", ifaces: physFreeVisible),
                  band: physBand, bw2: bw2,
                  labelY: physBand.minY + physBand.height * 0.84 - 26)
-        // Virtual: labels at the top of the band, as before.
-        let virtBand = bandRect(named: "Virtual", h: safeH)
-        labelRow(groups: subgroups(layer: "Virtual", ifaces: visible),
-                 band: virtBand, bw2: bw2, labelY: virtBand.minY + 12)
+        // Virtual: a header above each group, in whichever of the two rows it sits.
+        ForEach(Array(virtualGroupLayout(w: bw2).enumerated()), id: \.offset) { _, item in
+            let rect = item.rect
+            Text(item.group.label)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.secondary.opacity(0.4))
+                .position(x: gwColWidth + rect.midX, y: rect.minY + 10)
+            if item.group.interfaces.count > 1 {
+                Path { p in
+                    p.move(to:    CGPoint(x: gwColWidth + rect.minX + 6, y: rect.minY + 18))
+                    p.addLine(to: CGPoint(x: gwColWidth + rect.maxX - 6, y: rect.minY + 18))
+                }
+                .stroke(Color(white: 0.5).opacity(0.15), lineWidth: 0.5)
+            }
+        }
     }
 
     @ViewBuilder
@@ -699,12 +748,10 @@ struct NetworkGraphView: View {
     private func connectionLineViews() -> some View {
         ForEach(buildLines()) { line in
             let active = line.hasTraffic
+            let ctrl = curveControl(line)
             Path { path in
                 path.move(to: line.from)
-                path.addQuadCurve(
-                    to: line.to,
-                    control: CGPoint(x: (line.from.x + line.to.x) / 2,
-                                     y: (line.from.y + line.to.y) / 2 - 14))
+                path.addQuadCurve(to: line.to, control: ctrl)
             }
             // Active lines: brighter, moving ant-crawl.
             // Idle lines: dimmer, static dashes. No blinking — transitions are smooth.
@@ -724,11 +771,27 @@ struct NetworkGraphView: View {
                     .font(.system(size: 7.5))
                     .foregroundColor(active ? line.color.opacity(0.55)
                                      : (line.emphasized ? line.color.opacity(0.6) : .secondary.opacity(0.20)))
-                    .position(x: (line.from.x + line.to.x) / 2,
-                               y: (line.from.y + line.to.y) / 2 - 20)
+                    .position(x: ctrl.x, y: ctrl.y - 7)
                     .animation(.easeInOut(duration: 0.35), value: active)
             }
         }
+    }
+
+    /// Control point for a connector's quadratic curve, bowed perpendicular to the
+    /// line by a deterministic amount so collinear / parallel lines arc apart and
+    /// stay individually legible instead of stacking on one path.
+    private func curveControl(_ line: ConnLine) -> CGPoint {
+        let mx = (line.from.x + line.to.x) / 2
+        let my = (line.from.y + line.to.y) / 2
+        let dx = line.to.x - line.from.x
+        let dy = line.to.y - line.from.y
+        let len = max(hypot(dx, dy), 1)
+        let nx = -dy / len, ny = dx / len   // unit normal
+        // Stable sign from endpoints (not the per-render UUID) so it doesn't flicker.
+        let salt = Int(line.from.x * 3 + line.from.y * 7 + line.to.x * 11 + line.to.y * 17)
+        let sign: CGFloat = (salt & 1 == 0) ? 1 : -1
+        let bow = sign * min(26, len * 0.12)
+        return CGPoint(x: mx + nx * bow, y: my + ny * bow)
     }
 
     private func hasTraffic(_ name: String) -> Bool {

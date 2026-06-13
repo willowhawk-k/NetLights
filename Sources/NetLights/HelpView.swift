@@ -11,7 +11,8 @@ struct HelpView: View {
                 }
 
                 section("The layer bands", icon: "rectangle.3.group.fill") {
-                    bullet("Hardware (L0)", "The physical USB-C / Thunderbolt receptacles on your Mac's chassis, plus any directly-attached device such as an iPhone. Position labels (Left · Front, Right, …) come from a per-model layout table.")
+                    bullet("Internet + gateways (top)", "A top row holds the Internet node and a tier of gateway chips pinned above the host each one lives on.")
+                    bullet("Hardware (L0)", "The physical USB-C / Thunderbolt receptacles on your Mac's chassis, the Wi-Fi network entity, plus directly-attached devices (iPhone, MiFi, dongles). Position labels (Left · Front, Right, …) come from a per-model layout table.")
                     bullet("Physical (L1)", "Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (en1–en3), USB Ethernet, and app/VM virtual adapters. TB and iPhone interfaces sit directly under the hardware port they belong to.")
                     bullet("Data Link (L2)", "Bridges and VLANs — e.g. bridge0, the Thunderbolt Bridge — drawn centered over their member ports.")
                     bullet("Virtual (L3+)", "Everything software-defined: VPN/utun tunnels, loopback, AWDL (AirDrop), Continuity, and system interfaces.")
@@ -26,13 +27,14 @@ struct HelpView: View {
 
                 section("Hardware ports & power", icon: "powerplug.fill") {
                     bullet("Lit port", "Anything physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a charger — lights the port, regardless of whether it carries network traffic.")
-                    bullet("⚡︎ Power badge", "A yellow plug badge marks a port with a USB-C charger attached (an active connection that presents no USB data device).")
+                    bullet("Plug badge", "A yellow plug (powerplug) badge marks a port with a USB-C charger attached — an active connection that presents no USB data device.")
                     bullet("iPhone link", "A USB-connected iPhone is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green “USB-C” link.")
                 }
 
-                section("Gateways (left sidebar)", icon: "diamond.fill") {
-                    bullet("Default GW (orange)", "Your primary next hop — typically the Wi-Fi/router address.")
-                    bullet("VPN GW (blue)", "A default route that egresses over a tunnel. Its tooltip shows the physical gateway it ultimately exits through, and the chain utun → VPN GW → Wi-Fi GW → Wi-Fi port is drawn explicitly.")
+                section("Gateways & the Internet", icon: "globe") {
+                    bullet("Internet node", "Sits in the top row; every default gateway links up to it. The chip's column traces back down to the device/interface that egress goes through.")
+                    bullet("GW #1, #2, … (orange)", "Default-route gateways, pinned in a tier above the host they live on (iPhone, Wi-Fi router, dongle). The number is precedence — GW #1 is the one that wins the 0.0.0.0/0 race (the active uplink).")
+                    bullet("VPN GW (blue)", "A default route over a tunnel — pinned next to its utun down in the Virtual row, with an egress link to the physical gateway it ultimately exits through.")
                 }
 
                 section("Where the data comes from", icon: "cpu.fill") {
