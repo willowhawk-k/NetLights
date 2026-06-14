@@ -43,6 +43,13 @@ struct HelpView: View {
                     .padding(.vertical, 4)
                     bullet("Plug badge", "A charger (power, no data device) adds a yellow plug to its port — see the rightmost example above.")
                     bullet("Network devices", "A MiFi or USB-Ethernet adapter shows as a device with the interface it provides anchored beneath it.")
+                    bullet("Hub & dock hierarchy", "Devices behind a USB hub or dock nest beneath it as a tidy tree — each port owns its own column so subtrees never overlap or cross wires.")
+                    bullet("Devices tab", "Switch to the Devices tab for a full table — manufacturer, bus (USB 2.1 / 3.2 …), negotiated link speed, USB class, vendor:product id, and which port each device sits on.")
+                }
+
+                section("External displays", icon: "display.2") {
+                    para("Connected monitors are detected and grouped under a Displays entity in the Hardware row; hover one for its maker, model, and resolution / refresh.")
+                    bullet("Why they're grouped", "macOS exposes no way for an unprivileged app to learn which physical port a monitor uses — a DisplayPort-over-USB-C display never appears in the Thunderbolt tree, and the display data carries no connection type. So displays are listed rather than pinned to a guessed port.")
                 }
 
                 section("Gateways & the Internet", icon: "globe") {
@@ -56,12 +63,15 @@ struct HelpView: View {
                     bullet("Routes & gateways", "sysctl(NET_RT_DUMP) over the PF_ROUTE socket.")
                     bullet("Friendly names", "SystemConfiguration (SCNetworkInterface) for hardware-port display names.")
                     bullet("Port topology", "system_profiler SPThunderboltDataType for receptacle status; ioreg (IOUSB + AppleHPM USB-C PD controller) for attached devices, the iPhone's port, and power state.")
+                    bullet("Device details", "ioreg USB attributes (vendor, idVendor/idProduct, bcdUSB, link speed, class) for the device tree and table; SPDisplaysDataType for external monitors.")
+                    bullet("Wi-Fi link speed", "CoreWLAN's negotiated transmit rate (the legacy baud field under-reports modern Wi-Fi).")
                 }
 
                 section("Capabilities & restrictions", icon: "exclamationmark.triangle.fill") {
                     bullet("No admin rights", "Everything is read-only and runs as your user — NetLights never changes configuration.")
                     bullet("Refresh cadence", "Interface/route data refreshes every 0.75 s; the slower port-topology probe runs ~every 5 s on a background thread so the UI never stalls.")
-                    bullet("Link speed", "Reported via the interface's 32-bit baud field, so values above ~4.3 Gbps may read low on some links.")
+                    bullet("Link speed", "Wired links use the interface's 32-bit baud field (values above ~4.3 Gbps may read low); Wi-Fi uses CoreWLAN's current transmit rate, which fluctuates as the radio adapts.")
+                    bullet("Display ports", "External monitors are detected but not mapped to a specific port — macOS doesn't expose which receptacle (or HDMI) a display uses to an unprivileged app, and there's no permission that unlocks it.")
                     bullet("Port front/rear labels", "Receptacle position labels come from a hand-curated per-model table and may be approximate on some Macs — connection/power state itself is read live and accurate.")
                     bullet("iPhone visibility", "A locked iPhone is hidden from system_profiler's USB list; NetLights falls back to the IOKit registry to find it.")
                     bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\").")

@@ -234,6 +234,16 @@ final class NetworkMonitor: ObservableObject {
         // Enrich with sysctl stats
         enrichWithSysctl(interfaces: &byName)
 
+        // Wi-Fi: the sysctl `ifi_baudrate` field badly under-reports modern PHY
+        // rates (it's a stale/legacy value), so a Wi-Fi 6 link can read as a few
+        // Mbps. CoreWLAN exposes the actual negotiated transmit rate (in Mbps),
+        // which is the meaningful "link speed" for a wireless interface.
+        if let wifiBSD = byName.values.first(where: { $0.category == .wifi })?.id,
+           let wifi = CWWiFiClient.shared().interface(withName: wifiBSD) ?? CWWiFiClient.shared().interface() {
+            let mbps = wifi.transmitRate()   // megabits/sec, 0 when disconnected
+            if mbps > 0 { byName[wifiBSD]?.linkSpeedBps = UInt64(mbps * 1_000_000) }
+        }
+
         return byName.values.sorted { $0.id < $1.id }
     }
 
@@ -503,9 +513,50 @@ final class NetworkMonitor: ObservableObject {
         // collect non-network peripherals (audio, storage, hubs, …) as devices.
         let scan = usbScan(busToReceptacle: busToReceptacle)
         status.deviceReceptacle = scan.bsd
-        status.attachedDevices  = scan.devices
+        // External displays are grouped under a synthetic "Displays" entity
+        // (receptacle -2): macOS exposes no port/connection-type to map them to a
+        // specific receptacle, so we list them rather than guess a wrong port.
+        status.attachedDevices  = scan.devices + queryDisplays()
 
         return status
+    }
+
+    /// External displays from `SPDisplaysDataType`, as device chips (receptacle
+    /// -2). The built-in laptop panel is filtered out. We deliberately do NOT
+    /// attempt to map a display to a physical port: a DisplayPort-alt-mode monitor
+    /// never appears in the Thunderbolt receptacle tree, and SPDisplays reports no
+    /// connection type to an unprivileged app, so any mapping would be a guess.
+    nonisolated private static func queryDisplays() -> [AttachedDevice] {
+        guard let json = runProfiler("SPDisplaysDataType"),
+              let gpus = json["SPDisplaysDataType"] as? [[String: Any]] else { return [] }
+        var out: [AttachedDevice] = []
+        for gpu in gpus {
+            guard let displays = gpu["spdisplays_ndrvs"] as? [[String: Any]] else { continue }
+            for d in displays {
+                let name = (d["_name"] as? String) ?? "Display"
+                let lname = name.lowercased()
+                // Skip the built-in laptop panel.
+                if lname.contains("built-in") || lname.contains("color lcd")
+                    || lname.contains("liquid retina") { continue }
+                if let conn = d["spdisplays_connection_type"] as? String,
+                   conn.lowercased().contains("internal") { continue }
+                // Prefer the stable displayID; otherwise build a stable, collision-
+                // resistant id from immutable EDID fields (NOT a UUID — the id must
+                // survive refreshes or the chip's identity/hover would churn).
+                let vid = d["_spdisplays_display-vendor-id"] as? String ?? ""
+                let pid = d["_spdisplays_display-product-id"] as? String ?? ""
+                let serial = d["_spdisplays_display-serial-number"] as? String ?? ""
+                let id = (d["_spdisplays_displayID"] as? String).map { "disp-\($0)" }
+                    ?? "disp-\(name)-\(vid)-\(pid)-\(serial)"
+                // Resolution + refresh: "5120 x 2160 @ 100.00Hz" → "5120 × 2160 @ 100 Hz".
+                let rawRes = (d["_spdisplays_resolution"] as? String) ?? (d["spdisplays_resolution"] as? String)
+                let detail = rawRes.map { tidyResolution($0) }
+                let vendor = (d["_spdisplays_display-vendor-id"] as? String).flatMap { edidVendorName($0) }
+                out.append(AttachedDevice(id: id, name: name, receptacle: -2, kind: .display,
+                    vendorName: vendor, detail: detail, connection: "Display"))
+            }
+        }
+        return out
     }
 
     struct USBScan { var bsd: [String: Int] = [:]; var devices: [AttachedDevice] = [] }
@@ -529,25 +580,38 @@ final class NetworkMonitor: ObservableObject {
             task.waitUntilExit()
             let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
             var locToBSD = [String: String]()   // device locationID hex → its network BSD name
-            func walk(_ node: [String: Any], _ usbLoc: Int?) {
+            func walk(_ node: [String: Any], _ usbLoc: Int?, _ parentUSBId: String?) {
                 var loc = usbLoc
+                var childParent = parentUSBId   // USB device id inherited by the subtree
 
                 // A USB device node carries a product name + locationID. It (re)sets
-                // the inherited USB location for its whole subtree.
+                // the inherited USB location for its whole subtree, and becomes the
+                // parent (hub/dock) of any USB devices nested beneath it.
                 if let name = node["USB Product Name"] as? String,
                    let l = node["locationID"] as? NSNumber {
                     loc = l.intValue
                     let bus = (l.intValue >> 24) & 0xFF
+                    let idHex = String(l.intValue, radix: 16)
                     let lname = name.lowercased()
                     let isPhone = lname.contains("iphone") || lname.contains("ipad")
                     if let recep = busToReceptacle[bus], !isPhone {
                         let cls = (node["bDeviceClass"] as? NSNumber)?.intValue ?? 0
                         scan.devices.append(AttachedDevice(
-                            id: String(l.intValue, radix: 16),
+                            id: idHex,
                             name: name,
                             receptacle: recep,
-                            kind: USBDeviceKind.classify(name: name, classCode: cls)))
+                            kind: USBDeviceKind.classify(name: name, classCode: cls),
+                            parentID: parentUSBId,
+                            vendorName: (node["USB Vendor Name"] as? String) ?? (node["kUSBVendorString"] as? String),
+                            vendorID: (node["idVendor"] as? NSNumber)?.intValue,
+                            productID: (node["idProduct"] as? NSNumber)?.intValue,
+                            serial: (node["USB Serial Number"] as? String) ?? (node["kUSBSerialNumberString"] as? String),
+                            classCode: cls,
+                            usbVersion: usbVersionString((node["bcdUSB"] as? NSNumber)?.intValue),
+                            linkSpeedBps: (node["UsbLinkSpeed"] as? NSNumber)?.uint64Value,
+                            connection: "USB"))
                     }
+                    if !isPhone { childParent = idHex }
                 }
 
                 // A BSD name under a USB device maps to that device's receptacle.
@@ -561,11 +625,11 @@ final class NetworkMonitor: ObservableObject {
                 }
 
                 if let kids = node["IORegistryEntryChildren"] as? [[String: Any]] {
-                    for k in kids { walk(k, loc) }
+                    for k in kids { walk(k, loc, childParent) }
                 }
             }
-            if let root = obj as? [String: Any] { walk(root, nil) }
-            else if let arr = obj as? [[String: Any]] { for r in arr { walk(r, nil) } }
+            if let root = obj as? [String: Any] { walk(root, nil, nil) }
+            else if let arr = obj as? [[String: Any]] { for r in arr { walk(r, nil, nil) } }
 
             // De-duplicate composite devices (they appear under several USB nodes),
             // and tag network devices with the interface they provide + a network kind.
@@ -886,4 +950,42 @@ final class NetworkMonitor: ObservableObject {
 
 private extension UInt16 {
     var asInt: Int { Int(self) }
+}
+
+// MARK: - Device-attribute formatting
+
+/// `bcdUSB` (BCD, e.g. 0x0210) → "USB 2.1".
+func usbVersionString(_ bcd: Int?) -> String? {
+    guard let b = bcd, b > 0 else { return nil }
+    let major = (b >> 8) & 0xFF
+    let minor = (b >> 4) & 0x0F
+    return "USB \(major).\(minor)"
+}
+
+/// "5120 x 2160 @ 100.00Hz" → "5120 × 2160 @ 100 Hz".
+func tidyResolution(_ s: String) -> String {
+    var t = s.replacingOccurrences(of: " x ", with: " × ")
+    t = t.replacingOccurrences(of: "Hz", with: " Hz")
+    // Drop trailing ".00" on the refresh rate for a cleaner read.
+    t = t.replacingOccurrences(of: ".00 Hz", with: " Hz")
+    return t.trimmingCharacters(in: .whitespaces)
+}
+
+/// Decodes a display's EDID vendor id (3 packed 5-bit letters, e.g. "1e6d") into
+/// its PnP manufacturer code (e.g. "GSM" = LG), mapping common ones to a name.
+func edidVendorName(_ hex: String) -> String? {
+    guard let v = UInt16(hex, radix: 16), v != 0 else { return nil }
+    func letter(_ shift: Int) -> Character? {
+        let code = Int((v >> UInt16(shift)) & 0x1F)
+        guard let scalar = UnicodeScalar(code + 64) else { return nil }   // 1→'A'
+        return Character(scalar)
+    }
+    guard let c1 = letter(10), let c2 = letter(5), let c3 = letter(0) else { return nil }
+    let pnp = String([c1, c2, c3])
+    let known = ["GSM": "LG", "BNQ": "BenQ", "DEL": "Dell", "APP": "Apple",
+                 "SAM": "Samsung", "ACR": "Acer", "AUS": "ASUS", "HWP": "HP",
+                 "LEN": "Lenovo", "PHL": "Philips", "VSC": "ViewSonic",
+                 "GGL": "Google", "SNY": "Sony", "MSI": "MSI", "AOC": "AOC",
+                 "NEC": "NEC", "EIZ": "EIZO", "HPN": "HP"]
+    return known[pnp] ?? pnp
 }

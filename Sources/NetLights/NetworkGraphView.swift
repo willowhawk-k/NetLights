@@ -6,9 +6,11 @@ import SwiftUI
 /// Kept at 0 so existing `+ gwColWidth` offsets simply become no-ops.
 private let gwColWidth: CGFloat = 0
 /// Tiers reserved above the bands: the Internet row, then the gateway-chip tier.
-private let internetRowHeight: CGFloat = 52
+/// The Internet node is 70pt tall, so the row must reserve enough height for it
+/// to sit fully below the top edge (otherwise it clips the band boundary).
+private let internetRowHeight: CGFloat = 80
 private let gwTierHeight: CGFloat = 78
-private let headerHeight: CGFloat = 130
+private let headerHeight: CGFloat = internetRowHeight + gwTierHeight
 
 // MARK: - Band layout (no Gateways — moved to sidebar)
 
@@ -20,23 +22,17 @@ private struct LayerBand: Identifiable {
     let heightFraction: CGFloat
 }
 
-private let allBands: [LayerBand] = [
-    LayerBand(id: "Hardware",  color: Color(white: 0.5).opacity(0.05), osiLabel: "L0",  heightFraction: 0.15),
-    LayerBand(id: "Physical",  color: Color.blue.opacity(0.055),       osiLabel: "L1",  heightFraction: 0.29),
-    LayerBand(id: "Data Link", color: Color.purple.opacity(0.055),     osiLabel: "L2",  heightFraction: 0.13),
-    LayerBand(id: "Virtual",   color: Color.green.opacity(0.045),      osiLabel: "L3+", heightFraction: 0.43),
+private let bandStyles: [String: (color: Color, osi: String)] = [
+    "Hardware":  (Color(white: 0.5).opacity(0.05), "L0"),
+    "Physical":  (Color.blue.opacity(0.055),       "L1"),
+    "Data Link": (Color.purple.opacity(0.055),     "L2"),
+    "Virtual":   (Color.green.opacity(0.045),      "L3+"),
 ]
 
-private func bandRect(named name: String, h: CGFloat) -> CGRect {
-    // Reserve the top header (Internet row + gateway-chip tier); bands fill the rest.
-    let usable = max(h - headerHeight, 0)
-    var y: CGFloat = headerHeight
-    for band in allBands {
-        let bh = band.heightFraction * usable
-        if band.name == name { return CGRect(x: 0, y: y, width: 0, height: bh) }
-        y += bh
-    }
-    return .zero
+/// Total leaf nodes in a device subtree — used to size the tidy-tree layout.
+private func leafCount(_ d: AttachedDevice, _ childrenOf: [String: [AttachedDevice]]) -> Int {
+    let kids = childrenOf[d.id] ?? []
+    return kids.isEmpty ? 1 : kids.map { leafCount($0, childrenOf) }.reduce(0, +)
 }
 
 // MARK: - Sub-group helpers
@@ -176,8 +172,11 @@ struct NetworkGraphView: View {
     /// (TB members, iPhone channels), the Wi-Fi entity (en0), or a device chip
     /// (MiFi/dongle interface). Everything else (VM/app adapters) is "free".
     private func isAnchoredPhysical(_ iface: InterfaceInfo) -> Bool {
-        if let port = portForBSD[iface.id], hwPortPositions[port] != nil { return true }
-        if iface.id == wifiUplinkInterface, hwPortPositions[-1] != nil { return true }
+        // Use the (geometry-free) port ORDER, not hwPortPositions — the latter
+        // depends on bandRect → bands → isAnchoredPhysical, which would recurse.
+        let order = hwPortOrder
+        if let port = portForBSD[iface.id], order.contains(port) { return true }
+        if iface.id == wifiUplinkInterface, order.contains(-1) { return true }
         if deviceInterfaceBSDs.contains(iface.id) { return true }
         return false
     }
@@ -193,6 +192,91 @@ struct NetworkGraphView: View {
     private var bw: CGFloat { max(viewSize.width - gwColWidth, 0) }
     private var bh: CGFloat { max(viewSize.height, 520) }
 
+    private let deviceRowGap: CGFloat = 50
+
+    // MARK: - Device forest (USB hub → device hierarchy)
+
+    /// The parent→children forest of attached devices: a device whose hub is
+    /// present nests under it; everything else is a root on its hardware port.
+    private var deviceForest: (childrenOf: [String: [AttachedDevice]],
+                               rootsByPort: [Int: [AttachedDevice]]) {
+        let byId = Dictionary(attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var childrenOf: [String: [AttachedDevice]] = [:]
+        var rootsByPort: [Int: [AttachedDevice]] = [:]
+        for d in attachedDevices {
+            if let pid = d.parentID, byId[pid] != nil {
+                childrenOf[pid, default: []].append(d)
+            } else {
+                rootsByPort[d.receptacle, default: []].append(d)
+            }
+        }
+        return (childrenOf, rootsByPort)
+    }
+
+    /// Deepest hub chain (edges from a root), so the Hardware band can reserve
+    /// enough vertical room for the tree that hangs below the ports.
+    private var deviceForestDepth: Int {
+        let f = deviceForest
+        func depth(_ d: AttachedDevice) -> Int {
+            let kids = f.childrenOf[d.id] ?? []
+            return kids.isEmpty ? 0 : 1 + (kids.map(depth).max() ?? 0)
+        }
+        return f.rootsByPort.values.flatMap { $0 }.map(depth).max() ?? 0
+    }
+
+    /// Whether the Virtual band actually fills its second row (mirrors the split
+    /// in `virtualGroupLayout`), so it doesn't reserve height it won't use.
+    private var virtualRowsUsed: Int {
+        let groups = subgroups(layer: "Virtual", ifaces: visible)
+        guard !groups.isEmpty else { return 0 }
+        let total = groups.reduce(0) { $0 + $1.interfaces.count }
+        let half  = (total + 1) / 2
+        var counts = [0, 0]
+        for g in groups { let r = counts[0] < half ? 0 : 1; counts[r] += g.interfaces.count }
+        return counts[1] > 0 ? 2 : 1
+    }
+
+    // MARK: - Content-driven band sizing
+
+    /// Bands size themselves to the entities they must show: the Hardware band
+    /// grows with the depth of the USB device tree; Physical/Virtual shrink to the
+    /// number of rows actually in use. Heights are proportional shares of the area
+    /// below the header, so the bands always fill the view without overlapping.
+    private var bands: [LayerBand] {
+        let depth = deviceForestDepth
+        let deviceLevels = attachedDevices.isEmpty ? 0 : depth + 1
+        let hwNeed = 96 + CGFloat(deviceLevels) * deviceRowGap + 24
+
+        let anchored = visible.contains { $0.category.layerLabel == "Physical" && isAnchoredPhysical($0) }
+        let freeGroups = subgroups(layer: "Physical", ifaces: physFreeVisible).count
+        let physRows = max((anchored ? 1 : 0) + (freeGroups > 0 ? 1 : 0), 1)
+        let physNeed = CGFloat(physRows) * 96 + 24
+
+        let hasDL = visible.contains { $0.category.layerLabel == "Data Link" }
+        let dlNeed: CGFloat = hasDL ? 66 : 26
+
+        let vNeed = CGFloat(max(virtualRowsUsed, 1)) * 118 + 20
+
+        let needs = [("Hardware", hwNeed), ("Physical", physNeed),
+                     ("Data Link", dlNeed), ("Virtual", vNeed)]
+        let total = needs.reduce(0) { $0 + $1.1 }
+        return needs.map { name, need in
+            let s = bandStyles[name] ?? (Color.clear, "")
+            return LayerBand(id: name, color: s.color, osiLabel: s.osi, heightFraction: need / total)
+        }
+    }
+
+    private func bandRect(_ name: String) -> CGRect {
+        let usable = max(bh - headerHeight, 0)
+        var y: CGFloat = headerHeight
+        for band in bands {
+            let h = band.heightFraction * usable
+            if band.name == name { return CGRect(x: 0, y: y, width: 0, height: h) }
+            y += h
+        }
+        return .zero
+    }
+
     // MARK: - Position maps (computed, not @State)
 
     var ifacePositions: [String: CGPoint] {
@@ -202,7 +286,7 @@ struct NetworkGraphView: View {
         // Physical (L1) — two rows:
         //   • upper row: TB / iPhone interfaces anchored under their hardware port
         //   • lower row: free interfaces (Wi-Fi, USB Ethernet, app adapters) grouped
-        let physBand = bandRect(named: "Physical", h: bh)
+        let physBand = bandRect("Physical")
         let upperY   = physBand.minY + physBand.height * 0.42
         let lowerY   = physBand.minY + physBand.height * 0.84
         let hwPorts  = hwPortPositions
@@ -258,7 +342,7 @@ struct NetworkGraphView: View {
         }
 
         // Data Link (L2) — bridges centered under their physical members
-        let dlBand = bandRect(named: "Data Link", h: bh)
+        let dlBand = bandRect("Data Link")
         for iface in visible.filter({ $0.category.layerLabel == "Data Link" }) {
             let lx: CGFloat
             if iface.category == .bridge, let mac = iface.macAddress {
@@ -291,7 +375,7 @@ struct NetworkGraphView: View {
     /// count). Returns each group with its x-rect (whose y/height encode its row),
     /// shared by node placement and the group headers.
     private func virtualGroupLayout(w: CGFloat) -> [(group: IfaceGroup, rect: CGRect)] {
-        let band = bandRect(named: "Virtual", h: max(viewSize.height, 520))
+        let band = bandRect("Virtual")
         let groups = subgroups(layer: "Virtual", ifaces: visible)
         guard !groups.isEmpty else { return [] }
         let total = groups.reduce(0) { $0 + $1.interfaces.count }
@@ -386,11 +470,14 @@ struct NetworkGraphView: View {
         return nil
     }
 
-    var hwPortPositions: [Int: CGPoint] {
+    private var hasDisplays: Bool { attachedDevices.contains { $0.receptacle == -2 } }
+
+    /// The ordered hardware-row slot ids (TB ports, iPhone = 0, Wi-Fi = -1,
+    /// Displays = -2). Deliberately free of band geometry so `isAnchoredPhysical`
+    /// (and thus `bands`/`bandRect`) can use it without a layout recursion cycle.
+    private var hwPortOrder: [Int] {
         let hasWifi = wifiUplinkInterface != nil
-        guard bw > 0, bh > 0, (!hardwarePorts.isEmpty || hasWifi) else { return [:] }
-        let band   = bandRect(named: "Hardware", h: bh)
-        let margin: CGFloat = 60
+        guard !hardwarePorts.isEmpty || hasWifi || hasDisplays else { return [] }
 
         // Order the slots so the iPhone node sits immediately to the right of the
         // TB receptacle it's plugged into (making the "plugged into Port N" link
@@ -417,27 +504,94 @@ struct NetworkGraphView: View {
                 order.append(-1)
             }
         }
-
-        let sp = (bw - margin * 2) / CGFloat(max(order.count, 1))
-        var result: [Int: CGPoint] = [:]
-        for (i, id) in order.enumerated() {
-            result[id] = CGPoint(x: gwColWidth + margin + sp * (CGFloat(i) + 0.5),
-                                 y: band.midY)
-        }
-        return result
+        // The "Displays" entity (-2) groups external monitors at the far end.
+        if hasDisplays { order.append(-2) }
+        return order
     }
 
-    /// Peripheral device chips, placed beside their hardware port (flipped to the
-    /// inner side near the right edge), stacking down if a port has several.
+    /// Per-slot horizontal REGIONS for the Hardware row. Each port/entity gets a
+    /// width proportional to how many device leaves hang beneath it (with a sane
+    /// minimum), packed left-to-right and centered. Both the port node and its
+    /// whole device subtree live inside this region, so two ports' trees — and the
+    /// links between them — can never overlap or cross ("don't cross the streams").
+    /// Geometry-free in X (no bandRect), so it's safe to call from `hwPortPositions`.
+    private var hwSlotLayout: [Int: (center: CGFloat, width: CGFloat)] {
+        let order = hwPortOrder
+        guard !order.isEmpty, bw > 0 else { return [:] }
+        let f = deviceForest
+        func leaves(_ id: Int) -> Int {
+            (f.rootsByPort[id] ?? []).map { leafCount($0, f.childrenOf) }.reduce(0, +)
+        }
+        let minSlotW: CGFloat = 110   // room for a port node + its label
+        let leafSlotW: CGFloat = 92   // ideal width per device leaf
+        let margin: CGFloat = 46
+        let avail = max(bw - margin * 2, 1)
+        var need: [Int: CGFloat] = [:]
+        for id in order { need[id] = max(minSlotW, CGFloat(leaves(id)) * leafSlotW) }
+        let totalNeed = order.reduce(0) { $0 + (need[$1] ?? 0) }
+        // If the content is wider than the view, scale every slot down together.
+        let scale = totalNeed > avail ? avail / totalNeed : 1
+        var x = gwColWidth + margin + max(0, (avail - totalNeed * scale) / 2)
+        var out: [Int: (CGFloat, CGFloat)] = [:]
+        for id in order {
+            let w = (need[id] ?? minSlotW) * scale
+            out[id] = (x + w / 2, w)
+            x += w
+        }
+        return out
+    }
+
+    var hwPortPositions: [Int: CGPoint] {
+        let slots = hwSlotLayout
+        guard bw > 0, bh > 0, !slots.isEmpty else { return [:] }
+        // Sit the ports near the TOP of the Hardware band so the device tree has
+        // the rest of the (content-sized) band to hang down into.
+        let portY = bandRect("Hardware").minY + 36
+        return slots.mapValues { CGPoint(x: $0.center, y: portY) }
+    }
+
+    /// Peripheral device chips, laid as a tidy tree INSIDE their port's region
+    /// (see `hwSlotLayout`): each leaf consumes one horizontal slot left-to-right
+    /// and every hub is centered over the span of its children. Because each port's
+    /// forest is confined to its own region, no two ports' trees or links overlap.
     var devicePositions: [String: CGPoint] {
         guard bw > 0, bh > 0, !attachedDevices.isEmpty else { return [:] }
+        let hw = hwPortPositions
+        let slots = hwSlotLayout
+        let f = deviceForest
+        let pad: CGFloat = 8
         var result: [String: CGPoint] = [:]
-        var perPort: [Int: Int] = [:]
-        for dev in attachedDevices {
-            guard let base = hwPortPositions[dev.receptacle] else { continue }
-            let idx = perPort[dev.receptacle, default: 0]; perPort[dev.receptacle] = idx + 1
-            let dir: CGFloat = base.x > gwColWidth + bw * 0.62 ? -1 : 1
-            result[dev.id] = CGPoint(x: base.x + dir * 104, y: base.y + CGFloat(idx) * 56)
+
+        for (recep, roots) in f.rootsByPort {
+            guard let base = hw[recep], let region = slots[recep] else { continue }
+            let sorted = roots.sorted { $0.id < $1.id }
+            let leaves = max(sorted.map { leafCount($0, f.childrenOf) }.reduce(0, +), 1)
+            let usable = max(region.width - pad * 2, 1)
+            let slot = usable / CGFloat(leaves)
+            let loX = region.center - region.width / 2 + 6
+            let hiX = region.center + region.width / 2 - 6
+            func clampX(_ x: CGFloat) -> CGFloat { min(max(x, loX), max(loX, hiX)) }
+
+            var cursor = region.center - usable / 2
+            let topY = base.y + 52
+            // Lay a subtree left-to-right; return the node's center x (midpoint of
+            // its children's span). Depth-capped as cheap insurance against a
+            // pathological registry (parentID is structurally acyclic, but still).
+            func place(_ d: AttachedDevice, _ depth: Int) -> CGFloat {
+                let y = topY + CGFloat(min(depth, 24)) * deviceRowGap
+                let kids = depth < 24 ? (f.childrenOf[d.id] ?? []).sorted { $0.id < $1.id } : []
+                if kids.isEmpty {
+                    let x = cursor + slot / 2
+                    cursor += slot
+                    result[d.id] = CGPoint(x: clampX(x), y: y)
+                    return x
+                }
+                let xs = kids.map { place($0, depth + 1) }
+                let x = (xs.first! + xs.last!) / 2
+                result[d.id] = CGPoint(x: clampX(x), y: y)
+                return x
+            }
+            for root in sorted { _ = place(root, 0) }
         }
         return result
     }
@@ -462,6 +616,12 @@ struct NetworkGraphView: View {
                 // Wi-Fi network entity (the AP), if Wi-Fi carries a default route.
                 if let wp = hwPortPositions[-1] {
                     WifiEntityView(ssid: egress?.name).position(wp).zIndex(1)
+                }
+
+                // External-displays entity, if any monitors are attached.
+                if let dp = hwPortPositions[-2] {
+                    VideoEntityView(count: attachedDevices.filter { $0.receptacle == -2 }.count)
+                        .position(dp).zIndex(1)
                 }
 
                 // Hardware port nodes
@@ -560,7 +720,7 @@ struct NetworkGraphView: View {
         case .iface:   return 270
         case .gateway: return 260
         case .port:    return 230
-        case .device:  return 230
+        case .device:  return 232
         }
     }
 
@@ -671,10 +831,9 @@ struct NetworkGraphView: View {
 
     @ViewBuilder
     private func bandBGs(w: CGFloat, h: CGFloat) -> some View {
-        let safeH = max(h, 520)
         let bw2   = max(w - gwColWidth, 100)
-        ForEach(allBands) { band in
-            let rect = bandRect(named: band.name, h: safeH)
+        ForEach(bands) { band in
+            let rect = bandRect(band.name)
             VStack {
                 Spacer()
                 HStack {
@@ -700,10 +859,9 @@ struct NetworkGraphView: View {
 
     @ViewBuilder
     private func groupLabels(w: CGFloat, h: CGFloat) -> some View {
-        let safeH = max(h, 520)
         let bw2   = max(w - gwColWidth, 100)
         // Physical: label only the free groups, just above their (lower) row.
-        let physBand = bandRect(named: "Physical", h: safeH)
+        let physBand = bandRect("Physical")
         labelRow(groups: subgroups(layer: "Physical", ifaces: physFreeVisible),
                  band: physBand, bw2: bw2,
                  labelY: physBand.minY + physBand.height * 0.84 - 26)
@@ -749,8 +907,7 @@ struct NetworkGraphView: View {
 
     @ViewBuilder
     private func tbBrackets(h: CGFloat) -> some View {
-        let safeH    = max(h, 520)
-        let physBand = bandRect(named: "Physical", h: safeH)
+        let physBand = bandRect("Physical")
         let bracketY = physBand.minY + 26
         ForEach(hardwarePorts) { port in
             let xs = port.childBSDNames.compactMap { ifacePositions[$0]?.x }
@@ -835,6 +992,11 @@ struct NetworkGraphView: View {
     private func curveControl(_ line: ConnLine) -> CGPoint {
         let mx = (line.from.x + line.to.x) / 2
         let my = (line.from.y + line.to.y) / 2
+        // Physical attachments (port→device, hub→child, USB-C cable) are drawn
+        // STRAIGHT: the device tree is laid out so sibling subtrees never overlap,
+        // and the perpendicular bow used for logical links would make these short
+        // fanning lines cross each other unnecessarily.
+        if line.style == .physical { return CGPoint(x: mx, y: my) }
         let dx = line.to.x - line.from.x
         let dy = line.to.y - line.from.y
         let len = max(hypot(dx, dy), 1)
@@ -882,9 +1044,13 @@ struct NetworkGraphView: View {
         // chip → the interface it provides (e.g. MiFi → en10). Both are hard
         // physical attachments → solid.
         let devPos = devicePositions
+        let devById = Dictionary(attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for dev in attachedDevices {
-            // TB port → device chip: a hard physical attachment (solid).
-            if let from = hwPortPositions[dev.receptacle], let to = devPos[dev.id] {
+            // Hard physical attachment (solid): from the parent hub if this device
+            // hangs off one, otherwise from the hardware port / entity it sits on.
+            let from: CGPoint? = (dev.parentID.flatMap { devById[$0] != nil ? devPos[$0] : nil })
+                                 ?? hwPortPositions[dev.receptacle]
+            if let from, let to = devPos[dev.id] {
                 lines.append(ConnLine(from: from, to: to, label: "",
                     color: .cyan, hasTraffic: false, emphasized: true, style: .physical))
             }

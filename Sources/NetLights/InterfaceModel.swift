@@ -379,15 +379,81 @@ enum USBDeviceKind {
 struct AttachedDevice: Identifiable, Equatable {
     let id: String        // stable per device (locationID)
     var name: String
-    var receptacle: Int   // physical port id it's plugged into
+    var receptacle: Int   // physical port id it's plugged into (-1 Wi-Fi, -2 Displays)
     var kind: USBDeviceKind
     var interfaceBSD: String? = nil   // the network interface it provides (e.g. MiFi → en10)
+    var parentID: String? = nil       // the USB hub/dock this device hangs off, if any
+
+    // Richer attributes for the Devices table (filled where the source exposes them).
+    var vendorName: String? = nil     // manufacturer (USB vendor string / display PnP)
+    var vendorID: Int? = nil          // USB idVendor
+    var productID: Int? = nil         // USB idProduct
+    var serial: String? = nil         // USB serial number
+    var classCode: Int? = nil         // USB bDeviceClass
+    var usbVersion: String? = nil     // e.g. "USB 2.1" (from bcdUSB)
+    var linkSpeedBps: UInt64? = nil   // negotiated USB link speed (UsbLinkSpeed)
+    var detail: String? = nil         // displays: "5120 × 2160 @ 100 Hz"
+    var connection: String = "USB"    // "USB" / "Display"
 
     var systemImage: String { kind.systemImage }
     var isNetwork: Bool { interfaceBSD != nil }
 
+    /// Bus / link type, for the Devices table.
+    var connectionLabel: String { connection == "Display" ? "Display" : (usbVersion ?? "USB") }
+
+    /// Throughput/capability: USB link speed, or a display's resolution/refresh.
+    var speedLabel: String {
+        if let d = detail { return d }
+        guard let b = linkSpeedBps, b > 0 else { return "—" }
+        switch b {
+        case ..<1_000_000:     return "\(b / 1000) Kbps"
+        case ..<1_000_000_000: return "\(b / 1_000_000) Mbps"
+        default:               return String(format: "%.0f Gbps", Double(b) / 1_000_000_000)
+        }
+    }
+
+    var classLabel: String {
+        if connection == "Display" { return "Display" }
+        if let c = classCode { return usbClassName(c) }
+        return "—"
+    }
+
+    /// Vendor:product (USB) or serial — a stable identifier for the table.
+    var idLabel: String {
+        if let v = vendorID, let p = productID { return String(format: "%04x:%04x", v, p) }
+        return serial ?? "—"
+    }
+
     static func == (l: AttachedDevice, r: AttachedDevice) -> Bool {
-        l.id == r.id && l.name == r.name && l.receptacle == r.receptacle && l.interfaceBSD == r.interfaceBSD
+        l.id == r.id && l.name == r.name && l.receptacle == r.receptacle
+            && l.interfaceBSD == r.interfaceBSD && l.parentID == r.parentID
+    }
+}
+
+/// Human label for a USB `bDeviceClass` code (base class only).
+func usbClassName(_ code: Int) -> String {
+    switch code {
+    case 0x00: return "Composite"
+    case 0x01: return "Audio"
+    case 0x02: return "Comm (CDC)"
+    case 0x03: return "HID"
+    case 0x05: return "Physical"
+    case 0x06: return "Imaging"
+    case 0x07: return "Printer"
+    case 0x08: return "Mass Storage"
+    case 0x09: return "Hub"
+    case 0x0A: return "CDC Data"
+    case 0x0B: return "Smart Card"
+    case 0x0D: return "Content Sec."
+    case 0x0E: return "Video"
+    case 0x0F: return "Healthcare"
+    case 0x10: return "A/V"
+    case 0xDC: return "Diagnostic"
+    case 0xE0: return "Wireless"
+    case 0xEF: return "Miscellaneous"
+    case 0xFE: return "App-Specific"
+    case 0xFF: return "Vendor-Specific"
+    default:   return String(format: "Class 0x%02X", code)
     }
 }
 

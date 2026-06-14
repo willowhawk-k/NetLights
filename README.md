@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.2-orange)
+![version](https://img.shields.io/badge/version-1.3-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
@@ -16,14 +16,21 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 
 <br>
 
-<!-- thumbnails — click any to view full size -->
-<a href="assets/netlights_active.png"><img src="assets/netlights_active.png" alt="Live traffic" width="180"></a>
-<a href="assets/netlights_routes.png"><img src="assets/netlights_routes.png" alt="Routes table" width="180"></a>
-<a href="assets/netlights_interfaces.png"><img src="assets/netlights_interfaces.png" alt="Interfaces table" width="180"></a>
-<a href="assets/netlights_irl.png"><img src="assets/netlights_irl.png" alt="NetLights in real life" width="180"></a>
-<a href="assets/netlights_irl2.png"><img src="assets/netlights_irl2.png" alt="NetLights in real life" width="180"></a>
+<!-- app screenshots — click any to view full size -->
+<a href="assets/netlights_active.png"><img src="assets/netlights_active.png" alt="Live traffic" width="190"></a>
+<a href="assets/netlights_devices.png"><img src="assets/netlights_devices.png" alt="Devices table" width="190"></a>
+<a href="assets/netlights_routes.png"><img src="assets/netlights_routes.png" alt="Routes table" width="190"></a>
+<a href="assets/netlights_interfaces.png"><img src="assets/netlights_interfaces.png" alt="Interfaces table" width="190"></a>
 
-<sub>Graph with live traffic · Routes · Interfaces · in the wild — click to enlarge</sub>
+<sub>Graph with live traffic · Devices · Routes · Interfaces — click to enlarge</sub>
+
+<br><br>
+
+<!-- NetLights in the wild (real-life photos) -->
+<a href="assets/netlights_irl.png"><img src="assets/netlights_irl.png" alt="NetLights in real life" width="280"></a>
+<a href="assets/netlights_irl2.png"><img src="assets/netlights_irl2.png" alt="NetLights in real life" width="280"></a>
+
+<sub>NetLights running in the wild</sub>
 
 </div>
 
@@ -32,7 +39,7 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 ## Install
 
 ### Download the app (no build required)
-1. Grab `NetLights-1.0.zip` from the [Releases](../../releases) page.
+1. Grab `NetLights-1.3.0.zip` from the [Releases](../../releases) page.
 2. Unzip and drag **NetLights.app** into your **Applications** folder.
 3. **First launch:** because the app isn't notarized with a paid Apple Developer ID,
    macOS Gatekeeper will warn you. **Right-click the app → Open → Open** once, and
@@ -58,7 +65,7 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 
 | Band | OSI | Contents |
 |------|-----|----------|
-| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, the Wi-Fi network entity, plus directly-attached devices (iPhone, MiFi, dongles). Position labels come from a per-model layout table. |
+| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, the Wi-Fi network entity, a Displays entity, plus attached devices (iPhone, MiFi, dongles) — hubs/docks expand into a tree. Position labels come from a per-model layout table. |
 | **Physical** | L1 | Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (`en1`–`en3`), USB Ethernet, and app/VM virtual adapters. TB & iPhone interfaces sit under their hardware port. |
 | **Data Link** | L2 | Bridges and VLANs (e.g. `bridge0`, the Thunderbolt Bridge), centered over their members. |
 | **Virtual** | L3+ | Software-defined interfaces: VPN/`utun` tunnels, loopback, AWDL (AirDrop), Continuity, system interfaces. |
@@ -89,6 +96,39 @@ NetLights classifies each USB peripheral and draws it with a fitting icon and a 
 
 <sub>Audio (AirPods) · Battery (MagSafe) · generic USB device (with tooltip) · charger · USB-C PD plug badge · iPad vs iPhone — click to enlarge</sub>
 
+### USB hubs, docks & the device tree
+Devices behind a hub or dock **nest beneath it as a tidy tree**. Each hardware port
+owns its own horizontal region (sized to how much hangs off it), so one port's
+subtree — and its wires — never overlap or cross another's.
+
+<p align="center">
+<a href="assets/netlights_tree.png"><img src="assets/netlights_tree.png" alt="USB hub/dock device tree" width="620"></a>
+</p>
+
+The **Devices** tab turns the same data into a sortable table — manufacturer, bus
+(`USB 2.1` / `3.2` …), negotiated link speed, USB class, `vendor:product` id, and
+which port each device sits on. Hovering any chip in the graph shows the same
+details.
+
+<p align="center">
+<a href="assets/netlights_devices.png"><img src="assets/netlights_devices.png" alt="Devices table" width="680"></a>
+</p>
+
+### External displays
+Connected monitors are detected and grouped under a **Displays** entity; hover one
+for its maker, model, and resolution / refresh.
+
+<p align="center">
+<a href="assets/netlights_displays.png"><img src="assets/netlights_displays.png" alt="External displays entity" width="220"></a>
+</p>
+
+They're **grouped rather than pinned to a port** on purpose: macOS exposes no way
+for an unprivileged app to learn which physical receptacle (or HDMI) a monitor
+uses — a DisplayPort-over-USB-C display never appears in the Thunderbolt tree, and
+the display data carries no connection type. There's no permission that unlocks
+this (unlike the Wi-Fi SSID, which Location access does gate), so NetLights lists
+displays instead of guessing a wrong port.
+
 ### Gateways & the Internet
 - The **Internet** node sits in the top row; every default gateway links up to it.
 - **GW #1, #2, … (orange)** — default-route gateways, each pinned in a tier above
@@ -112,14 +152,21 @@ configuration.
 | Routes & gateways | `sysctl(NET_RT_DUMP)` over `PF_ROUTE` |
 | Friendly hardware-port names | SystemConfiguration (`SCNetworkInterface`) |
 | Thunderbolt receptacle status | `system_profiler SPThunderboltDataType` |
-| Attached devices, iPhone port, power | `ioreg` (IOUSB + `AppleHPM` USB-C PD controller) |
+| Attached devices, hub tree, iPhone port, power | `ioreg` (IOUSB + `AppleHPM` USB-C PD controller) |
+| Device details (vendor, class, USB version, link speed) | `ioreg` USB attributes |
+| External displays | `system_profiler SPDisplaysDataType` |
+| Wi-Fi link speed | CoreWLAN negotiated transmit rate |
 
 ### Capabilities & restrictions
 - **No admin rights** — everything runs as your user, read-only.
 - **Refresh cadence** — interface/route data every 0.75 s; the slower port-topology
   probe runs ~every 5 s on a background thread so the UI never stalls.
-- **Link speed** — read from the interface's 32-bit baud field, so values above
-  ~4.3 Gbps may under-report on some links.
+- **Link speed** — wired links read the interface's 32-bit baud field (values above
+  ~4.3 Gbps may under-report); Wi-Fi uses CoreWLAN's current transmit rate, which
+  fluctuates as the radio adapts.
+- **External displays** — detected and listed, but **not mapped to a specific port**:
+  macOS doesn't expose which receptacle (or HDMI) a monitor uses to an unprivileged
+  app, and no permission unlocks it. See *External displays* above.
 - **Port front/rear labels** — receptacle position labels come from a hand-curated
   per-model table and may be approximate on some Macs; connection/power state itself
   is read live and accurate.
@@ -140,13 +187,16 @@ PRs and forks welcome! The project is a single SwiftPM executable target.
 ```
 Sources/NetLights/
 ├── NetLightsApp.swift        # @main App, menu commands, dock icon, lifecycle
-├── ContentView.swift         # Tabs: Graph / Routes / Interfaces
-├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/system_profiler)
+├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices
+├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/system_profiler/CoreWLAN)
 ├── InterfaceModel.swift      # Data models + per-Mac port layout table
-├── NetworkGraphView.swift    # The layered graph: layout, lines, animation
+├── NetworkGraphView.swift    # The layered graph: band sizing, tidy-tree layout, lines
 ├── InterfaceNodeView.swift   # Interface node + tooltip
 ├── HardwarePortNodeView.swift# Hardware port / iPhone node
+├── DeviceNodeView.swift      # USB / display device chip
+├── WifiEntityView.swift / VideoEntityView.swift  # Wi-Fi + Displays hardware-row entities
 ├── GatewayNodeView.swift     # Gateway node + tooltip
+├── Tooltips.swift            # Central hover tooltips (port / device / gateway)
 ├── AppIconView.swift         # SwiftUI app icon (also rasterized for the dock)
 ├── AboutView.swift / HelpView.swift
 └── AssetExport.swift         # Build-time .icns / QR generation

@@ -10,6 +10,7 @@ struct ContentView: View {
         case graph      = "Graph"
         case routes     = "Routes"
         case interfaces = "Interfaces"
+        case devices    = "Devices"
     }
 
     var body: some View {
@@ -36,6 +37,9 @@ struct ContentView: View {
 
             case .interfaces:
                 interfaceTable
+
+            case .devices:
+                devicesTable
             }
 
             Divider()
@@ -63,7 +67,7 @@ struct ContentView: View {
                 ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
-            .frame(width: 280)
+            .frame(width: 360)
 
             Spacer()
 
@@ -233,6 +237,109 @@ struct ContentView: View {
                 Text(formatBytes(i.txBytes)).font(.system(.body, design: .monospaced))
             }
             .width(min: 90)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Devices table
+
+    /// Connected peripherals (USB tree + external displays) flattened in tree
+    /// pre-order: each port's root devices in order, and every hub immediately
+    /// followed by its descendants — so a child always sits directly beneath its
+    /// parent. `depth` drives the row indentation. (A plain (port, name) sort would
+    /// scatter a hub's children among unrelated devices.)
+    private var deviceTree: (rows: [AttachedDevice], depth: [String: Int]) {
+        let devs = monitor.attachedDevices
+        let byId = Dictionary(devs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var childrenOf: [String: [AttachedDevice]] = [:]
+        var roots: [AttachedDevice] = []
+        for d in devs {
+            if let pid = d.parentID, byId[pid] != nil { childrenOf[pid, default: []].append(d) }
+            else { roots.append(d) }
+        }
+        func less(_ a: AttachedDevice, _ b: AttachedDevice) -> Bool {
+            a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+        var rows: [AttachedDevice] = []
+        var depth: [String: Int] = [:]
+        func visit(_ d: AttachedDevice, _ level: Int) {
+            rows.append(d); depth[d.id] = level
+            for c in (childrenOf[d.id] ?? []).sorted(by: less) { visit(c, min(level + 1, 8)) }
+        }
+        let sortedRoots = roots.sorted {
+            $0.receptacle != $1.receptacle ? $0.receptacle < $1.receptacle : less($0, $1)
+        }
+        for r in sortedRoots { visit(r, 0) }
+        return (rows, depth)
+    }
+
+    /// "Left · Front" location label for a device's receptacle (— for displays / unknown).
+    private func devicePortLabel(_ d: AttachedDevice) -> String {
+        if d.receptacle == -2 { return "Video out" }
+        guard let p = monitor.hardwarePorts.first(where: { $0.id == d.receptacle }), !p.side.isEmpty else {
+            return d.receptacle >= 0 ? "Port \(d.receptacle)" : "—"
+        }
+        return p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
+    }
+
+    private var devicesTable: some View {
+        let tree = deviceTree
+        return Group {
+            if tree.rows.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "cable.connector.slash")
+                        .font(.system(size: 32, weight: .light))
+                        .foregroundColor(.secondary)
+                    Text("No external devices detected")
+                        .foregroundColor(.secondary)
+                    Text("USB peripherals, hubs/docks, and external displays appear here when connected.")
+                        .font(.caption).foregroundColor(.secondary.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Table(tree.rows) {
+                    TableColumn("Device") { d in
+                        HStack {
+                            Image(systemName: d.systemImage).foregroundColor(.cyan)
+                            // Indent by tree depth so a hub's peripherals read beneath it.
+                            Text(d.name).padding(.leading, CGFloat(tree.depth[d.id] ?? 0) * 16)
+                        }
+                    }
+                    .width(min: 150, ideal: 200)
+
+                    TableColumn("Type") { d in Text(d.kind.label) }
+                        .width(min: 70, ideal: 90)
+
+                    TableColumn("Manufacturer") { d in
+                        Text(d.vendorName ?? "—").foregroundColor(d.vendorName == nil ? .secondary : .primary)
+                    }
+                    .width(min: 100, ideal: 130)
+
+                    TableColumn("Bus") { d in Text(d.connectionLabel) }
+                        .width(min: 70, ideal: 90)
+
+                    TableColumn("Speed / Mode") { d in
+                        Text(d.speedLabel)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(d.speedLabel == "—" ? .secondary : .primary)
+                    }
+                    .width(min: 120, ideal: 160)
+
+                    TableColumn("Class") { d in
+                        Text(d.classLabel).foregroundColor(.secondary)
+                    }
+                    .width(min: 90, ideal: 110)
+
+                    TableColumn("VID:PID") { d in
+                        Text(d.idLabel).font(.system(.body, design: .monospaced)).foregroundColor(.secondary)
+                    }
+                    .width(min: 90, ideal: 110)
+
+                    TableColumn("Port") { d in Text(devicePortLabel(d)) }
+                        .width(min: 80, ideal: 110)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

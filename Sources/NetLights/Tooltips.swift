@@ -48,15 +48,27 @@ struct DeviceTooltip: View {
     let device: AttachedDevice
     let portLabel: String?
 
+    private var isDisplay: Bool { device.connection == "Display" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(device.name).font(.system(.headline, design: .monospaced))
             Divider()
-            row("Class", device.kind.label)
+            row("Type", device.kind.label)
+            if let mfr = device.vendorName { row("Maker", mfr) }
+            if isDisplay {
+                if let res = device.detail { row("Mode", res) }
+            } else {
+                row("Bus", device.connectionLabel)
+                if device.speedLabel != "—" { row("Speed", device.speedLabel) }
+                if device.classCode != nil { row("Class", device.classLabel) }
+                if device.vendorID != nil { row("VID:PID", device.idLabel) }
+                else if let s = device.serial { row("Serial", s) }
+            }
             if let loc = portLabel { row("Port", loc) }
             if let bsd = device.interfaceBSD { row("Interface", bsd) }
         }
-        .frame(width: 210, alignment: .leading)
+        .frame(width: 232, alignment: .leading)
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial)
             .shadow(color: .black.opacity(0.3), radius: 8))
@@ -65,7 +77,7 @@ struct DeviceTooltip: View {
     @ViewBuilder private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text(label + ": ").font(.system(.caption, design: .monospaced))
-                .foregroundColor(.secondary).frame(width: 72, alignment: .leading)
+                .foregroundColor(.secondary).frame(width: 64, alignment: .leading)
             Text(value).font(.system(.caption, design: .monospaced))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
