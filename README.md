@@ -41,10 +41,8 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 ### Download the app (no build required)
 1. Grab `NetLights-1.3.0.zip` from the [Releases](../../releases) page.
 2. Unzip and drag **NetLights.app** into your **Applications** folder.
-3. **First launch:** because the app isn't notarized with a paid Apple Developer ID,
-   macOS Gatekeeper will warn you. **Right-click the app → Open → Open** once, and
-   it'll launch normally thereafter. (This is expected for open-source apps without
-   a $99/yr signing certificate — the source is right here for you to inspect.)
+3. **Launch it** — the app is **signed and notarized** with an Apple Developer ID,
+   so it opens normally with no Gatekeeper warning.
 
 ### Build from source
 ```bash
