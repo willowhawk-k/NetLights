@@ -24,6 +24,14 @@ final class LocationAuth: NSObject, CLLocationManagerDelegate {
         manager.requestWhenInUseAuthorization()
     }
 
+    /// Whether Location access is currently granted (so the SSID can be read).
+    var isAuthorized: Bool {
+        switch manager.authorizationStatus {
+        case .authorizedAlways, .authorizedWhenInUse: return true
+        default:                                      return false
+        }
+    }
+
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         onAuthorizationChange?()
     }

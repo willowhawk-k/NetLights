@@ -74,7 +74,7 @@ struct HelpView: View {
                     bullet("Display ports", "External monitors are detected but not mapped to a specific port — macOS doesn't expose which receptacle (or HDMI) a display uses to an unprivileged app, and there's no permission that unlocks it.")
                     bullet("Port front/rear labels", "Receptacle position labels come from a hand-curated per-model table and may be approximate on some Macs — connection/power state itself is read live and accurate.")
                     bullet("iPhone visibility", "A locked iPhone is hidden from system_profiler's USB list; NetLights falls back to the IOKit registry to find it.")
-                    bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\").")
+                    bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\"). Changed your mind? Use Help ▸ Check Location Privacy Settings to reopen the system pane.")
                 }
 
                 Divider()

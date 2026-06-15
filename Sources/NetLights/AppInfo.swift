@@ -4,9 +4,9 @@ import Foundation
 enum AppInfo {
     static let name     = "NetLights"
     static let tagline  = "A live, layered map of your Mac's network interfaces."
-    static let version  = "1.3.0"
-    static let build    = "4"
-    static let releaseDate = "June 13, 2026"
+    static let version  = "1.3.1"
+    static let build    = "5"
+    static let releaseDate = "June 14, 2026"
 
     static let author   = "Keith Willowhawk"
     static let year     = "2026"
@@ -16,6 +16,9 @@ enum AppInfo {
 
     static let sponsorURL   = "https://github.com/sponsors/willowhawk-k"
     static let sponsorTitle = "Support free software (because tacos and coffee run the world!)"
+
+    /// Deep link to System Settings ▸ Privacy & Security ▸ Location Services.
+    static let locationSettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
 
     static var versionString: String { "Version \(version) (\(build)) · \(releaseDate)" }
     static var copyright: String { "© \(year) \(author)" }

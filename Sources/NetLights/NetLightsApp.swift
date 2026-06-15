@@ -4,10 +4,12 @@ import AppKit
 @main
 struct NetLightsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    // Owned here (not in ContentView) so the Help menu can observe live SSID state.
+    @StateObject private var monitor = NetworkMonitor()
 
     var body: some Scene {
         WindowGroup("NetLights — Network Interface Visualizer") {
-            ContentView()
+            ContentView(monitor: monitor)
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowResizability(.contentMinSize)
@@ -17,6 +19,7 @@ struct NetLightsApp: App {
             // Replace the default Help with our in-app guide + a sponsor link.
             CommandGroup(replacing: .help) {
                 HelpMenuButton()
+                LocationHelpMenuButton(monitor: monitor)
                 Divider()
                 Button(AppInfo.sponsorTitle) {
                     if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
@@ -50,6 +53,20 @@ private struct HelpMenuButton: View {
     var body: some View {
         Button("\(AppInfo.name) Help") { openWindow(id: "help") }
             .keyboardShortcut("?", modifiers: .command)
+    }
+}
+
+/// Opens System Settings ▸ Privacy & Security ▸ Location Services, for users who
+/// declined Location and later want the Wi-Fi network name shown. Greyed out while
+/// the SSID is readable (access already granted), per the live monitor state.
+private struct LocationHelpMenuButton: View {
+    @ObservedObject var monitor: NetworkMonitor
+    var body: some View {
+        Button("Check Location Privacy Settings…") {
+            if let url = URL(string: AppInfo.locationSettingsURL) { NSWorkspace.shared.open(url) }
+        }
+        .disabled(!monitor.locationHelpAvailable)
+        .help("Needed only to show the Wi-Fi network name (SSID).")
     }
 }
 

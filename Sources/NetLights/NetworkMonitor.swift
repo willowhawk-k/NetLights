@@ -13,6 +13,11 @@ final class NetworkMonitor: ObservableObject {
     @Published var hardwarePorts: [HardwarePort] = []
     @Published var attachedDevices: [AttachedDevice] = []
     @Published var egress: EgressInfo?
+    /// True when the "Check Location Privacy Settings" Help item should be enabled:
+    /// the Mac has Wi-Fi hardware AND Location isn't authorized (so the SSID can't
+    /// be read). Gating on actual authorization — not a nil SSID — avoids enabling
+    /// the item on Ethernet-only / Wi-Fi-off Macs where Location was never the issue.
+    @Published var locationHelpAvailable: Bool = false
     @Published var serviceRank: [String: Int] = [:]   // interface → macOS service-order rank
     @Published var trafficStates: [String: TrafficState] = [:]
 
@@ -30,6 +35,10 @@ final class NetworkMonitor: ObservableObject {
     private let locationAuth = LocationAuth()
 
     func start() {
+        // Idempotent: the monitor is app-scoped (owned by NetLightsApp) and may be
+        // started from more than one window's onAppear — only the first call arms
+        // the poll timer, so a second window can't orphan/duplicate it.
+        guard pollTimer == nil else { return }
         // Ask for Location access solely to read the Wi-Fi SSID (see LocationAuth);
         // re-refresh when the grant lands so the network name appears.
         locationAuth.onAuthorizationChange = { [weak self] in
@@ -45,6 +54,11 @@ final class NetworkMonitor: ObservableObject {
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
+        // Tear down everything start() established (the monitor outlives any single
+        // window now, so leaving these live would keep firing on a "stopped" monitor).
+        locationAuth.onAuthorizationChange = nil
+        trafficClearTimers.values.forEach { $0.invalidate() }
+        trafficClearTimers.removeAll()
     }
 
     func refresh() {
@@ -64,6 +78,10 @@ final class NetworkMonitor: ObservableObject {
         }
         gateways = newGateways
         egress = newEgress
+        // The Location Help item is useful only on a Wi-Fi Mac whose SSID is blocked
+        // by Location authorization — not when there's simply no Wi-Fi association.
+        let wifiPresent = newInterfaces.contains { $0.category == .wifi }
+        locationHelpAvailable = wifiPresent && !locationAuth.isAuthorized
         serviceRank = Self.serviceOrder()
 
         // Build hardware ports immediately from the *cached* port status so the

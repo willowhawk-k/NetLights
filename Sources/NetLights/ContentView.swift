@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var monitor = NetworkMonitor()
+    @ObservedObject var monitor: NetworkMonitor
     @State private var selectedTab: Tab = .graph
     @State private var hideUnused: Bool = false
     @State private var privacy: Bool = false
@@ -47,8 +47,10 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .environment(\.privacyMode, privacy)
-        .onAppear  { monitor.start() }
-        .onDisappear { monitor.stop() }
+        // The monitor is app-scoped (owned by NetLightsApp), so start it once and
+        // let it run for the app's lifetime — don't stop it on window close, or
+        // closing one window would freeze polling/menu state for the others.
+        .onAppear { monitor.start() }
     }
 
     // MARK: - Toolbar
