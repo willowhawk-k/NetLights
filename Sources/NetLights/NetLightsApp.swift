@@ -81,6 +81,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Dev verification: dump the in-process IOKit/CoreGraphics probe results and
+        // exit, so they can be diffed against ioreg/system_profiler ground truth.
+        if CommandLine.arguments.contains("--probe-dump") {
+            NetworkMonitor.probeDump()
+            NSApp.terminate(nil)
+            return
+        }
+
         // Without a proper .app bundle, SPM executables default to a background
         // activation policy and never show a window. Force foreground mode here.
         NSApp.setActivationPolicy(.regular)

@@ -4,9 +4,9 @@ import Foundation
 enum AppInfo {
     static let name     = "NetLights"
     static let tagline  = "A live, layered map of your Mac's network interfaces."
-    static let version  = "1.3.1"
-    static let build    = "5"
-    static let releaseDate = "June 14, 2026"
+    static let version  = "1.4.0"
+    static let build    = "6"
+    static let releaseDate = "June 24, 2026"
 
     static let author   = "Keith Willowhawk"
     static let year     = "2026"

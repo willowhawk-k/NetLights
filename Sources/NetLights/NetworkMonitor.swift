@@ -97,8 +97,11 @@ final class NetworkMonitor: ObservableObject {
         if (portQueryCounter == 1 || portQueryCounter % 7 == 0) && !portQueryInFlight {
             portQueryInFlight = true
             let model = macModel
+            // NSScreen names must be read on the main actor; capture them here and
+            // hand them to the off-main IOKit/CoreGraphics port query.
+            let displayNames = IOKitProbe.displayNames()
             Task.detached(priority: .utility) {
-                let status = NetworkMonitor.queryPortStatus()
+                let status = NetworkMonitor.queryPortStatus(displayNames: displayNames)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     self.lastPortStatus = status
@@ -481,266 +484,217 @@ final class NetworkMonitor: ObservableObject {
 
     // MARK: - Port topology (Thunderbolt + USB device tree)
 
-    /// Queries the system for physical port occupancy:
-    /// - Which TB/USB4 receptacles have a *Thunderbolt* device connected
+    /// Queries the system for physical port occupancy, entirely in-process via
+    /// IOKit + CoreGraphics (no `ioreg` / `system_profiler` subprocess), so it works
+    /// in both the Developer-ID and sandboxed App Store builds:
+    /// - Which TB/USB4 receptacles have a Thunderbolt device connected
     /// - Which receptacle a USB-connected iPhone/iPad is plugged into
+    /// - The USB device tree (hubs, peripherals, network adapters)
+    /// - USB-C power state, and external displays
     ///
-    /// The TB tree (`SPThunderboltDataType`) reports one `thunderboltusb4_bus_N`
-    /// entry per port, each with a `receptacle_*_tag` dict giving the physical
-    /// receptacle id and its connection status. An iPhone attaches as a *USB*
-    /// device (not a TB device), so it never appears in the TB tree and the
-    /// (locked) iPhone is also hidden from `SPUSBDataType` — but `ioreg` exposes
-    /// it as `iPhone@<locationID>`, whose high byte is the USB4 bus number.
-    nonisolated static func queryPortStatus() -> PortStatus {
+    /// `displayNames` (CGDirectDisplayID → NSScreen name) is gathered on the main
+    /// actor by the caller and passed in, since NSScreen is main-thread-only.
+    nonisolated static func queryPortStatus(displayNames: [UInt32: String]) -> PortStatus {
         var status = PortStatus()
-        var busToReceptacle: [Int: Int] = [:]   // USB4 bus index → physical receptacle id
 
-        if let tbJSON = runProfiler("SPThunderboltDataType"),
-           let buses = tbJSON["SPThunderboltDataType"] as? [[String: Any]] {
-            for bus in buses {
-                // "_name" = "thunderboltusb4_bus_2" → trailing int is the bus index.
-                let name   = bus["_name"] as? String ?? ""
-                let busNum = Int(name.split(separator: "_").last.map(String.init) ?? "")
+        // Build the IOService-plane registry tree ONCE (equivalent to `ioreg -a -l`);
+        // both the Thunderbolt and USB passes read from it.
+        let tree = IOKitProbe.serviceTree()
 
-                // The receptacle dict key is dynamic ("receptacle_1_tag", etc.).
-                for (key, value) in bus {
-                    guard key.hasPrefix("receptacle_"), key.hasSuffix("_tag"),
-                          let tag = value as? [String: Any] else { continue }
-                    guard let rid = Int(tag["receptacle_id_key"] as? String ?? "") else { continue }
-                    let st = (tag["receptacle_status_key"] as? String ?? "").lowercased()
-                    status.tbConnected[rid] = !st.contains("no_devices")
-                    if let b = busNum { busToReceptacle[b] = rid }
-                }
-            }
-        }
+        // Thunderbolt: USB4 bus → physical receptacle, and which receptacles have a
+        // TB device connected.
+        let tb = thunderbolt(tree: tree)
+        status.tbConnected = tb.tbConnected
 
-        // Locate a connected iPhone/iPad and map its USB4 bus → physical receptacle.
-        if let m = mobileDeviceBus() {
-            let recep = busToReceptacle[m.bus]
+        // USB device tree: BSD-name → receptacle, classified peripherals (with hub
+        // nesting), and a USB-tethered iPhone/iPad's bus.
+        let scan = usbScan(tree: tree, busToReceptacle: tb.busToReceptacle)
+        status.deviceReceptacle = scan.bsd
+        if let bus = scan.phoneBus {
+            let recep = tb.busToReceptacle[bus]
             status.phoneReceptacle = recep
-            status.phoneDeviceKind = m.kind
-            if let r = recep { status.usbDeviceName[r] = m.kind }
+            status.phoneDeviceKind = scan.phoneKind
+            if let r = recep { status.usbDeviceName[r] = scan.phoneKind }
         }
 
         // Physical attachment + power state per port, from the USB-C PD controller.
-        let hpm = queryHPMPorts()
+        let hpm = IOKitProbe.usbCPower()
         status.hpmConnected = hpm.connected
         status.hpmPower = hpm.power
 
-        // Walk the USB registry once: map network interfaces → receptacle, and
-        // collect non-network peripherals (audio, storage, hubs, …) as devices.
-        let scan = usbScan(busToReceptacle: busToReceptacle)
-        status.deviceReceptacle = scan.bsd
-        // External displays are grouped under a synthetic "Displays" entity
-        // (receptacle -2): macOS exposes no port/connection-type to map them to a
-        // specific receptacle, so we list them rather than guess a wrong port.
-        status.attachedDevices  = scan.devices + queryDisplays()
+        // External displays (CoreGraphics) grouped under the synthetic "Displays"
+        // entity (receptacle -2): macOS exposes no port mapping for them.
+        status.attachedDevices = scan.devices
+            + buildDisplays(IOKitProbe.externalDisplays(), names: displayNames)
 
         return status
     }
 
-    /// External displays from `SPDisplaysDataType`, as device chips (receptacle
-    /// -2). The built-in laptop panel is filtered out. We deliberately do NOT
-    /// attempt to map a display to a physical port: a DisplayPort-alt-mode monitor
-    /// never appears in the Thunderbolt receptacle tree, and SPDisplays reports no
-    /// connection type to an unprivileged app, so any mapping would be a guess.
-    nonisolated private static func queryDisplays() -> [AttachedDevice] {
-        guard let json = runProfiler("SPDisplaysDataType"),
-              let gpus = json["SPDisplaysDataType"] as? [[String: Any]] else { return [] }
-        var out: [AttachedDevice] = []
-        for gpu in gpus {
-            guard let displays = gpu["spdisplays_ndrvs"] as? [[String: Any]] else { continue }
-            for d in displays {
-                let name = (d["_name"] as? String) ?? "Display"
-                let lname = name.lowercased()
-                // Skip the built-in laptop panel.
-                if lname.contains("built-in") || lname.contains("color lcd")
-                    || lname.contains("liquid retina") { continue }
-                if let conn = d["spdisplays_connection_type"] as? String,
-                   conn.lowercased().contains("internal") { continue }
-                // Prefer the stable displayID; otherwise build a stable, collision-
-                // resistant id from immutable EDID fields (NOT a UUID — the id must
-                // survive refreshes or the chip's identity/hover would churn).
-                let vid = d["_spdisplays_display-vendor-id"] as? String ?? ""
-                let pid = d["_spdisplays_display-product-id"] as? String ?? ""
-                let serial = d["_spdisplays_display-serial-number"] as? String ?? ""
-                let id = (d["_spdisplays_displayID"] as? String).map { "disp-\($0)" }
-                    ?? "disp-\(name)-\(vid)-\(pid)-\(serial)"
-                // Resolution + refresh: "5120 x 2160 @ 100.00Hz" → "5120 × 2160 @ 100 Hz".
-                let rawRes = (d["_spdisplays_resolution"] as? String) ?? (d["spdisplays_resolution"] as? String)
-                let detail = rawRes.map { tidyResolution($0) }
-                let vendor = (d["_spdisplays_display-vendor-id"] as? String).flatMap { edidVendorName($0) }
-                out.append(AttachedDevice(id: id, name: name, receptacle: -2, kind: .display,
-                    vendorName: vendor, detail: detail, connection: "Display"))
+    /// Extracts the Thunderbolt/USB4 topology from the registry tree. Each Depth-0
+    /// host switch is one bus (its `Router ID`) and one physical receptacle
+    /// (id = bus + 1, matching the receptacle numbering `system_profiler` reports);
+    /// a Depth≥1 switch beneath a host means that receptacle has a TB device.
+    nonisolated private static func thunderbolt(tree: [String: Any]) -> (busToReceptacle: [Int: Int], tbConnected: [Int: Bool]) {
+        var busToReceptacle: [Int: Int] = [:]
+        var tbConnected: [Int: Bool] = [:]
+        func walk(_ node: [String: Any], _ hostBus: Int?) {
+            var host = hostBus
+            if (node["IOObjectClass"] as? String)?.contains("IOThunderboltSwitch") == true,
+               let depth = (node["Depth"] as? NSNumber)?.intValue {
+                if depth == 0, let rid = (node["Router ID"] as? NSNumber)?.intValue {
+                    host = rid
+                    busToReceptacle[rid] = rid + 1
+                    if tbConnected[rid + 1] == nil { tbConnected[rid + 1] = false }
+                } else if depth >= 1, let h = host {
+                    tbConnected[h + 1] = true
+                }
+            }
+            for child in (node["IORegistryEntryChildren"] as? [[String: Any]]) ?? [] {
+                walk(child, host)
             }
         }
-        return out
+        walk(tree, nil)
+        return (busToReceptacle, tbConnected)
     }
 
-    struct USBScan { var bsd: [String: Int] = [:]; var devices: [AttachedDevice] = [] }
+    /// Builds Display device chips (receptacle -2) from CoreGraphics displays, using
+    /// NSScreen names (passed from the main actor) and decoding the EDID vendor when
+    /// CoreGraphics surfaces a valid packed-PnP id.
+    nonisolated private static func buildDisplays(_ raws: [IOKitProbe.RawDisplay], names: [UInt32: String]) -> [AttachedDevice] {
+        raws.map { d in
+            let vendor = pnpVendorName(d.vendor)
+            let name = names[d.id] ?? vendor.map { "\($0) Display" } ?? "External Display"
+            let detail: String?
+            if d.width > 0 && d.height > 0 {
+                detail = d.refreshHz > 0 ? "\(d.width) × \(d.height) @ \(Int(d.refreshHz.rounded())) Hz"
+                                         : "\(d.width) × \(d.height)"
+            } else { detail = nil }
+            return AttachedDevice(id: "disp-\(d.id)", name: name, receptacle: -2, kind: .display,
+                                  vendorName: vendor, detail: detail, connection: "Display")
+        }
+    }
 
-    /// Walks the IOService registry plane (where BSD names live) and correlates
-    /// each USB device's locationID bus with the TB receptacle map. A locationID
-    /// is only inherited from an actual USB device node (one with a USB product
-    /// name) so built-in interfaces aren't mis-mapped. Returns network-interface
-    /// BSD names per receptacle, plus classified peripheral devices.
-    nonisolated private static func usbScan(busToReceptacle: [Int: Int]) -> USBScan {
-        let task = Process()
-        task.launchPath = "/usr/sbin/ioreg"
-        task.arguments  = ["-a", "-l", "-w0"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError  = Pipe()
+    /// Decodes `CGDisplayVendorNumber` into a maker name when it carries a valid
+    /// 3-letter EDID PnP id (CoreGraphics often returns 0/garbage, so validate first).
+    nonisolated private static func pnpVendorName(_ vendor: UInt32) -> String? {
+        guard vendor > 0, vendor <= 0xFFFF else { return nil }
+        let v = UInt16(vendor)
+        func validLetter(_ shift: UInt16) -> Bool {
+            let code = Int((v >> shift) & 0x1F)   // 1→'A' … 26→'Z'
+            return code >= 1 && code <= 26
+        }
+        guard validLetter(10), validLetter(5), validLetter(0) else { return nil }
+        return edidVendorName(String(v, radix: 16))
+    }
+
+    /// Dev-only: prints the in-process probe results so they can be diffed against
+    /// `ioreg` / `system_profiler`. Invoked via the `--probe-dump` launch flag.
+    static func probeDump() {
+        let names = IOKitProbe.displayNames()
+        let s = queryPortStatus(displayNames: names)
+        print("=== Thunderbolt ===")
+        print("tbConnected:", s.tbConnected.sorted { $0.key < $1.key })
+        print("=== USB-C power (AppleHPM) ===")
+        print("connected:", s.hpmConnected.sorted { $0.key < $1.key })
+        print("power:    ", s.hpmPower.sorted { $0.key < $1.key })
+        print("=== iPhone/iPad ===")
+        print("phoneReceptacle:", s.phoneReceptacle as Any, " kind:", s.phoneDeviceKind)
+        print("=== BSD → receptacle ===")
+        print(s.deviceReceptacle.sorted { $0.key < $1.key })
+        print("=== Devices (\(s.attachedDevices.count)) ===")
+        for d in s.attachedDevices.sorted(by: { $0.receptacle < $1.receptacle }) {
+            print("  recep=\(d.receptacle) [\(d.kind)] \(d.name)"
+                + " | maker=\(d.vendorName ?? "-")"
+                + " | \(d.connectionLabel) | \(d.speedLabel) | \(d.classLabel) | \(d.idLabel)"
+                + (d.parentID.map { " | parent=\($0)" } ?? "")
+                + (d.interfaceBSD.map { " | bsd=\($0)" } ?? "")
+                + (d.detail.map { " | \($0)" } ?? ""))
+        }
+    }
+
+    struct USBScan {
+        var bsd: [String: Int] = [:]
+        var devices: [AttachedDevice] = []
+        var phoneBus: Int?
+        var phoneKind: String = "iPhone"
+    }
+
+    /// Walks the in-process registry tree (built by IOKitProbe.serviceTree, which
+    /// mirrors `ioreg -a -l`) where BSD names live, correlating each USB device's
+    /// locationID bus with the TB receptacle map. A locationID is only inherited
+    /// from an actual USB device node (one with a USB product name) so built-in
+    /// interfaces aren't mis-mapped. Returns network-interface BSD names per
+    /// receptacle, classified peripherals (with hub nesting), and a tethered phone.
+    nonisolated private static func usbScan(tree: [String: Any], busToReceptacle: [Int: Int]) -> USBScan {
         var scan = USBScan()
-        do {
-            try task.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            let obj = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-            var locToBSD = [String: String]()   // device locationID hex → its network BSD name
-            func walk(_ node: [String: Any], _ usbLoc: Int?, _ parentUSBId: String?) {
-                var loc = usbLoc
-                var childParent = parentUSBId   // USB device id inherited by the subtree
+        var locToBSD = [String: String]()   // device locationID hex → its network BSD name
+        func walk(_ node: [String: Any], _ usbLoc: Int?, _ parentUSBId: String?) {
+            var loc = usbLoc
+            var childParent = parentUSBId   // USB device id inherited by the subtree
 
-                // A USB device node carries a product name + locationID. It (re)sets
-                // the inherited USB location for its whole subtree, and becomes the
-                // parent (hub/dock) of any USB devices nested beneath it.
-                if let name = node["USB Product Name"] as? String,
-                   let l = node["locationID"] as? NSNumber {
-                    loc = l.intValue
-                    let bus = (l.intValue >> 24) & 0xFF
-                    let idHex = String(l.intValue, radix: 16)
-                    let lname = name.lowercased()
-                    let isPhone = lname.contains("iphone") || lname.contains("ipad")
-                    if let recep = busToReceptacle[bus], !isPhone {
-                        let cls = (node["bDeviceClass"] as? NSNumber)?.intValue ?? 0
-                        scan.devices.append(AttachedDevice(
-                            id: idHex,
-                            name: name,
-                            receptacle: recep,
-                            kind: USBDeviceKind.classify(name: name, classCode: cls),
-                            parentID: parentUSBId,
-                            vendorName: (node["USB Vendor Name"] as? String) ?? (node["kUSBVendorString"] as? String),
-                            vendorID: (node["idVendor"] as? NSNumber)?.intValue,
-                            productID: (node["idProduct"] as? NSNumber)?.intValue,
-                            serial: (node["USB Serial Number"] as? String) ?? (node["kUSBSerialNumberString"] as? String),
-                            classCode: cls,
-                            usbVersion: usbVersionString((node["bcdUSB"] as? NSNumber)?.intValue),
-                            linkSpeedBps: (node["UsbLinkSpeed"] as? NSNumber)?.uint64Value,
-                            connection: "USB"))
-                    }
-                    if !isPhone { childParent = idHex }
+            // A USB device node carries a product name + locationID. It (re)sets
+            // the inherited USB location for its whole subtree, and becomes the
+            // parent (hub/dock) of any USB devices nested beneath it.
+            if let name = node["USB Product Name"] as? String,
+               let l = node["locationID"] as? NSNumber {
+                loc = l.intValue
+                let bus = (l.intValue >> 24) & 0xFF
+                let idHex = String(l.intValue, radix: 16)
+                let lname = name.lowercased()
+                let isPad = lname.contains("ipad")
+                let isPhone = lname.contains("iphone") || isPad
+                if isPhone {
+                    // A USB-tethered iPhone/iPad: record its bus (a locked one is
+                    // hidden from system_profiler, but is in the IOKit registry).
+                    scan.phoneBus = bus
+                    scan.phoneKind = isPad ? "iPad" : "iPhone"
+                } else if let recep = busToReceptacle[bus] {
+                    let cls = (node["bDeviceClass"] as? NSNumber)?.intValue ?? 0
+                    scan.devices.append(AttachedDevice(
+                        id: idHex,
+                        name: name,
+                        receptacle: recep,
+                        kind: USBDeviceKind.classify(name: name, classCode: cls),
+                        parentID: parentUSBId,
+                        vendorName: (node["USB Vendor Name"] as? String) ?? (node["kUSBVendorString"] as? String),
+                        vendorID: (node["idVendor"] as? NSNumber)?.intValue,
+                        productID: (node["idProduct"] as? NSNumber)?.intValue,
+                        serial: (node["USB Serial Number"] as? String) ?? (node["kUSBSerialNumberString"] as? String),
+                        classCode: cls,
+                        usbVersion: usbVersionString((node["bcdUSB"] as? NSNumber)?.intValue),
+                        linkSpeedBps: (node["UsbLinkSpeed"] as? NSNumber)?.uint64Value,
+                        connection: "USB"))
                 }
+                if !isPhone { childParent = idHex }
+            }
 
-                // A BSD name under a USB device maps to that device's receptacle.
-                if let bsd = node["BSD Name"] as? String, let loc {
-                    let bus = (loc >> 24) & 0xFF
-                    let hex = String(loc, radix: 16)
-                    if let recep = busToReceptacle[bus] {
-                        scan.bsd[bsd] = recep
-                        if locToBSD[hex] == nil { locToBSD[hex] = bsd }
-                    }
-                }
-
-                if let kids = node["IORegistryEntryChildren"] as? [[String: Any]] {
-                    for k in kids { walk(k, loc, childParent) }
+            // A BSD name under a USB device maps to that device's receptacle.
+            if let bsd = node["BSD Name"] as? String, let loc {
+                let bus = (loc >> 24) & 0xFF
+                let hex = String(loc, radix: 16)
+                if let recep = busToReceptacle[bus] {
+                    scan.bsd[bsd] = recep
+                    if locToBSD[hex] == nil { locToBSD[hex] = bsd }
                 }
             }
-            if let root = obj as? [String: Any] { walk(root, nil, nil) }
-            else if let arr = obj as? [[String: Any]] { for r in arr { walk(r, nil, nil) } }
 
-            // De-duplicate composite devices (they appear under several USB nodes),
-            // and tag network devices with the interface they provide + a network kind.
-            var seen = Set<String>()
-            scan.devices = scan.devices.compactMap { d in
-                guard !seen.contains(d.id) else { return nil }
-                seen.insert(d.id)
-                var d = d
-                if let bsd = locToBSD[d.id] { d.interfaceBSD = bsd; d.kind = .network }
-                return d
+            if let kids = node["IORegistryEntryChildren"] as? [[String: Any]] {
+                for k in kids { walk(k, loc, childParent) }
             }
-        } catch { return USBScan() }
+        }
+        walk(tree, nil, nil)
+
+        // De-duplicate composite devices (they appear under several USB nodes),
+        // and tag network devices with the interface they provide + a network kind.
+        var seen = Set<String>()
+        scan.devices = scan.devices.compactMap { d in
+            guard !seen.contains(d.id) else { return nil }
+            seen.insert(d.id)
+            var d = d
+            if let bsd = locToBSD[d.id] { d.interfaceBSD = bsd; d.kind = .network }
+            return d
+        }
         return scan
-    }
-
-    /// Reads the USB-C Power Delivery controller (AppleHPM) to learn, per port,
-    /// whether anything is physically attached and whether a charger is present.
-    /// `PortNumber` here aligns with the TB receptacle id (port 3 = iPhone confirms it).
-    /// A port that's active but reports no USB data device ("None") is power-only.
-    nonisolated private static func queryHPMPorts() -> (connected: [Int: Bool], power: [Int: Bool]) {
-        var connected: [Int: Bool] = [:]
-        var power: [Int: Bool] = [:]
-        let task = Process()
-        task.launchPath = "/usr/sbin/ioreg"
-        task.arguments  = ["-r", "-c", "AppleHPMInterfaceType10", "-a", "-d1"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError  = Pipe()
-        do {
-            try task.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            guard let entries = try PropertyListSerialization
-                .propertyList(from: data, options: [], format: nil) as? [[String: Any]] else {
-                return ([:], [:])
-            }
-            for e in entries {
-                guard let port = (e["PortNumber"] as? NSNumber)?.intValue else { continue }
-                let active  = (e["ConnectionActive"] as? NSNumber)?.boolValue ?? false
-                let connStr = e["IOAccessoryUSBConnectString"] as? String ?? ""
-                connected[port] = active
-                // Active connection with no USB data device ⇒ power-only (charger).
-                power[port] = active && connStr == "None"
-            }
-        } catch { return ([:], [:]) }
-        return (connected, power)
-    }
-
-    nonisolated private static func runProfiler(_ dataType: String) -> [String: Any]? {
-        let task = Process()
-        task.launchPath = "/usr/sbin/system_profiler"
-        task.arguments  = [dataType, "-json"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError  = Pipe()
-        do {
-            try task.run()
-            // Drain the pipe BEFORE waiting: large output (>64 KB) overflows the
-            // pipe buffer and deadlocks if we wait first.
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            return try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        } catch { return nil }
-    }
-
-    /// Returns the USB4 bus index and kind ("iPhone"/"iPad") of a connected Apple
-    /// mobile device, parsed from the `ioreg` node name `iPhone@<locationID>` /
-    /// `iPad@<locationID>`. The locationID's high byte is the bus number.
-    nonisolated private static func mobileDeviceBus() -> (bus: Int, kind: String)? {
-        let task = Process()
-        task.launchPath = "/usr/sbin/ioreg"
-        task.arguments  = ["-p", "IOUSB", "-l", "-w0"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError  = Pipe()
-        do {
-            try task.run()
-            // Drain before waiting — ioreg output is ~90 KB and overflows the pipe.
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            guard let out = String(data: data, encoding: .utf8) else { return nil }
-            for rawLine in out.split(separator: "\n") {
-                let line = String(rawLine)
-                // Match the device-tree node line: "+-o iPad@02100000  <class ...>"
-                let kind = line.contains("iPad@") ? "iPad" : (line.contains("iPhone@") ? "iPhone" : nil)
-                guard let kind, let at = line.range(of: "@") else { continue }
-                let hex = line[at.upperBound...].prefix { $0.isHexDigit }
-                if let loc = UInt32(hex, radix: 16) {
-                    return (Int((loc >> 24) & 0xFF), kind)
-                }
-            }
-        } catch { return nil }
-        return nil
     }
 
     // MARK: - Hardware port construction
@@ -978,15 +932,6 @@ func usbVersionString(_ bcd: Int?) -> String? {
     let major = (b >> 8) & 0xFF
     let minor = (b >> 4) & 0x0F
     return "USB \(major).\(minor)"
-}
-
-/// "5120 x 2160 @ 100.00Hz" → "5120 × 2160 @ 100 Hz".
-func tidyResolution(_ s: String) -> String {
-    var t = s.replacingOccurrences(of: " x ", with: " × ")
-    t = t.replacingOccurrences(of: "Hz", with: " Hz")
-    // Drop trailing ".00" on the refresh rate for a cleaner read.
-    t = t.replacingOccurrences(of: ".00 Hz", with: " Hz")
-    return t.trimmingCharacters(in: .whitespaces)
 }
 
 /// Decodes a display's EDID vendor id (3 packed 5-bit letters, e.g. "1e6d") into

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox: mandatory for the Mac App Store. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Outbound network: required for the CoreWLAN / interface reads to function
+         under the sandbox (interface enumeration + SSID). NetLights never opens
+         listening sockets, so no network.server. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Location: the ONLY way macOS reveals the current Wi-Fi SSID to an app.
+         Used solely to label the Wi-Fi uplink; no coordinates are read or stored.
+         (NSLocationWhenInUseUsageDescription is set in Info.plist.) -->
+    <key>com.apple.security.personal-information.location</key>
+    <true/>
+
+    <!-- NOTE: com.apple.security.device.usb is deliberately NOT included. It gates
+         opening USB *user clients*; NetLights only reads IORegistry properties
+         (iokit-get-properties), which the App Sandbox permits without it. Verified
+         empirically against the live registry. -->
+</dict>
+</plist>
