@@ -362,8 +362,10 @@ enum USBDeviceKind {
         if n.contains("ssd") || n.contains("disk") || n.contains("drive")
             || n.contains("storage") || n.contains("t7") || n.contains("flash") { return .storage }
         if n.contains("hub") || n.contains("dock") { return .hub }
-        if n.contains("display") || n.contains("monitor") || n.contains("hdmi") { return .display }
+        // Check camera/webcam BEFORE display: a monitor's built-in webcam often
+        // carries the display's name (e.g. "DELL Display 4MP Webcam").
         if n.contains("camera") || n.contains("webcam") { return .camera }
+        if n.contains("display") || n.contains("monitor") || n.contains("hdmi") { return .display }
         if n.contains("battery") || n.contains("power bank") || n.contains("mophie") { return .battery }
         switch classCode {
         case 0x08: return .storage
