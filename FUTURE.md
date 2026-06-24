@@ -15,10 +15,15 @@ verified on hardware:
 - **Idea:** a **battery entity** in the graph with a charge-level + state indicator,
   instead of / in addition to the status-bar text.
 - **Adapter wattage** — `AdapterDetails.Watts` (already shown in the status bar).
-- **MagSafe vs. USB-C** — *under investigation.* USB-C PD reports `Description="pd charger"`,
-  `FamilyCode=0xE000000A`. Whether MagSafe reports a distinct `Description`/`FamilyCode`
-  needs a swap test. NOTE: this is adapter **type**, not which USB-C port — per-port power
-  direction is not exposed by macOS (see `APPSTORE.md` / Help).
+- **Adapter identity & wattage** — *resolved by hardware test.* We CANNOT distinguish the
+  MagSafe port from a USB-C port: MagSafe 3 is electrically USB-C PD, so both report
+  `Description="pd charger"`, `FamilyCode=0xE000000A`, and even `Name` says "USB-C Power
+  Adapter". And there's no port attribution (per-port power direction is unexposed — see
+  `APPSTORE.md`). BUT an *identified Apple adapter* exposes rich `AdapterDetails` —
+  `Name` ("140W USB-C Power Adapter"), `Manufacturer` ("Apple Inc."), `Model`,
+  `SerialString`, `Watts` — whereas a generic/dock PD source gives only `Watts`/voltage.
+  So show the adapter's **name + wattage when known** (e.g. "On AC · 140W Apple adapter")
+  — more useful than a MagSafe/USB-C label, and honest.
 
 ## Backlog
 
