@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.3-orange)
+![version](https://img.shields.io/badge/version-1.4-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
@@ -39,7 +39,7 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 ## Install
 
 ### Download the app (no build required)
-1. Grab `NetLights-1.3.0.zip` from the [Releases](../../releases) page.
+1. Grab the latest `NetLights-*.zip` from the [Releases](../../releases) page.
 2. Unzip and drag **NetLights.app** into your **Applications** folder.
 3. **Launch it** — the app is **signed and notarized** with an Apple Developer ID,
    so it opens normally with no Gatekeeper warning.
