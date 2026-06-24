@@ -78,6 +78,7 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 - A port lights if **anything** is physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a **charger** — regardless of whether it carries network traffic.
 - A yellow **plug badge** (a powerplug icon) marks a port with a USB-C charger attached.
 - A USB-connected **iPhone** (or **iPad**) is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green "USB-C" link.
+- **Charging** is shown in the status bar (on AC / charging + adapter wattage), **not** on a port. macOS exposes no per-port power direction — a port *receiving* power (a dock charging the Mac) and one *providing* power (the Mac charging an accessory) are indistinguishable in the registry — so NetLights reports charging at the system level rather than guessing a port.
 
 ### Recognizing what's attached
 NetLights classifies each USB peripheral and draws it with a fitting icon and a hover tooltip:
@@ -149,11 +150,15 @@ configuration.
 | Link state, MAC, MTU, byte counters | `sysctl(NET_RT_IFLIST)` |
 | Routes & gateways | `sysctl(NET_RT_DUMP)` over `PF_ROUTE` |
 | Friendly hardware-port names | SystemConfiguration (`SCNetworkInterface`) |
-| Thunderbolt receptacle status | `system_profiler SPThunderboltDataType` |
-| Attached devices, hub tree, iPhone port, power | `ioreg` (IOUSB + `AppleHPM` USB-C PD controller) |
-| Device details (vendor, class, USB version, link speed) | `ioreg` USB attributes |
-| External displays | `system_profiler SPDisplaysDataType` |
+| Thunderbolt receptacle status | IOKit `IOThunderboltSwitch` (in-process) |
+| Attached devices, hub tree, iPhone port | IOKit `IOUSBHostDevice` registry (in-process) |
+| USB-C attachment / charger badge | IOKit `AppleHPM` PD controller (in-process) |
+| Device details (vendor, class, USB version, link speed) | IOKit registry properties |
+| External displays | CoreGraphics `CGGetActiveDisplayList` |
+| System charging (AC / wattage) | IOKit `AppleSmartBattery` (system-level, not per-port) |
 | Wi-Fi link speed | CoreWLAN negotiated transmit rate |
+
+> **All in-process** as of 1.4 — no `system_profiler`/`ioreg` subprocesses — so NetLights runs under the App Sandbox. See [`APPSTORE.md`](APPSTORE.md).
 
 ### Capabilities & restrictions
 - **No admin rights** — everything runs as your user, read-only.

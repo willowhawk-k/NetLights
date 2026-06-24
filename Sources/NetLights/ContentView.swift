@@ -118,6 +118,18 @@ struct ContentView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary.opacity(0.6))
             }
+            // System-level AC/charging (NOT per-port — macOS exposes no per-port
+            // power direction, so this lives here rather than on a USB-C port).
+            if let power = monitor.systemPower, let label = power.label {
+                Text("·").font(.system(size: 10)).foregroundColor(.secondary.opacity(0.4))
+                Image(systemName: power.charging ? "bolt.fill" : "powerplug.fill")
+                    .font(.system(size: 9))
+                    .foregroundColor(power.charging ? .green : .secondary)
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .help("System power state from the battery controller. macOS does not reveal which USB-C port delivers or receives power, so this is not tied to a port.")
+            }
             Spacer()
             Text("Auto-refresh every 0.75s")
                 .font(.system(size: 10))

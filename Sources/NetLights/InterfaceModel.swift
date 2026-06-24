@@ -316,6 +316,23 @@ struct EgressInfo: Equatable {
     var displayName: String { name ?? kind.label }
 }
 
+// MARK: - System power (AC / charging)
+
+/// SYSTEM-level power state from AppleSmartBattery. macOS exposes no per-port
+/// power direction, so this is intentionally not tied to any USB-C port.
+struct SystemPower: Equatable {
+    var onAC: Bool
+    var charging: Bool
+    var watts: Int?
+
+    /// Status-bar label, or nil when nothing noteworthy (on battery, not charging).
+    var label: String? {
+        guard onAC else { return nil }
+        let w = watts.map { " · \($0)W" } ?? ""
+        return (charging ? "Charging" : "On AC power") + w
+    }
+}
+
 // MARK: - Attached USB device (non-network peripherals)
 
 /// Classification of a USB device attached to a hardware port, for iconography.

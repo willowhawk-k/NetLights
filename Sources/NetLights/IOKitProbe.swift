@@ -92,6 +92,25 @@ enum IOKitProbe {
         return (connected, power)
     }
 
+    // MARK: - System power (AppleSmartBattery) — SYSTEM-level only
+
+    /// Whether the Mac is on external (AC/USB-C) power, whether the battery is
+    /// charging, and the adapter wattage. This is the ONLY power-delivery fact
+    /// macOS exposes to an app: it is SYSTEM-wide, NOT per-port — there is no
+    /// public signal for which USB-C port sources/sinks power (verified against a
+    /// known sink+source setup: the ports are byte-for-byte identical power-wise).
+    /// Returns nil on Macs without a battery (desktops).
+    static func systemPower() -> (onAC: Bool, charging: Bool, watts: Int?)? {
+        var result: (onAC: Bool, charging: Bool, watts: Int?)?
+        forEach(matching: "AppleSmartBattery") { p in
+            let onAC = (p["ExternalConnected"] as? NSNumber)?.boolValue ?? false
+            let charging = (p["IsCharging"] as? NSNumber)?.boolValue ?? false
+            let watts = (p["AdapterDetails"] as? [String: Any])?["Watts"] as? NSNumber
+            result = (onAC, charging, watts?.intValue)
+        }
+        return result
+    }
+
     // MARK: - Displays (CoreGraphics) — replaces `system_profiler SPDisplaysDataType`
 
     struct RawDisplay {

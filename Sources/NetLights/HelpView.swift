@@ -29,6 +29,7 @@ struct HelpView: View {
                     bullet("Lit port", "Anything physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a charger — lights the port, regardless of whether it carries network traffic.")
                     bullet("Plug badge", "A yellow plug (powerplug) badge marks a port with a USB-C charger attached — an active connection that presents no USB data device.")
                     bullet("iPhone / iPad link", "A USB-connected iPhone or iPad is detected via the IOKit USB tree (distinguished by name), mapped to its physical receptacle, and joined to that port with a green “USB-C” link.")
+                    bullet("Charging (system)", "The status bar shows whether the Mac is on AC power / charging and the adapter wattage. This is a SYSTEM fact: macOS does not expose which USB-C port delivers or receives power, so NetLights never pins charging to a specific port (and can't show power the Mac provides out to an accessory).")
                 }
 
                 section("Recognizing attached devices", icon: "shippingbox.fill") {
@@ -62,8 +63,9 @@ struct HelpView: View {
                     bullet("Interfaces & stats", "getifaddrs() for addresses; sysctl(NET_RT_IFLIST) for link state, MAC, MTU and byte counters.")
                     bullet("Routes & gateways", "sysctl(NET_RT_DUMP) over the PF_ROUTE socket.")
                     bullet("Friendly names", "SystemConfiguration (SCNetworkInterface) for hardware-port display names.")
-                    bullet("Port topology", "system_profiler SPThunderboltDataType for receptacle status; ioreg (IOUSB + AppleHPM USB-C PD controller) for attached devices, the iPhone's port, and power state.")
-                    bullet("Device details", "ioreg USB attributes (vendor, idVendor/idProduct, bcdUSB, link speed, class) for the device tree and table; SPDisplaysDataType for external monitors.")
+                    bullet("Port topology", "Read in-process via IOKit — IOThunderboltSwitch for receptacle status, IOUSBHostDevice for the USB device tree + iPhone port, and AppleHPM (USB-C PD controller) for attachment/charger state. No subprocesses.")
+                    bullet("Device details", "IOKit registry properties (vendor, idVendor/idProduct, bcdUSB, link speed, class) for the device tree and Devices table; CoreGraphics for external displays.")
+                    bullet("System power", "AppleSmartBattery for AC/charging state and adapter wattage (system-level only).")
                     bullet("Wi-Fi link speed", "CoreWLAN's negotiated transmit rate (the legacy baud field under-reports modern Wi-Fi).")
                 }
 
@@ -72,8 +74,9 @@ struct HelpView: View {
                     bullet("Refresh cadence", "Interface/route data refreshes every 0.75 s; the slower port-topology probe runs ~every 5 s on a background thread so the UI never stalls.")
                     bullet("Link speed", "Wired links use the interface's 32-bit baud field (values above ~4.3 Gbps may read low); Wi-Fi uses CoreWLAN's current transmit rate, which fluctuates as the radio adapts.")
                     bullet("Display ports", "External monitors are detected but not mapped to a specific port — macOS doesn't expose which receptacle (or HDMI) a display uses to an unprivileged app, and there's no permission that unlocks it.")
+                    bullet("USB-C power direction", "macOS exposes no per-port power direction. A receiving port (a dock charging the Mac) and a providing port (the Mac powering an accessory) are byte-for-byte identical in the registry — only system-wide charging is knowable (AppleSmartBattery). So charging is shown in the status bar, never pinned to a port.")
                     bullet("Port front/rear labels", "Receptacle position labels come from a hand-curated per-model table and may be approximate on some Macs — connection/power state itself is read live and accurate.")
-                    bullet("iPhone visibility", "A locked iPhone is hidden from system_profiler's USB list; NetLights falls back to the IOKit registry to find it.")
+                    bullet("iPhone visibility", "A locked iPhone is hidden from some USB listings; NetLights reads the IOKit registry directly to find it.")
                     bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\"). Changed your mind? Use Help ▸ Check Location Privacy Settings to reopen the system pane.")
                 }
 

@@ -19,6 +19,12 @@ Verified against `ioreg`/`system_profiler` ground truth on real hardware:
 - iPhone/iPad detection + BSD→port — IOKit registry
 - External displays — CoreGraphics `CGGetActiveDisplayList` (maker/model labels are
   best-effort under sandbox; see `IOKitProbe.externalDisplays`)
+- System charging (AC / adapter wattage) — IOKit `AppleSmartBattery`. Shown in the
+  status bar. **Per-port power direction (which USB-C port delivers vs. receives
+  power) is not exposed by macOS in either build** — verified against a known
+  receiving+providing setup, the ports are byte-for-byte identical — so charging is
+  reported system-wide, never pinned to a port. This is a macOS limitation, not a
+  sandbox one.
 
 ## Entitlements
 

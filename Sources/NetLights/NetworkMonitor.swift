@@ -18,6 +18,8 @@ final class NetworkMonitor: ObservableObject {
     /// be read). Gating on actual authorization — not a nil SSID — avoids enabling
     /// the item on Ethernet-only / Wi-Fi-off Macs where Location was never the issue.
     @Published var locationHelpAvailable: Bool = false
+    /// System AC/charging state (NOT per-port). nil on battery-less Macs.
+    @Published var systemPower: SystemPower?
     @Published var serviceRank: [String: Int] = [:]   // interface → macOS service-order rank
     @Published var trafficStates: [String: TrafficState] = [:]
 
@@ -91,6 +93,7 @@ final class NetworkMonitor: ObservableObject {
                                                 macModel: macModel,
                                                 portStatus: lastPortStatus)
         attachedDevices = lastPortStatus.attachedDevices
+        systemPower = lastPortStatus.systemPower
 
         // Re-query topology roughly every ~5s, and never run two at once.
         portQueryCounter += 1
@@ -110,6 +113,7 @@ final class NetworkMonitor: ObservableObject {
                     self.hardwarePorts = NetworkMonitor.buildHardwarePorts(
                         from: self.interfaces, macModel: model, portStatus: status)
                     self.attachedDevices = status.attachedDevices
+                    self.systemPower = status.systemPower
                 }
             }
         }
@@ -137,6 +141,9 @@ final class NetworkMonitor: ObservableObject {
         var deviceReceptacle: [String: Int] = [:]
         /// Non-network USB peripherals attached to ports (audio, storage, …).
         var attachedDevices: [AttachedDevice] = []
+        /// System-level AC/charging state (NOT per-port — macOS exposes no per-port
+        /// power direction). nil on Macs without a battery.
+        var systemPower: SystemPower? = nil
     }
 
     // MARK: - Traffic LED logic
@@ -527,6 +534,11 @@ final class NetworkMonitor: ObservableObject {
         status.attachedDevices = scan.devices
             + buildDisplays(IOKitProbe.externalDisplays(), names: displayNames)
 
+        // System AC/charging state (AppleSmartBattery) — system-level, not per-port.
+        if let p = IOKitProbe.systemPower() {
+            status.systemPower = SystemPower(onAC: p.onAC, charging: p.charging, watts: p.watts)
+        }
+
         return status
     }
 
@@ -597,6 +609,8 @@ final class NetworkMonitor: ObservableObject {
         print("=== USB-C power (AppleHPM) ===")
         print("connected:", s.hpmConnected.sorted { $0.key < $1.key })
         print("power:    ", s.hpmPower.sorted { $0.key < $1.key })
+        print("=== System power (AppleSmartBattery — system-level, NOT per-port) ===")
+        print("systemPower:", s.systemPower as Any, " label:", s.systemPower?.label as Any)
         print("=== iPhone/iPad ===")
         print("phoneReceptacle:", s.phoneReceptacle as Any, " kind:", s.phoneDeviceKind)
         print("=== BSD → receptacle ===")
