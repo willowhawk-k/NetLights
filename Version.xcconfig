@@ -1,0 +1,15 @@
+// NetLights — single source of truth for the app version.
+//
+// Shared by BOTH release channels so they stay in lockstep:
+//   • Developer-ID / GitHub  →  scripts/build-app.sh parses these
+//   • Mac App Store          →  the Xcode target uses this file as its base config
+//
+// AppInfo.swift reads the resulting Info.plist values at runtime, so the in-app
+// About/Help screen always matches the binary. Bump these per release — nothing else.
+//
+// (App Store rule: CFBundleVersion / CURRENT_PROJECT_VERSION must strictly increase
+//  with each upload to App Store Connect; MARKETING_VERSION may repeat across channels.)
+
+MARKETING_VERSION = 1.4.2
+CURRENT_PROJECT_VERSION = 8
+NL_RELEASE_DATE = June 24, 2026

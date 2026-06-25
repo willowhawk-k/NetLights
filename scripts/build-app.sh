@@ -12,9 +12,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="NetLights"
-VERSION="1.4.2"
-BUILD="8"
 BUNDLE_ID="com.willowhawk.netlights"
+
+# Version: single source of truth, shared with the Mac App Store Xcode target.
+XCCONFIG="Version.xcconfig"
+xcval() { awk -F= -v k="$1" '$0 ~ "^"k"[ \t]*=" {sub(/^[^=]*=[ \t]*/,""); sub(/[ \t]+$/,""); print; exit}' "$XCCONFIG"; }
+VERSION="$(xcval MARKETING_VERSION)"
+BUILD="$(xcval CURRENT_PROJECT_VERSION)"
+RELEASE_DATE="$(xcval NL_RELEASE_DATE)"
+[ -n "$VERSION" ] && [ -n "$BUILD" ] || { echo "✗ couldn't read version from $XCCONFIG"; exit 1; }
+echo "▸ Version $VERSION ($BUILD) — from $XCCONFIG"
 
 DIST="dist"
 APP="$DIST/$APP_NAME.app"
@@ -60,6 +67,7 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>CFBundleIconFile</key>        <string>$APP_NAME</string>
     <key>CFBundleShortVersionString</key> <string>$VERSION</string>
     <key>CFBundleVersion</key>         <string>$BUILD</string>
+    <key>NLReleaseDate</key>           <string>$RELEASE_DATE</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>  <string>13.0</string>
     <key>NSHighResolutionCapable</key> <true/>
