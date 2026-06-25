@@ -12,8 +12,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="NetLights"
-VERSION="1.4.1"
-BUILD="7"
+VERSION="1.4.2"
+BUILD="8"
 BUNDLE_ID="com.willowhawk.netlights"
 
 DIST="dist"

@@ -78,7 +78,7 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 - A port lights if **anything** is physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a **charger** — regardless of whether it carries network traffic.
 - A yellow **plug badge** (a powerplug icon) marks a port with a USB-C charger attached.
 - A USB-connected **iPhone** (or **iPad**) is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green "USB-C" link.
-- **Charging** is shown in the status bar (on AC / charging + adapter wattage), **not** on a port. macOS exposes no per-port power direction — a port *receiving* power (a dock charging the Mac) and one *providing* power (the Mac charging an accessory) are indistinguishable in the registry — so NetLights reports charging at the system level rather than guessing a port.
+- A **battery entity** in the Hardware row shows charge level and state — *on battery* / *powered* (full, running off the adapter) / *charging* — with the adapter name + wattage on hover (and echoed in the status bar). It's a **system** fact, **not** pinned to a port: macOS exposes no per-port power direction — a port *receiving* power (a dock charging the Mac) and one *providing* power (the Mac charging an accessory) are indistinguishable in the registry, and MagSafe can't be told from USB-C (it's electrically USB-C PD) — so NetLights reports charging at the system level rather than guessing.
 
 ### Recognizing what's attached
 NetLights classifies each USB peripheral and draws it with a fitting icon and a hover tooltip:

@@ -536,7 +536,9 @@ final class NetworkMonitor: ObservableObject {
 
         // System AC/charging state (AppleSmartBattery) — system-level, not per-port.
         if let p = IOKitProbe.systemPower() {
-            status.systemPower = SystemPower(onAC: p.onAC, charging: p.charging, watts: p.watts)
+            status.systemPower = SystemPower(onAC: p.onAC, charging: p.charging,
+                fullyCharged: p.fullyCharged, level: p.level, watts: p.watts,
+                adapterName: p.adapterName)
         }
 
         return status

@@ -100,13 +100,25 @@ enum IOKitProbe {
     /// public signal for which USB-C port sources/sinks power (verified against a
     /// known sink+source setup: the ports are byte-for-byte identical power-wise).
     /// Returns nil on Macs without a battery (desktops).
-    static func systemPower() -> (onAC: Bool, charging: Bool, watts: Int?)? {
-        var result: (onAC: Bool, charging: Bool, watts: Int?)?
+    struct RawPower {
+        let onAC: Bool
+        let charging: Bool
+        let fullyCharged: Bool
+        let level: Int?         // CurrentCapacity (%)
+        let watts: Int?         // AdapterDetails.Watts
+        let adapterName: String?  // e.g. "140W USB-C Power Adapter" (identified adapters only)
+    }
+    static func systemPower() -> RawPower? {
+        var result: RawPower?
         forEach(matching: "AppleSmartBattery") { p in
-            let onAC = (p["ExternalConnected"] as? NSNumber)?.boolValue ?? false
-            let charging = (p["IsCharging"] as? NSNumber)?.boolValue ?? false
-            let watts = (p["AdapterDetails"] as? [String: Any])?["Watts"] as? NSNumber
-            result = (onAC, charging, watts?.intValue)
+            let ad = p["AdapterDetails"] as? [String: Any]
+            result = RawPower(
+                onAC: (p["ExternalConnected"] as? NSNumber)?.boolValue ?? false,
+                charging: (p["IsCharging"] as? NSNumber)?.boolValue ?? false,
+                fullyCharged: (p["FullyCharged"] as? NSNumber)?.boolValue ?? false,
+                level: (p["CurrentCapacity"] as? NSNumber)?.intValue,
+                watts: (ad?["Watts"] as? NSNumber)?.intValue,
+                adapterName: ad?["Name"] as? String)
         }
         return result
     }

@@ -323,13 +323,33 @@ struct EgressInfo: Equatable {
 struct SystemPower: Equatable {
     var onAC: Bool
     var charging: Bool
-    var watts: Int?
+    var fullyCharged: Bool
+    var level: Int?            // battery charge %
+    var watts: Int?            // adapter wattage
+    var adapterName: String?   // identified-adapter name (e.g. "140W USB-C Power Adapter")
 
     /// Status-bar label, or nil when nothing noteworthy (on battery, not charging).
     var label: String? {
         guard onAC else { return nil }
         let w = watts.map { " · \($0)W" } ?? ""
         return (charging ? "Charging" : "On AC power") + w
+    }
+
+    /// Short state word for the battery entity: distinguishes "plugged in & charging"
+    /// from "plugged in but running off the adapter at full" from "on battery".
+    var stateLabel: String {
+        if !onAC { return "On battery" }
+        if charging { return "Charging" }
+        return "Powered"
+    }
+
+    /// Adapter descriptor for the entity / hover — the identified name when macOS
+    /// exposes it (Apple adapters), else just the wattage (generic / dock PD source).
+    /// We can't tell MagSafe from USB-C (electrically identical), so we never claim it.
+    var adapterLabel: String? {
+        guard onAC else { return nil }
+        if let n = adapterName, !n.isEmpty { return n }
+        return watts.map { "\($0)W adapter" }
     }
 }
 

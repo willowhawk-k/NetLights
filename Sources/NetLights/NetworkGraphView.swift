@@ -134,6 +134,7 @@ struct NetworkGraphView: View {
     let hardwarePorts: [HardwarePort]
     let attachedDevices: [AttachedDevice]
     let egress:        EgressInfo?
+    let systemPower:   SystemPower?
     let hideUnused:    Bool
 
     @State private var viewSize: CGSize = .zero
@@ -471,13 +472,15 @@ struct NetworkGraphView: View {
     }
 
     private var hasDisplays: Bool { attachedDevices.contains { $0.receptacle == -2 } }
+    private var hasBattery: Bool { systemPower != nil }
 
     /// The ordered hardware-row slot ids (TB ports, iPhone = 0, Wi-Fi = -1,
-    /// Displays = -2). Deliberately free of band geometry so `isAnchoredPhysical`
-    /// (and thus `bands`/`bandRect`) can use it without a layout recursion cycle.
+    /// Displays = -2, Battery = -3). Deliberately free of band geometry so
+    /// `isAnchoredPhysical` (and thus `bands`/`bandRect`) can use it without a
+    /// layout recursion cycle.
     private var hwPortOrder: [Int] {
         let hasWifi = wifiUplinkInterface != nil
-        guard !hardwarePorts.isEmpty || hasWifi || hasDisplays else { return [] }
+        guard !hardwarePorts.isEmpty || hasWifi || hasDisplays || hasBattery else { return [] }
 
         // Order the slots so the iPhone node sits immediately to the right of the
         // TB receptacle it's plugged into (making the "plugged into Port N" link
@@ -506,6 +509,8 @@ struct NetworkGraphView: View {
         }
         // The "Displays" entity (-2) groups external monitors at the far end.
         if hasDisplays { order.append(-2) }
+        // The Battery entity (-3) — the Mac's own power, at the far end.
+        if hasBattery { order.append(-3) }
         return order
     }
 
@@ -622,6 +627,11 @@ struct NetworkGraphView: View {
                 if let dp = hwPortPositions[-2] {
                     VideoEntityView(count: attachedDevices.filter { $0.receptacle == -2 }.count)
                         .position(dp).zIndex(1)
+                }
+
+                // Battery entity (the Mac's own power), if this Mac has a battery.
+                if let bp = hwPortPositions[-3], let power = systemPower {
+                    BatteryEntityView(power: power).position(bp).zIndex(1)
                 }
 
                 // Hardware port nodes

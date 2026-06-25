@@ -29,7 +29,7 @@ struct HelpView: View {
                     bullet("Lit port", "Anything physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a charger — lights the port, regardless of whether it carries network traffic.")
                     bullet("Plug badge", "A yellow plug (powerplug) badge marks a port with a USB-C charger attached — an active connection that presents no USB data device.")
                     bullet("iPhone / iPad link", "A USB-connected iPhone or iPad is detected via the IOKit USB tree (distinguished by name), mapped to its physical receptacle, and joined to that port with a green “USB-C” link.")
-                    bullet("Charging (system)", "The status bar shows whether the Mac is on AC power / charging and the adapter wattage. This is a SYSTEM fact: macOS does not expose which USB-C port delivers or receives power, so NetLights never pins charging to a specific port (and can't show power the Mac provides out to an accessory).")
+                    bullet("Battery & charging", "A battery entity in the Hardware row shows charge level and whether the Mac is on battery, powered (full, on the adapter), or charging; hover it for the adapter (name + wattage), also echoed in the status bar. This is a SYSTEM fact: macOS exposes no per-port power direction, so charging is never pinned to a USB-C port — and MagSafe can't be told from USB-C (it's electrically USB-C PD), nor can power the Mac provides out to an accessory be shown.")
                 }
 
                 section("Recognizing attached devices", icon: "shippingbox.fill") {
