@@ -1,29 +1,18 @@
 # Future enhancements & ideas
 
-Backlog for NetLights — not committed work, just where we're headed. Rough order:
-finish the power/battery work → Mac App Store release → iterate on the rest.
+Backlog for NetLights — not committed work, just where we're headed.
 
-## Next: richer power state
+## Shipped (for context — no longer backlog)
 
-macOS exposes battery + adapter state in-process via `AppleSmartBattery` (sandbox-safe),
-verified on hardware:
-
-- **Powered vs. powered & charging** — `ExternalConnected` (on AC), `IsCharging`,
-  `FullyCharged`. Lets us show "Powered", "Powered & charging", or "On battery NN%"
-  (distinguishing "plugged in but running off the adapter at 100%" from "actively charging").
-- **Battery level** — `CurrentCapacity` (%).
-- **Idea:** a **battery entity** in the graph with a charge-level + state indicator,
-  instead of / in addition to the status-bar text.
-- **Adapter wattage** — `AdapterDetails.Watts` (already shown in the status bar).
-- **Adapter identity & wattage** — *resolved by hardware test.* We CANNOT distinguish the
-  MagSafe port from a USB-C port: MagSafe 3 is electrically USB-C PD, so both report
-  `Description="pd charger"`, `FamilyCode=0xE000000A`, and even `Name` says "USB-C Power
-  Adapter". And there's no port attribution (per-port power direction is unexposed — see
-  `APPSTORE.md`). BUT an *identified Apple adapter* exposes rich `AdapterDetails` —
-  `Name` ("140W USB-C Power Adapter"), `Manufacturer` ("Apple Inc."), `Model`,
-  `SerialString`, `Watts` — whereas a generic/dock PD source gives only `Watts`/voltage.
-  So show the adapter's **name + wattage when known** (e.g. "On AC · 140W Apple adapter")
-  — more useful than a MagSafe/USB-C label, and honest.
+- **In-process IOKit/CoreGraphics rewrite** (1.4.0) — removed all `system_profiler`/`ioreg`
+  subprocesses; App Sandbox–ready.
+- **System power / charging** (1.4.1) — AC/charging state + adapter wattage in the status bar.
+- **Battery entity** (1.4.2) — Hardware-row battery with charge level + state (on battery /
+  powered / charging) and adapter name + wattage on hover.
+- **MagSafe vs. USB-C — resolved (won't do):** hardware-tested that macOS exposes no per-port
+  power direction (MagSafe 3 is electrically USB-C PD; both report `Description="pd charger"`,
+  `FamilyCode=0xE000000A`). Identified Apple adapters do expose `Name`/`Watts`, which we show.
+- **Mac App Store submission** (1.4.2, build 8) — sandboxed build submitted; see `APPSTORE.md`.
 
 ## Backlog
 
@@ -38,9 +27,10 @@ whether it supports features like eARC. Display *detection* via CoreGraphics is 
 mapping to the HDMI **port** and reading eARC/CEC capabilities is likely not exposed to apps
 (same wall as USB-C per-port). Investigate.
 
-### Power levels on hover
-Show USB device power draw (`bMaxPower` / current from the USB descriptor, via IOKit) and
-Bluetooth device battery (where reported) in the hover tooltips.
+### Per-device power draw on hover
+Distinct from the system battery/charging already shipped: show each **USB peripheral's**
+power draw (`bMaxPower` / negotiated current from the USB descriptor, via IOKit) and each
+**Bluetooth device's** battery level (where reported) in the hover tooltips.
 
 ### Up/down traffic rate on links
 We already sample per-interface `rx/tx` byte counters. Compute and show per-link throughput
