@@ -139,6 +139,14 @@ Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
 > NetLights is read-only and needs no admin rights — it never changes your
 > configuration. It collects no data and makes no network connections of its own;
 > everything is read from your Mac and shown on your screen.
+>
+> Free and open source under the MIT License — source at
+> https://github.com/willowhawk-k/NetLights
+
+- **License Agreement:** Apple's **Standard License Agreement** (keep the default; do
+  NOT fill the custom EULA field). The app is MIT-licensed — that governs the source
+  on GitHub and is noted in the description above; the standard EULA covers the App
+  Store binary. (A bare MIT custom EULA would fail Apple's minimum-terms requirement.)
 
 ## Privacy "nutrition label" answers
 
