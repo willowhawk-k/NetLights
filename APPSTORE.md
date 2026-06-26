@@ -105,7 +105,10 @@ compiles the *same* `Sources/NetLights/*.swift` (no copies → one codebase).
 Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
 `com.willowhawk.netlights`; SKU `netlights`), then fill in:
 
-- **Name:** `NetLights`
+- **Name:** `NetLights: Map your ports!`  (the bare "NetLights" is reserved by
+  another developer on the App Store; this unique name was accepted. The bundle id
+  `com.willowhawk.netlights` and the in-app/Finder name "NetLights" are unaffected —
+  the App Store listing name is allowed to differ.)
 - **Subtitle (≤30):** `A live map of your network`
 - **Category:** Utilities (secondary: Developer Tools, optional)
 - **Promotional text (≤170):** See every network interface on your Mac as a live,
