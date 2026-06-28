@@ -189,6 +189,80 @@ struct NetworkGraphView: View {
         visible.filter { $0.category.layerLabel == "Physical" && !isAnchoredPhysical($0) }
     }
 
+    /// Lays anchored tiles in a single row, spread HORIZONTALLY so none overlap:
+    /// sorted by x and pushed apart to at least `minGap`, then shifted to stay within
+    /// the band width. We have far more horizontal than vertical room, so it only
+    /// wraps into extra stacked rows when the window genuinely can't fit them. Returns
+    /// each id's x + row index, and the row count. Geometry-free in x (no band rects).
+    private func spreadAnchored(_ items: [(id: String, x: CGFloat)], minGap: CGFloat) -> (pos: [String: (x: CGFloat, lane: Int)], lanes: Int) {
+        let loX = gwColWidth + 36, hiX = gwColWidth + bw - 36
+        let avail = max(hiX - loX, minGap)
+        let perRow = max(Int(avail / minGap) + 1, 1)
+        let sorted = items.sorted { $0.x != $1.x ? $0.x < $1.x : $0.id < $1.id }
+        guard !sorted.isEmpty else { return ([:], 1) }
+
+        if sorted.count <= perRow {
+            // One row: push right to keep >= minGap, then shift back to fit the band.
+            var xs: [CGFloat] = []; var prev = -CGFloat.greatestFiniteMagnitude
+            for it in sorted { let x = max(it.x, prev + minGap); xs.append(x); prev = x }
+            if let last = xs.last, last > hiX { let d = last - hiX; for i in xs.indices { xs[i] -= d } }
+            if let first = xs.first, first < loX {            // compress rightward from loX
+                var p = loX - minGap
+                for i in xs.indices { let x = max(xs[i], p + minGap); xs[i] = x; p = x }
+            }
+            var pos: [String: (x: CGFloat, lane: Int)] = [:]
+            for (i, it) in sorted.enumerated() { pos[it.id] = (xs[i], 0) }
+            return (pos, 1)
+        }
+        // Window-constrained: wrap into the fewest rows, evenly spaced within each.
+        let lanes = (sorted.count + perRow - 1) / perRow
+        let perLane = (sorted.count + lanes - 1) / lanes
+        var pos: [String: (x: CGFloat, lane: Int)] = [:]
+        for (i, it) in sorted.enumerated() {
+            let lane = i / perLane, inLane = i % perLane
+            let cnt = min(perLane, sorted.count - lane * perLane)
+            pos[it.id] = (loX + (avail / CGFloat(cnt)) * (CGFloat(inLane) + 0.5), lane)
+        }
+        return (pos, lanes)
+    }
+
+    /// Desired x for every anchored Physical interface, grouped by the physical
+    /// receptacle it belongs to — a TB-bridge member AND a dock's USB-Ethernet on the
+    /// same port share one cluster spread symmetrically around it (so they sit
+    /// side-by-side, not stacked); Wi-Fi anchors at its entity. Geometry-free in x.
+    private func anchoredPhysicalLayout() -> [(id: String, x: CGFloat)] {
+        let slots = hwSlotLayout
+        var byReceptacle: [Int: [String]] = [:]
+        for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
+            if let port = portForBSD[iface.id] {
+                byReceptacle[port, default: []].append(iface.id)
+            } else if iface.id == wifiUplinkInterface {
+                byReceptacle[-1, default: []].append(iface.id)
+            } else if let dev = attachedDevices.first(where: { $0.interfaceBSD == iface.id }) {
+                byReceptacle[dev.receptacle, default: []].append(iface.id)
+            }
+        }
+        let spacing: CGFloat = 112
+        var out: [(id: String, x: CGFloat)] = []
+        for (recep, ids) in byReceptacle {
+            guard let s = slots[recep] else { continue }
+            let sorted = ids.sorted(); let n = sorted.count
+            let half = CGFloat(n - 1) / 2 * spacing
+            let lo = gwColWidth + 36 + half, hi = gwColWidth + bw - 36 - half
+            let centerX = min(max(s.center, lo), max(lo, hi))
+            for (i, id) in sorted.enumerated() {
+                out.append((id, centerX + (CGFloat(i) - CGFloat(n - 1) / 2) * spacing))
+            }
+        }
+        return out
+    }
+
+    /// How many stacked rows the anchored Physical interfaces need (1 unless the
+    /// window is too narrow to spread them horizontally). Geometry-free.
+    private var physicalUpperLaneCount: Int {
+        spreadAnchored(anchoredPhysicalLayout(), minGap: 112).lanes
+    }
+
     // MARK: - Band area geometry (everything right of the gateway sidebar)
 
     private var bw: CGFloat { max(viewSize.width - gwColWidth, 0) }
@@ -249,9 +323,11 @@ struct NetworkGraphView: View {
         let deviceLevels = attachedDevices.isEmpty ? 0 : depth + 1
         let hwNeed = 96 + CGFloat(deviceLevels) * deviceRowGap + 24
 
-        let anchored = visible.contains { $0.category.layerLabel == "Physical" && isAnchoredPhysical($0) }
+        // Physical needs one row per anchored lane (stacked so tiles never overlap)
+        // plus one for the free/grouped interfaces.
+        let lanes = physicalUpperLaneCount
         let freeGroups = subgroups(layer: "Physical", ifaces: physFreeVisible).count
-        let physRows = max((anchored ? 1 : 0) + (freeGroups > 0 ? 1 : 0), 1)
+        let physRows = max(lanes + (freeGroups > 0 ? 1 : 0), 1)
         let physNeed = CGFloat(physRows) * 96 + 24
 
         let hasDL = visible.contains { $0.category.layerLabel == "Data Link" }
@@ -285,61 +361,30 @@ struct NetworkGraphView: View {
         guard bw > 0, bh > 0 else { return [:] }
         var result: [String: CGPoint] = [:]
 
-        // Physical (L1) — two rows:
-        //   • upper row: TB / iPhone interfaces anchored under their hardware port
-        //   • lower row: free interfaces (Wi-Fi, USB Ethernet, app adapters) grouped
+        // Physical (L1) — anchored interfaces (TB members under their port, Wi-Fi,
+        // device-provided USB-Ethernet) are spread HORIZONTALLY in one row so tiles
+        // never overlap — e.g. a dock's USB-LAN sits beside the TB-bridge member at the
+        // same port rather than stacked on it. Extra rows appear only if the window is
+        // too narrow. Free interfaces (app/VM adapters) fill a grouped row below.
         let physBand = bandRect("Physical")
-        let upperY   = physBand.minY + physBand.height * 0.42
-        let lowerY   = physBand.minY + physBand.height * 0.84
-        let hwPorts  = hwPortPositions
-
-        // Anchored interfaces: spread symmetrically around their HW port's x.
-        let bsdToPort = portForBSD
-        let devPos = devicePositions
-        // interface BSD → its device chip id (MiFi/dongle).
-        let devForBSD: [String: String] = Dictionary(
-            attachedDevices.compactMap { d in d.interfaceBSD.map { ($0, d.id) } },
-            uniquingKeysWith: { a, _ in a })
-        var anchored: [Int: [InterfaceInfo]] = [:]
-        var special: [(InterfaceInfo, CGFloat)] = []   // Wi-Fi / device-chip aligned
-        for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
-            if let port = bsdToPort[iface.id] {
-                anchored[port, default: []].append(iface)
-            } else if iface.id == wifiUplinkInterface, let wp = hwPorts[-1] {
-                special.append((iface, wp.x))
-            } else if let devId = devForBSD[iface.id], let p = devPos[devId] {
-                special.append((iface, p.x))
-            }
-        }
-        for (iface, x) in special {
-            result[iface.id] = CGPoint(x: x, y: upperY)
-        }
-        for (portId, ifaces) in anchored {
-            guard let portPos = hwPorts[portId] else { continue }
-            let sorted = ifaces.sorted { $0.id < $1.id }
-            let n = sorted.count
-            let spacing: CGFloat = 112   // > node width (100) so cards don't overlap
-            // Center the cluster on the port, then clamp so it stays on-screen.
-            let half = CGFloat(n - 1) / 2.0 * spacing
-            let lo = gwColWidth + 36 + half
-            let hi = gwColWidth + bw - 36 - half
-            let centerX = min(max(portPos.x, lo), max(lo, hi))
-            for (idx, iface) in sorted.enumerated() {
-                let offsetX = (CGFloat(idx) - CGFloat(n - 1) / 2.0) * spacing
-                result[iface.id] = CGPoint(x: centerX + offsetX, y: upperY)
-            }
-        }
-
-        // Free interfaces: original grouped layout, on the lower row.
+        let (anchoredPos, laneCount) = spreadAnchored(anchoredPhysicalLayout(), minGap: 112)
         let freeGroups = subgroups(layer: "Physical", ifaces: physFreeVisible)
-        let freeRects  = uniformRects(groups: freeGroups, band: physBand, w: bw)
-        for (gi, group) in freeGroups.enumerated() {
-            guard gi < freeRects.count else { continue }
+        let totalRows  = max(laneCount + (freeGroups.isEmpty ? 0 : 1), 1)
+        let rowH       = physBand.height / CGFloat(totalRows)
+        func rowY(_ i: Int) -> CGFloat { physBand.minY + rowH * (CGFloat(i) + 0.5) }
+
+        for (id, p) in anchoredPos {
+            result[id] = CGPoint(x: p.x, y: rowY(p.lane))
+        }
+
+        // Free interfaces: grouped layout, in the row beneath the anchored lanes.
+        let freeRects = uniformRects(groups: freeGroups, band: physBand, w: bw)
+        let freeY = rowY(laneCount)
+        for (gi, group) in freeGroups.enumerated() where gi < freeRects.count {
             let rect = freeRects[gi]
             let sp = rect.width / CGFloat(group.interfaces.count)
             for (ni, iface) in group.interfaces.enumerated() {
-                let localX = rect.minX + sp * (CGFloat(ni) + 0.5)
-                result[iface.id] = CGPoint(x: localX + gwColWidth, y: lowerY)
+                result[iface.id] = CGPoint(x: rect.minX + sp * (CGFloat(ni) + 0.5) + gwColWidth, y: freeY)
             }
         }
 
@@ -871,11 +916,15 @@ struct NetworkGraphView: View {
     @ViewBuilder
     private func groupLabels(w: CGFloat, h: CGFloat) -> some View {
         let bw2   = max(w - gwColWidth, 100)
-        // Physical: label only the free groups, just above their (lower) row.
+        // Physical: label only the free groups, just above their row (which sits
+        // beneath the anchored lanes — keep this in sync with ifacePositions).
         let physBand = bandRect("Physical")
+        let pLanes   = physicalUpperLaneCount
+        let pTotal   = max(pLanes + (physFreeVisible.isEmpty ? 0 : 1), 1)
+        let pRowH    = physBand.height / CGFloat(pTotal)
         labelRow(groups: subgroups(layer: "Physical", ifaces: physFreeVisible),
                  band: physBand, bw2: bw2,
-                 labelY: physBand.minY + physBand.height * 0.84 - 26)
+                 labelY: physBand.minY + pRowH * (CGFloat(pLanes) + 0.5) - 26)
         // Virtual: a header above each group, in whichever of the two rows it sits.
         ForEach(Array(virtualGroupLayout(w: bw2).enumerated()), id: \.offset) { _, item in
             let rect = item.rect
