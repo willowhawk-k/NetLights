@@ -129,8 +129,9 @@ Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
 > • See the whole picture: ports, the Wi-Fi network, external displays, and attached
 > devices (iPhone/iPad, hubs, docks, drives, keyboards) — with USB hubs expanded into
 > a tidy tree.
-> • Follow your traffic: default gateways are ranked by precedence so you can see
-> which uplink actually carries your packets, and VPN tunnels show where they egress.
+> • Follow your traffic: live up/down throughput is drawn right on the links, default
+> gateways are ranked by precedence so you can see which uplink actually carries your
+> packets, and VPN tunnels show where they egress.
 > • Inspect anything: hover for details, or use the Routes, Interfaces, and Devices
 > tabs for full tables (manufacturer, link speed, USB class, and more).
 > • Battery & power: a battery entity shows charge level and whether you're on

@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.4-orange)
+![version](https://img.shields.io/badge/version-1.5-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
@@ -84,6 +84,18 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 - **Amber ant-crawl** — live traffic; the dashes march while bytes move and hold steady (no blink) for ~3 s after activity stops.
 - **Dim dot** — no link / nothing attached.
 - **Connection lines** — hardware port → its `en*` interfaces, bridge ↔ members, interface → gateway. Emphasized links (iPhone ↔ port, VPN egress) stay brightly lit.
+- **Throughput on the wire** — a wire carrying a single interface's flow shows its live rate right on the line (e.g. **↓ 12.3M  ↑ 1.1M**, bytes/sec), updated every refresh.
+
+### Link throughput
+Hover any connection wire for a **Link** tooltip: the negotiated **link speed**,
+the live **Down / Up** rate (per second, smoothed so it doesn't jitter between
+refreshes), and **Received / Sent** byte totals. The totals are the OS's
+cumulative interface counters — i.e. **since that interface came up** (boot for
+built-in interfaces; plug-in for hot-plugged ones like a USB-Ethernet dock or an
+iPhone), not since the app launched.
+
+> Per-**app** breakdown isn't shown: per-process network attribution needs a
+> private framework (what `nettop` uses) that a sandboxed app can't call.
 
 ### Hardware ports & power
 - A port lights if **anything** is physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a **charger** — regardless of whether it carries network traffic.
@@ -158,7 +170,8 @@ configuration.
 | Data | Source |
 |------|--------|
 | Interfaces & addresses | `getifaddrs()` |
-| Link state, MAC, MTU, byte counters | `sysctl(NET_RT_IFLIST)` |
+| Link state, MAC, MTU, 64-bit rx/tx byte counters & baud | `sysctl(NET_RT_IFLIST2)` (`if_data64`) |
+| Per-link throughput (↓/↑ rate) | computed from rx/tx counter deltas, EMA-smoothed |
 | Routes & gateways | `sysctl(NET_RT_DUMP)` over `PF_ROUTE` |
 | Friendly hardware-port names | SystemConfiguration (`SCNetworkInterface`) |
 | Thunderbolt receptacle status | IOKit `IOThunderboltSwitch` (in-process) |
@@ -175,17 +188,21 @@ configuration.
 - **No admin rights** — everything runs as your user, read-only.
 - **Refresh cadence** — interface/route data every 0.75 s; the slower port-topology
   probe runs ~every 5 s on a background thread so the UI never stalls.
-- **Link speed** — wired links read the interface's 32-bit baud field (values above
-  ~4.3 Gbps may under-report); Wi-Fi uses CoreWLAN's current transmit rate, which
-  fluctuates as the radio adapts.
+- **Link speed** — wired links read the interface's negotiated baud rate (64-bit via
+  `NET_RT_IFLIST2`); Wi-Fi uses CoreWLAN's current transmit rate, which fluctuates as
+  the radio adapts. The baud rate is what the driver reports and isn't always the full
+  PHY rate (e.g. a Thunderbolt bridge advertises a nominal figure).
+- **Throughput numbers** — derived from the kernel's rx/tx byte counters (now 64-bit,
+  so they don't wrap mid-transfer), sampled each refresh and lightly smoothed. They
+  reflect the interface's total traffic, which a per-app tool can't be derived from.
 - **External displays** — detected and listed, but **not mapped to a specific port**:
   macOS doesn't expose which receptacle (or HDMI) a monitor uses to an unprivileged
   app, and no permission unlocks it. See *External displays* above.
 - **Port front/rear labels** — receptacle position labels come from a hand-curated
   per-model table and may be approximate on some Macs; connection/power state itself
   is read live and accurate.
-- **Locked iPhone** — hidden from `system_profiler`'s USB list, so NetLights falls
-  back to the IOKit registry to find it.
+- **Locked iPhone** — absent from the high-level USB device list, so NetLights reads
+  the IOKit registry directly to find it.
 - **Wi-Fi network name (Location)** — macOS only reveals the current SSID to apps
   with Location access, so NetLights requests it **solely to label the Wi-Fi
   uplink**. No location coordinates are ever read, stored, or shared; declining is
@@ -202,7 +219,8 @@ PRs and forks welcome! The project is a single SwiftPM executable target.
 Sources/NetLights/
 ├── NetLightsApp.swift        # @main App, menu commands, dock icon, lifecycle
 ├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices
-├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/system_profiler/CoreWLAN)
+├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/CoreWLAN/CoreGraphics, in-process)
+├── IOKitProbe.swift          # Low-level IOKit/CoreGraphics probes (USB tree, TB, displays, power)
 ├── InterfaceModel.swift      # Data models + per-Mac port layout table
 ├── NetworkGraphView.swift    # The layered graph: band sizing, tidy-tree layout, lines
 ├── InterfaceNodeView.swift   # Interface node + tooltip
@@ -210,7 +228,7 @@ Sources/NetLights/
 ├── DeviceNodeView.swift      # USB / display device chip
 ├── WifiEntityView.swift / VideoEntityView.swift  # Wi-Fi + Displays hardware-row entities
 ├── GatewayNodeView.swift     # Gateway node + tooltip
-├── Tooltips.swift            # Central hover tooltips (port / device / gateway)
+├── Tooltips.swift            # Central hover tooltips (port / device / gateway / link)
 ├── AppIconView.swift         # SwiftUI app icon (also rasterized for the dock)
 ├── AboutView.swift / HelpView.swift
 └── AssetExport.swift         # Build-time .icns / QR generation

@@ -85,7 +85,8 @@ struct DeviceTooltip: View {
 }
 
 /// Hover detail for a connection wire: what link it is, its negotiated speed,
-/// live throughput in each direction, and the session byte totals.
+/// the live per-second throughput in each direction, and the cumulative byte
+/// totals the OS has counted since the interface came up.
 struct LinkTooltip: View {
     let iface: InterfaceInfo
     let traffic: TrafficState?
@@ -102,11 +103,16 @@ struct LinkTooltip: View {
             Text(roleLabel).font(.system(size: 9)).foregroundColor(.secondary)
             Divider()
             row("Link speed", iface.formattedSpeed ?? "—")
+            // Live throughput, per second (values carry "/s").
             row("Down", traffic.flatMap { formatRate($0.rxRate) } ?? "idle")
             row("Up", traffic.flatMap { formatRate($0.txRate) } ?? "idle")
             Divider()
-            row("Total ↓", formatByteCount(iface.rxBytes))
-            row("Total ↑", formatByteCount(iface.txBytes))
+            // Cumulative counters (not per-second).
+            row("Received", formatByteCount(iface.rxBytes))
+            row("Sent", formatByteCount(iface.txBytes))
+            Text("totals since the interface came up")
+                .font(.system(size: 9)).foregroundColor(.secondary)
+                .padding(.top, 1)
         }
         .frame(width: 210, alignment: .leading)
         .padding(10)
