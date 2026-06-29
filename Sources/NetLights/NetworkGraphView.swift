@@ -151,10 +151,12 @@ struct NetworkGraphView: View {
     @State private var shownTarget: HoverTarget?
     @State private var hoverTask: Task<Void, Never>?
     @State private var tipSize: CGSize = .zero
-    // Pointer location captured when a wire hover begins — a link tooltip anchors
-    // here (right at the cursor) rather than to one of the interface's several
-    // wires, which could be elsewhere on the graph.
+    // Pointer location captured when a wire hover begins. linkHoverPoint tracks the
+    // PENDING target; shownLinkPoint is promoted from it only when the target is
+    // committed — so a link tooltip's position and its content always agree (no
+    // brief "old link's info at the new cursor spot" while the debounce settles).
     @State private var linkHoverPoint: CGPoint = .zero
+    @State private var shownLinkPoint: CGPoint = .zero
     // Memo of the last wire hit-test: buildLines() is relatively expensive, so we
     // reuse the result while the pointer hasn't moved far enough to change it.
     @State private var lastWireProbePoint: CGPoint?
@@ -912,9 +914,16 @@ struct NetworkGraphView: View {
     private func scheduleHover(_ t: HoverTarget?) {
         hoverTask?.cancel()
         hoverTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: t == nil ? 200_000_000 : 180_000_000)
+            // Short show delay so the tooltip feels responsive; a slightly longer
+            // hide delay avoids flicker when the pointer crosses a gap. Still long
+            // enough that a fast sweep across wires doesn't pop transient tooltips.
+            try? await Task.sleep(nanoseconds: t == nil ? 130_000_000 : 60_000_000)
             if Task.isCancelled { return }
-            if pendingTarget == t { shownTarget = t }
+            if pendingTarget == t {
+                // Commit the anchor together with the content so they never disagree.
+                shownLinkPoint = linkHoverPoint
+                shownTarget = t
+            }
         }
     }
 
@@ -925,9 +934,9 @@ struct NetworkGraphView: View {
         case .gateway(let id): return gatewayPositions[id]
         case .device(let id):  return devicePositions[id]
         case .link:
-            // Right at the pointer, so the tooltip is always next to the wire the
-            // user is actually pointing at (an interface can own several wires).
-            return linkHoverPoint
+            // The committed anchor (matches the shown content), not the live
+            // pending point — so it never shows the previous link's info here.
+            return shownLinkPoint
         }
     }
 
@@ -1113,12 +1122,14 @@ struct NetworkGraphView: View {
 
             // Throughput on this wire, if it carries a single interface's flow and
             // that interface is moving data above the noise floor.
-            let rate = (line.showRate ? line.ifaceID : nil)
-                .flatMap { trafficStates[$0] }.flatMap(wireRateLabel)
+            let st   = (line.showRate ? line.ifaceID : nil).flatMap { trafficStates[$0] }
+            let down = st.flatMap { formatRateShort($0.rxRate) }
+            let up   = st.flatMap { formatRateShort($0.txRate) }
+            let hasRate = down != nil || up != nil
 
             // The small static label ("L2"/"L3"/"VLAN"/…) — suppressed when a live
             // rate number is showing on the same wire so the two don't collide.
-            if !line.label.isEmpty, rate == nil {
+            if !line.label.isEmpty, !hasRate {
                 Text(line.label)
                     .font(.system(size: 7.5))
                     .foregroundColor(active ? line.color.opacity(0.55)
@@ -1127,26 +1138,36 @@ struct NetworkGraphView: View {
                     .animation(.easeInOut(duration: 0.35), value: active)
             }
 
-            if let rate {
-                Text(rate)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundColor(line.color.opacity(0.95))
-                    .padding(.horizontal, 3).padding(.vertical, 1)
-                    .background(RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.black.opacity(0.5)))
-                    .fixedSize()
+            if hasRate {
+                wirePill(down: down, up: up, color: line.color)
                     .position(curveMidpoint(line.from, ctrl, line.to))
                     .allowsHitTesting(false)
             }
         }
     }
 
-    /// Compact "↓12.3M  ↑1.1M" for the wire — only the directions above the floor.
-    private func wireRateLabel(_ st: TrafficState) -> String? {
-        var parts: [String] = []
-        if let d = formatRateShort(st.rxRate) { parts.append("↓\(d)") }
-        if let u = formatRateShort(st.txRate) { parts.append("↑\(u)") }
-        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+    /// The on-wire throughput pill — bold direction arrows set apart from their
+    /// numbers, down and up grouped separately, so it reads cleanly even small.
+    @ViewBuilder
+    private func wirePill(down: String?, up: String?, color: Color) -> some View {
+        HStack(spacing: 8) {
+            if let down {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.down").font(.system(size: 10, weight: .bold))
+                    Text(down).font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+            }
+            if let up {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.up").font(.system(size: 10, weight: .bold))
+                    Text(up).font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+            }
+        }
+        .foregroundColor(color.opacity(0.98))
+        .padding(.horizontal, 5).padding(.vertical, 2)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.62)))
+        .fixedSize()
     }
 
     /// Point on a quadratic Bézier at t = 0.5 — the visual middle of the wire.
