@@ -23,6 +23,9 @@ Backlog for NetLights — not committed work, just where we're headed.
   nothing if declined; the dev build runs without it). **Audio-device battery
   (AirPods/headphones) is not available in-process** — macOS keeps it in the Bluetooth
   daemon, reachable only via the `system_profiler` subprocess we removed for the sandbox.
+- **Device typing by interface descriptors** (1.6.1) — composite USB devices (bDeviceClass 0)
+  are typed from their interface classes + HID usage instead of falling back to generic, so
+  mice/keyboards/game controllers/audio/webcams are recognized. Chips sort by type then name.
 
 ## Backlog
 

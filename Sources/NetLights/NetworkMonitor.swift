@@ -647,15 +647,18 @@ final class NetworkMonitor: ObservableObject {
     /// won't have a battery (macOS exposes it only via the Bluetooth daemon).
     nonisolated private static func buildBluetooth(_ raws: [BluetoothProbe.RawBT],
                                                    battery: [String: Int],
-                                                   hidUsage: [String: Int]) -> [AttachedDevice] {
+                                                   hidUsage: [String: Set<Int>]) -> [AttachedDevice] {
         raws.compactMap { d in
             // The address is the stable identity and the battery-merge key; an
             // address-less device can't be uniquely identified, so skip it.
             guard !d.address.isEmpty else { return nil }
-            // HID usage is authoritative for input devices and is the ONLY reliable
-            // signal for BLE mice/keyboards (no Class-of-Device); fall back to CoD + name.
-            let kind = hidUsage[d.name].flatMap(USBDeviceKind.classifyHIDUsage)
-                ?? USBDeviceKind.classifyBluetooth(major: d.major, minor: d.minor, name: d.name)
+            // Name first (matches the USB path: "…Keyboard" stays a keyboard even with
+            // an integrated trackpad), then HID usage — the only reliable signal for BLE
+            // mice/keyboards, which carry no Class-of-Device — then CoD + name.
+            let byName = USBDeviceKind.classify(name: d.name, classCode: -1)
+            let kind = byName != .generic ? byName
+                : (hidUsage[d.name].flatMap(USBDeviceKind.classifyHIDUsages)
+                    ?? USBDeviceKind.classifyBluetooth(major: d.major, minor: d.minor, name: d.name))
             let pct  = battery[normalizeBTAddress(d.address)]
             return AttachedDevice(id: "bt-\(d.address)", name: d.name, receptacle: -4, kind: kind,
                                   serial: d.address, connection: "Bluetooth", batteryPercent: pct)
@@ -718,6 +721,27 @@ final class NetworkMonitor: ObservableObject {
     nonisolated private static func usbScan(tree: [String: Any], busToReceptacle: [Int: Int]) -> USBScan {
         var scan = USBScan()
         var locToBSD = [String: String]()   // device locationID hex → its network BSD name
+
+        // Gather a device's interface classes (bInterfaceClass) and HID Generic-Desktop
+        // usages from its subtree, WITHOUT crossing into a nested USB device (whose
+        // interfaces belong to it). Used to type composite devices that report class 0.
+        func collectInterfaceInfo(_ node: [String: Any], _ classes: inout Set<Int>, _ usages: inout Set<Int>) {
+            for child in (node["IORegistryEntryChildren"] as? [[String: Any]]) ?? [] {
+                // Skip any child carrying a device descriptor (bDeviceClass): that's
+                // either the boundary into a genuinely nested downstream USB device (a
+                // hub's port subtree belongs to those devices, not us) OR this device's
+                // own childless Apple*CompositeDevice helper nub (harmless — no subtree).
+                // The real interface nodes carry bInterfaceClass instead and are descended
+                // into. (Interface nodes inherit USB Product Name / locationID, so those
+                // keys can't distinguish them — bDeviceClass can.)
+                if child["bDeviceClass"] != nil { continue }
+                if let c = (child["bInterfaceClass"] as? NSNumber)?.intValue { classes.insert(c) }
+                if (child["PrimaryUsagePage"] as? NSNumber)?.intValue == 1,
+                   let u = (child["PrimaryUsage"] as? NSNumber)?.intValue { usages.insert(u) }
+                collectInterfaceInfo(child, &classes, &usages)
+            }
+        }
+
         func walk(_ node: [String: Any], _ usbLoc: Int?, _ parentUSBId: String?) {
             var loc = usbLoc
             var childParent = parentUSBId   // USB device id inherited by the subtree
@@ -740,11 +764,17 @@ final class NetworkMonitor: ObservableObject {
                     scan.phoneKind = isPad ? "iPad" : "iPhone"
                 } else if let recep = busToReceptacle[bus] {
                     let cls = (node["bDeviceClass"] as? NSNumber)?.intValue ?? 0
+                    // Composite devices report bDeviceClass 0; their real function is
+                    // in the interface descriptors (+ HID usage), gathered from the
+                    // device's subtree (stopping at any nested USB device).
+                    var ifaceClasses = Set<Int>(), hidUsages = Set<Int>()
+                    collectInterfaceInfo(node, &ifaceClasses, &hidUsages)
                     scan.devices.append(AttachedDevice(
                         id: idHex,
                         name: name,
                         receptacle: recep,
-                        kind: USBDeviceKind.classify(name: name, classCode: cls),
+                        kind: USBDeviceKind.classifyUSB(name: name, deviceClass: cls,
+                                                        interfaceClasses: ifaceClasses, hidUsages: hidUsages),
                         parentID: parentUSBId,
                         vendorName: (node["USB Vendor Name"] as? String) ?? (node["kUSBVendorString"] as? String),
                         vendorID: (node["idVendor"] as? NSNumber)?.intValue,

@@ -357,35 +357,37 @@ struct SystemPower: Equatable {
 
 /// Classification of a USB device attached to a hardware port, for iconography.
 enum USBDeviceKind {
-    case audio, storage, hub, keyboard, pointing, display, camera, battery, network, generic
+    case audio, storage, hub, keyboard, pointing, gamecontroller, display, camera, battery, network, generic
 
     var systemImage: String {
         switch self {
-        case .audio:    return "headphones"
-        case .storage:  return "externaldrive.fill"
-        case .hub:      return "powerplug.fill"
-        case .keyboard: return "keyboard.fill"
-        case .pointing: return "computermouse.fill"
-        case .display:  return "display"
-        case .camera:   return "camera.fill"
-        case .battery:  return "battery.100.bolt"
-        case .network:  return "antenna.radiowaves.left.and.right"
-        case .generic:  return "cube.box.fill"
+        case .audio:          return "headphones"
+        case .storage:        return "externaldrive.fill"
+        case .hub:            return "point.3.connected.trianglepath.dotted"
+        case .keyboard:       return "keyboard.fill"
+        case .pointing:       return "computermouse.fill"
+        case .gamecontroller: return "gamecontroller.fill"
+        case .display:        return "display"
+        case .camera:         return "camera.fill"
+        case .battery:        return "battery.100.bolt"
+        case .network:        return "antenna.radiowaves.left.and.right"
+        case .generic:        return "cube.box.fill"
         }
     }
 
     var label: String {
         switch self {
-        case .audio:    return "Audio"
-        case .storage:  return "Storage"
-        case .hub:      return "Hub / Dock"
-        case .keyboard: return "Keyboard"
-        case .pointing: return "Pointing"
-        case .display:  return "Display"
-        case .camera:   return "Camera"
-        case .battery:  return "Battery"
-        case .network:  return "Network"
-        case .generic:  return "USB Device"
+        case .audio:          return "Audio"
+        case .storage:        return "Storage"
+        case .hub:            return "Hub / Dock"
+        case .keyboard:       return "Keyboard"
+        case .pointing:       return "Pointing"
+        case .gamecontroller: return "Game Controller"
+        case .display:        return "Display"
+        case .camera:         return "Camera"
+        case .battery:        return "Battery"
+        case .network:        return "Network"
+        case .generic:        return "USB Device"
         }
     }
 
@@ -413,14 +415,35 @@ enum USBDeviceKind {
         }
     }
 
-    /// Kind from a HID Generic-Desktop top-level usage (page 1). nil for usages we
-    /// don't map (joystick / gamepad / system controls), so other signals can decide.
-    static func classifyHIDUsage(_ usage: Int) -> USBDeviceKind? {
-        switch usage {
-        case 1, 2: return .pointing   // Pointer, Mouse
-        case 6, 7: return .keyboard   // Keyboard, Keypad
-        default:   return nil
-        }
+    /// Kind from a device's set of HID Generic-Desktop top-level usages (page 1).
+    /// A composite gaming mouse exposes BOTH a mouse and a (macro) keyboard usage,
+    /// so mouse wins the tie; joystick/gamepad map to a game controller. nil when
+    /// no usage maps, so other signals can decide.
+    static func classifyHIDUsages(_ usages: Set<Int>) -> USBDeviceKind? {
+        if usages.contains(2) || usages.contains(1) { return .pointing }        // Mouse, Pointer
+        if usages.contains(6) || usages.contains(7) { return .keyboard }        // Keyboard, Keypad
+        if usages.contains(4) || usages.contains(5) { return .gamecontroller }  // Joystick, Gamepad
+        return nil
+    }
+
+    /// Classification for a USB device from its interface descriptors + HID usages,
+    /// which is the only reliable signal for COMPOSITE devices (bDeviceClass 0 — a
+    /// headset, gaming mouse, joystick, etc. all report 0 at the device level). The
+    /// product name wins when it states the type; interface classes resolve the rest.
+    static func classifyUSB(name: String, deviceClass: Int,
+                            interfaceClasses: Set<Int>, hidUsages: Set<Int>) -> USBDeviceKind {
+        // 1. An explicit name ("…Keyboard", "…Hub", "…Webcam") is most reliable.
+        let byName = classify(name: name, classCode: -1)   // -1 → name-only (no class match)
+        if byName != .generic { return byName }
+        // 2. Interface descriptors reveal a composite device's real function.
+        //    Video before Audio: webcams carry an audio (mic) interface too.
+        if interfaceClasses.contains(0x0E) { return .camera }
+        if interfaceClasses.contains(0x01) { return .audio }
+        if interfaceClasses.contains(0x03), let k = classifyHIDUsages(hidUsages) { return k }
+        if interfaceClasses.contains(0x08) { return .storage }
+        if interfaceClasses.contains(0x09) { return .hub }
+        // 3. Device-level class as a last resort.
+        return classify(name: name, classCode: deviceClass)
     }
 
     /// Classification from a Bluetooth Class-of-Device (major/minor). The major

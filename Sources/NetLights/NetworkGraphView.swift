@@ -302,9 +302,12 @@ struct NetworkGraphView: View {
         // Order siblings by type, then name, so chips read tidily at every level
         // of the tree (USB hub children, Bluetooth devices, displays).
         func byTypeThenName(_ a: AttachedDevice, _ b: AttachedDevice) -> Bool {
-            a.kind.label == b.kind.label
-                ? a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-                : a.kind.label < b.kind.label
+            if a.kind.label != b.kind.label { return a.kind.label < b.kind.label }
+            switch a.name.localizedCaseInsensitiveCompare(b.name) {
+            case .orderedAscending:  return true
+            case .orderedDescending: return false
+            case .orderedSame:       return a.id < b.id   // stable tiebreak (e.g. two identical joysticks)
+            }
         }
         childrenOf = childrenOf.mapValues { $0.sorted(by: byTypeThenName) }
         rootsByPort = rootsByPort.mapValues { $0.sorted(by: byTypeThenName) }
@@ -640,7 +643,8 @@ struct NetworkGraphView: View {
 
         for (recep, roots) in f.rootsByPort {
             guard let base = hw[recep], let region = slots[recep] else { continue }
-            let sorted = roots.sorted { $0.id < $1.id }
+            // Already ordered by type-then-name in deviceForest; keep that order.
+            let sorted = roots
             let leaves = max(sorted.map { leafCount($0, f.childrenOf) }.reduce(0, +), 1)
             let usable = max(region.width - pad * 2, 1)
             let slot = usable / CGFloat(leaves)
@@ -655,7 +659,7 @@ struct NetworkGraphView: View {
             // pathological registry (parentID is structurally acyclic, but still).
             func place(_ d: AttachedDevice, _ depth: Int) -> CGFloat {
                 let y = topY + CGFloat(min(depth, 24)) * deviceRowGap
-                let kids = depth < 24 ? (f.childrenOf[d.id] ?? []).sorted { $0.id < $1.id } : []
+                let kids = depth < 24 ? (f.childrenOf[d.id] ?? []) : []   // forest order (type, then name)
                 if kids.isEmpty {
                     let x = cursor + slot / 2
                     cursor += slot
