@@ -82,6 +82,8 @@ private struct ConnLine: Identifiable {
     var emphasized: Bool = false   // always-visible link (e.g. iPhone ↔ its port)
     var style: LinkStyle = .data
     var dominant: Bool = false     // part of the primary path most packets take
+    var ifaceID: String? = nil     // interface this wire carries (rate + link hover)
+    var showRate: Bool = false     // draw the throughput number on this wire
 }
 
 /// How a connector reads:
@@ -119,6 +121,7 @@ enum HoverTarget: Equatable {
     case port(Int)
     case gateway(String)
     case device(String)
+    case link(String)   // a connection wire, identified by the interface it carries
 }
 
 /// Reports the rendered size of the tooltip so it can be clamped on-screen.
@@ -148,6 +151,14 @@ struct NetworkGraphView: View {
     @State private var shownTarget: HoverTarget?
     @State private var hoverTask: Task<Void, Never>?
     @State private var tipSize: CGSize = .zero
+    // Pointer location captured when a wire hover begins — a link tooltip anchors
+    // here (right at the cursor) rather than to one of the interface's several
+    // wires, which could be elsewhere on the graph.
+    @State private var linkHoverPoint: CGPoint = .zero
+    // Memo of the last wire hit-test: buildLines() is relatively expensive, so we
+    // reuse the result while the pointer hasn't moved far enough to change it.
+    @State private var lastWireProbePoint: CGPoint?
+    @State private var lastWireProbeTarget: HoverTarget?
 
     private let dashTimer = Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()
 
@@ -726,7 +737,12 @@ struct NetworkGraphView: View {
                 switch phase {
                 case .active(let p):
                     let t = targetAt(p)
-                    if t != pendingTarget { pendingTarget = t; scheduleHover(t) }
+                    if t != pendingTarget {
+                        // Anchor a link tooltip at the entry point (no per-move
+                        // state churn while sliding along the same wire).
+                        if case .link = t { linkHoverPoint = p }
+                        pendingTarget = t; scheduleHover(t)
+                    }
                 case .ended:
                     pendingTarget = nil; scheduleHover(nil)
                 }
@@ -777,6 +793,7 @@ struct NetworkGraphView: View {
         case .gateway: return 260
         case .port:    return 230
         case .device:  return 232
+        case .link:    return 230
         }
     }
 
@@ -821,6 +838,10 @@ struct NetworkGraphView: View {
             if let d = attachedDevices.first(where: { $0.id == id }) {
                 DeviceTooltip(device: d, portLabel: portLabel(d.receptacle))
             }
+        case .link(let id):
+            if let i = interfaces.first(where: { $0.id == id }) {
+                LinkTooltip(iface: i, traffic: trafficStates[id])
+            }
         case .none:
             EmptyView()
         }
@@ -847,7 +868,39 @@ struct NetworkGraphView: View {
         for iface in visible {
             if let c = ifacePositions[iface.id], hitRect(c, 100, 90).contains(p) { return .iface(iface.id) }
         }
-        return nil
+        // No node under the pointer → hit-test the connection wires (only those
+        // tied to an interface). buildLines() is relatively expensive, so reuse the
+        // last probe while the pointer hasn't moved far (the result won't change).
+        if let lp = lastWireProbePoint, hypot(p.x - lp.x, p.y - lp.y) < 3 {
+            return lastWireProbeTarget
+        }
+        // Pick the closest wire within a forgiving band so a thin curve is grabbable.
+        var best: (id: String, d: CGFloat)?
+        for line in buildLines() {
+            guard let id = line.ifaceID else { continue }
+            let d = distanceToCurve(p, line.from, curveControl(line), line.to)
+            if d <= 16, best == nil || d < best!.d { best = (id, d) }
+        }
+        let result: HoverTarget? = best.map { .link($0.id) }
+        lastWireProbePoint = p
+        lastWireProbeTarget = result
+        return result
+    }
+
+    /// Min distance from `p` to a quadratic Bézier, by sampling points along it.
+    private func distanceToCurve(_ p: CGPoint, _ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGFloat {
+        var best = CGFloat.greatestFiniteMagnitude
+        // Scale samples to length so spacing stays well under the hit threshold —
+        // a fixed count leaves dead gaps between samples on long (400–600px) wires.
+        let steps = max(12, Int(hypot(b.x - a.x, b.y - a.y) / 6))
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let mt = 1 - t
+            let x = mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x
+            let y = mt * mt * a.y + 2 * mt * t * c.y + t * t * b.y
+            best = min(best, hypot(p.x - x, p.y - y))
+        }
+        return best
     }
 
     private func hitRect(_ c: CGPoint, _ w: CGFloat, _ h: CGFloat) -> CGRect {
@@ -871,6 +924,10 @@ struct NetworkGraphView: View {
         case .port(let id):    return hwPortPositions[id]
         case .gateway(let id): return gatewayPositions[id]
         case .device(let id):  return devicePositions[id]
+        case .link:
+            // Right at the pointer, so the tooltip is always next to the wire the
+            // user is actually pointing at (an interface can own several wires).
+            return linkHoverPoint
         }
     }
 
@@ -880,6 +937,7 @@ struct NetworkGraphView: View {
         case .port:    return CGSize(width: 84, height: 62)
         case .gateway: return CGSize(width: 100, height: 76)
         case .device:  return CGSize(width: 74, height: 52)
+        case .link:    return CGSize(width: 24, height: 24)
         }
     }
 
@@ -965,13 +1023,31 @@ struct NetworkGraphView: View {
 
     // MARK: - Thunderbolt port brackets
 
+    /// All interface tiles sitting on a port's physical receptacle: its own child
+    /// interfaces (TB-bridge members, iPhone channels) PLUS any device-provided
+    /// interface (e.g. a dock's USB-Ethernet) attached to the same receptacle.
+    /// Mirrors the `byReceptacle` grouping in `anchoredPhysicalLayout`, so the
+    /// bracket spans every tile that layout placed under this port.
+    private func receptacleBSDs(_ port: HardwarePort) -> [String] {
+        var ids = Set(port.childBSDNames)
+        for dev in attachedDevices where dev.receptacle == port.id {
+            if let bsd = dev.interfaceBSD { ids.insert(bsd) }
+        }
+        return Array(ids)
+    }
+
     @ViewBuilder
     private func tbBrackets(h: CGFloat) -> some View {
         let physBand = bandRect("Physical")
         let bracketY = physBand.minY + 26
         ForEach(hardwarePorts) { port in
-            let xs = port.childBSDNames.compactMap { ifacePositions[$0]?.x }
-            if !xs.isEmpty {
+            let pts = receptacleBSDs(port).compactMap { ifacePositions[$0] }
+            // Span only the top-row tiles. In a narrow window spreadAnchored can
+            // wrap a receptacle's tiles to a lower lane; the bracket sits at the
+            // band top, so spanning a wrapped tile's x would float misleadingly
+            // above it. In the common single-row case all tiles share this row.
+            if let topY = pts.map({ $0.y }).min() {
+                let xs = pts.filter { abs($0.y - topY) < 1 }.map { $0.x }
                 let minX = (xs.min() ?? 0) - 46
                 let maxX = (xs.max() ?? 0) + 46
                 let midX = (minX + maxX) / 2
@@ -1035,7 +1111,14 @@ struct NetworkGraphView: View {
                     radius: line.dominant ? 13 : 0)
             .animation(.easeInOut(duration: 0.35), value: active)
 
-            if !line.label.isEmpty {
+            // Throughput on this wire, if it carries a single interface's flow and
+            // that interface is moving data above the noise floor.
+            let rate = (line.showRate ? line.ifaceID : nil)
+                .flatMap { trafficStates[$0] }.flatMap(wireRateLabel)
+
+            // The small static label ("L2"/"L3"/"VLAN"/…) — suppressed when a live
+            // rate number is showing on the same wire so the two don't collide.
+            if !line.label.isEmpty, rate == nil {
                 Text(line.label)
                     .font(.system(size: 7.5))
                     .foregroundColor(active ? line.color.opacity(0.55)
@@ -1043,7 +1126,33 @@ struct NetworkGraphView: View {
                     .position(x: ctrl.x, y: ctrl.y - 7)
                     .animation(.easeInOut(duration: 0.35), value: active)
             }
+
+            if let rate {
+                Text(rate)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(line.color.opacity(0.95))
+                    .padding(.horizontal, 3).padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.black.opacity(0.5)))
+                    .fixedSize()
+                    .position(curveMidpoint(line.from, ctrl, line.to))
+                    .allowsHitTesting(false)
+            }
         }
+    }
+
+    /// Compact "↓12.3M  ↑1.1M" for the wire — only the directions above the floor.
+    private func wireRateLabel(_ st: TrafficState) -> String? {
+        var parts: [String] = []
+        if let d = formatRateShort(st.rxRate) { parts.append("↓\(d)") }
+        if let u = formatRateShort(st.txRate) { parts.append("↑\(u)") }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ")
+    }
+
+    /// Point on a quadratic Bézier at t = 0.5 — the visual middle of the wire.
+    private func curveMidpoint(_ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGPoint {
+        CGPoint(x: 0.25 * a.x + 0.5 * c.x + 0.25 * b.x,
+                y: 0.25 * a.y + 0.5 * c.y + 0.25 * b.y)
     }
 
     /// Control point for a connector's quadratic curve, bowed perpendicular to the
@@ -1095,7 +1204,8 @@ struct NetworkGraphView: View {
                     lines.append(ConnLine(from: ifaceP, to: portP, label: "",
                         color: isDevice ? .green : Color(white: 0.55),
                         hasTraffic: hasTraffic(bsd),
-                        emphasized: isDevice, style: .link, dominant: bsd == domIface))
+                        emphasized: isDevice, style: .link, dominant: bsd == domIface,
+                        ifaceID: bsd, showRate: true))
                 }
             }
         }
@@ -1120,7 +1230,8 @@ struct NetworkGraphView: View {
                 // interface → device chip, so the ant-crawl flows OUTBOUND (up).
                 lines.append(ConnLine(from: ifaceP, to: chip, label: "",
                     color: .green, hasTraffic: hasTraffic(bsd), emphasized: true,
-                    style: .link, dominant: bsd == domIface))
+                    style: .link, dominant: bsd == domIface,
+                    ifaceID: bsd, showRate: true))
             }
         }
 
@@ -1144,7 +1255,8 @@ struct NetworkGraphView: View {
             {
                 if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
                     lines.append(ConnLine(from: f, to: t, label: "L2",
-                        color: .purple, hasTraffic: hasTraffic(member.id)))
+                        color: .purple, hasTraffic: hasTraffic(member.id),
+                        ifaceID: member.id))
                 }
             }
         }
@@ -1154,7 +1266,8 @@ struct NetworkGraphView: View {
             if let parent = visible.first(where: { $0.category == .ethernet || $0.category == .bridge }),
                let f = ifacePositions[iface.id], let t = ifacePositions[parent.id] {
                 lines.append(ConnLine(from: f, to: t, label: "VLAN",
-                    color: .purple, hasTraffic: hasTraffic(iface.id)))
+                    color: .purple, hasTraffic: hasTraffic(iface.id),
+                    ifaceID: iface.id))
             }
         }
 
@@ -1167,7 +1280,8 @@ struct NetworkGraphView: View {
             for tun in visible where tun.category == .tunnel && tun.hasLink && !vpnTunnels.contains(tun.id) {
                 if let f = ifacePositions[tun.id] {
                     lines.append(ConnLine(from: f, to: cPos, label: "L3",
-                        color: .orange, hasTraffic: hasTraffic(tun.id)))
+                        color: .orange, hasTraffic: hasTraffic(tun.id),
+                        ifaceID: tun.id, showRate: true))
                 }
             }
         }
@@ -1193,7 +1307,8 @@ struct NetworkGraphView: View {
                     color: gw.isVPN ? .blue : (primary ? .orange : Color(white: 0.4)),
                     hasTraffic: hasTraffic(ifn),
                     emphasized: primary && (gw.isVPN || gw.isDefault),
-                    dominant: primary && (gw.id == domGwID || gw.id == domVpnID)))
+                    dominant: primary && (gw.id == domGwID || gw.id == domVpnID),
+                    ifaceID: ifn.isEmpty ? nil : ifn))
             }
         }
 
@@ -1201,7 +1316,8 @@ struct NetworkGraphView: View {
         if let wifi = wifiUplink, let wp = hwPortPositions[-1], let ifP = ifacePositions[wifi] {
             lines.append(ConnLine(from: ifP, to: wp, label: "",
                 color: Color(white: 0.55), hasTraffic: hasTraffic(wifi),
-                style: .link, dominant: wifi == domIface))
+                style: .link, dominant: wifi == domIface,
+                ifaceID: wifi, showRate: true))
         }
 
         // Each default gateway chip → the Internet node at the top.
@@ -1210,7 +1326,7 @@ struct NetworkGraphView: View {
                 if let gp = gatewayPositions[gw.id] {
                     lines.append(ConnLine(from: gp, to: ep, label: "",
                         color: .teal, hasTraffic: gatewayActive(gw), emphasized: true,
-                        dominant: gw.id == domGwID))
+                        dominant: gw.id == domGwID, ifaceID: gw.reachableVia.first))
                 }
             }
         }
@@ -1221,7 +1337,8 @@ struct NetworkGraphView: View {
            let vP = gatewayPositions[vpnGW.id],
            let dIface = domIface, let to = ifacePositions[dIface] {
             lines.append(ConnLine(from: vP, to: to, label: "egress",
-                color: .blue, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true))
+                color: .blue, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
+                ifaceID: dIface))
         }
 
         return lines

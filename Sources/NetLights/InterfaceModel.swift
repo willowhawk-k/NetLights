@@ -566,4 +566,43 @@ struct TrafficState {
     var txActive: Bool = false
     var lastRx: UInt64 = 0
     var lastTx: UInt64 = 0
+    // Smoothed throughput (bytes/sec) derived from rx/tx counter deltas. Drives
+    // the on-wire numbers and the link hover; an EMA keeps them from jittering.
+    var rxRate: Double = 0
+    var txRate: Double = 0
+}
+
+// MARK: - Throughput / byte formatting (shared)
+
+/// Below this many bytes/sec a link reads as idle — no number is shown.
+let trafficNoiseFloor: Double = 1024
+
+/// Full throughput label, e.g. "12.3 MB/s". Returns nil below the noise floor.
+func formatRate(_ bytesPerSec: Double) -> String? {
+    guard bytesPerSec >= trafficNoiseFloor else { return nil }
+    let kb = bytesPerSec / 1024
+    if kb < 1024 { return String(format: "%.0f KB/s", kb) }
+    let mb = kb / 1024
+    if mb < 1024 { return String(format: mb < 10 ? "%.1f MB/s" : "%.0f MB/s", mb) }
+    return String(format: "%.2f GB/s", mb / 1024)
+}
+
+/// Compact throughput for drawing on the wire, e.g. "12.3M", "850K". nil if idle.
+func formatRateShort(_ bytesPerSec: Double) -> String? {
+    guard bytesPerSec >= trafficNoiseFloor else { return nil }
+    let kb = bytesPerSec / 1024
+    if kb < 1024 { return String(format: "%.0fK", kb) }
+    let mb = kb / 1024
+    if mb < 1024 { return String(format: mb < 10 ? "%.1fM" : "%.0fM", mb) }
+    return String(format: "%.1fG", mb / 1024)
+}
+
+/// Cumulative byte total, e.g. "1.4 GB".
+func formatByteCount(_ n: UInt64) -> String {
+    switch n {
+    case ..<1024:          return "\(n) B"
+    case ..<1_048_576:     return String(format: "%.1f KB", Double(n) / 1024)
+    case ..<1_073_741_824: return String(format: "%.1f MB", Double(n) / 1_048_576)
+    default:               return String(format: "%.2f GB", Double(n) / 1_073_741_824)
+    }
 }

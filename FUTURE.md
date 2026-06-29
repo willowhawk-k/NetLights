@@ -13,6 +13,10 @@ Backlog for NetLights — not committed work, just where we're headed.
   power direction (MagSafe 3 is electrically USB-C PD; both report `Description="pd charger"`,
   `FamilyCode=0xE000000A`). Identified Apple adapters do expose `Name`/`Watts`, which we show.
 - **Mac App Store submission** (1.4.2, build 8) — sandboxed build submitted; see `APPSTORE.md`.
+- **Up/down traffic rate on links** — per-interface throughput (from 64-bit `if_data64`
+  rx/tx deltas, EMA-smoothed) drawn as `↓/↑` numbers on the wires, plus a link hover
+  (negotiated link speed, live Down/Up, session totals). Switched the interface walk to
+  `NET_RT_IFLIST2` so 4 GiB counter wrap and the ~4.3 Gbps baudrate cap are gone.
 
 ## Backlog
 
@@ -31,10 +35,6 @@ mapping to the HDMI **port** and reading eARC/CEC capabilities is likely not exp
 Distinct from the system battery/charging already shipped: show each **USB peripheral's**
 power draw (`bMaxPower` / negotiated current from the USB descriptor, via IOKit) and each
 **Bluetooth device's** battery level (where reported) in the hover tooltips.
-
-### Up/down traffic rate on links
-We already sample per-interface `rx/tx` byte counters. Compute and show per-link throughput
-(e.g. `↓ 12.3 / ↑ 1.1 MB/s`) on the connection lines and/or hover. Very feasible.
 
 ### Per-app traffic attribution (stretch)
 Identify which apps are sending/receiving on a link, ideally with their icons. HARD:

@@ -35,6 +35,12 @@ final class NetworkMonitor: ObservableObject {
     private var pollTimer: Timer?
     private var trafficClearTimers: [String: Timer] = [:]
     private var previousBytes: [String: (rx: UInt64, tx: UInt64)] = [:]
+    // Monotonic timestamp (seconds) of the last byte-counter sample, used to turn
+    // rx/tx deltas into a per-second throughput rate. Uses a sleep-INCLUSIVE clock
+    // (CLOCK_MONOTONIC_RAW) so a post-sleep gap reads as a large dt and is skipped,
+    // rather than the awake-only systemUptime which freezes during sleep and would
+    // divide a sleep-sized byte delta by a tiny dt (a false spike).
+    private var lastTrafficSample: Double = 0
     private let locationAuth = LocationAuth()
 
     func start() {
@@ -150,6 +156,13 @@ final class NetworkMonitor: ObservableObject {
     // MARK: - Traffic LED logic
 
     private func updateTrafficStates(newInterfaces: [InterfaceInfo]) {
+        let now = Double(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) / 1_000_000_000
+        let dt = lastTrafficSample > 0 ? now - lastTrafficSample : 0
+        lastTrafficSample = now
+        // EMA weight: blends each sample with the previous rate so the on-wire
+        // number tracks real throughput without flickering between polls.
+        let alpha = 0.5
+
         for iface in newInterfaces {
             let prev = previousBytes[iface.id]
             var state = trafficStates[iface.id] ?? TrafficState()
@@ -162,6 +175,20 @@ final class NetworkMonitor: ObservableObject {
                 if iface.txBytes > prev.tx {
                     state.txActive = true
                     scheduleTrafficClear(name: iface.id)
+                }
+                // Only compute a rate over a sane window. Too short (an off-cadence
+                // manual Refresh landing just after a timer tick) would project a
+                // sub-second burst to a per-second figure; too long (first sample
+                // after sleep/wake — systemUptime is frozen while asleep — or a
+                // stalled timer) would divide a large byte delta by a tiny dt and
+                // spike. Either way we skip the rate this sample; previousBytes is
+                // still re-baselined below, so the next normal tick recomputes clean.
+                if dt > 0.4 && dt < 5 {
+                    // Guard against counter resets (interface re-added) and wraps.
+                    let dRx = iface.rxBytes >= prev.rx ? Double(iface.rxBytes - prev.rx) : 0
+                    let dTx = iface.txBytes >= prev.tx ? Double(iface.txBytes - prev.tx) : 0
+                    state.rxRate = state.rxRate * (1 - alpha) + (dRx / dt) * alpha
+                    state.txRate = state.txRate * (1 - alpha) + (dTx / dt) * alpha
                 }
             }
             state.lastRx = iface.rxBytes
@@ -279,7 +306,11 @@ final class NetworkMonitor: ObservableObject {
     // MARK: - sysctl enrichment (link state, speed, rx/tx bytes)
 
     private static func enrichWithSysctl(interfaces: inout [String: InterfaceInfo]) {
-        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST, 0]
+        // NET_RT_IFLIST2 yields if_msghdr2 / if_data64 — 64-bit rx/tx byte counters
+        // (the 32-bit if_data counters wrap every 4 GiB and would under-report the
+        // on-wire throughput during fast transfers) and a 64-bit baudrate (the 32-bit
+        // one caps link speed at ~4.3 Gbps). Same source netstat -b uses.
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
         var len = 0
         guard sysctl(&mib, 6, nil, &len, nil, 0) == 0 else { return }
         var buf = [UInt8](repeating: 0, count: len)
@@ -299,12 +330,13 @@ final class NetworkMonitor: ObservableObject {
                 raw.loadUnaligned(fromByteOffset: offset, as: if_msghdr.self).ifm_type
             }
 
-            if msgtype == UInt8(RTM_IFINFO) {
-                let hdr: if_msghdr = buf.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: if_msghdr.self) }
-                let data = hdr.ifm_data
+            if msgtype == UInt8(RTM_IFINFO2) {
+                guard remaining >= MemoryLayout<if_msghdr2>.size else { offset += msglen; continue }
+                let hdr: if_msghdr2 = buf.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: if_msghdr2.self) }
+                let data = hdr.ifm_data   // if_data64: 64-bit ibytes/obytes/baudrate
 
                 // Get interface name from the sockaddr_dl that follows the header
-                let sdlOffset = offset + MemoryLayout<if_msghdr>.size
+                let sdlOffset = offset + MemoryLayout<if_msghdr2>.size
                 if sdlOffset + MemoryLayout<sockaddr_dl>.size <= len {
                     let sdl: sockaddr_dl = buf.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sdlOffset, as: sockaddr_dl.self) }
                     let nameLen = Int(sdl.sdl_nlen)
@@ -317,7 +349,6 @@ final class NetworkMonitor: ObservableObject {
                             interfaces[name]?.rxBytes = UInt64(data.ifi_ibytes)
                             interfaces[name]?.txBytes = UInt64(data.ifi_obytes)
                             interfaces[name]?.mtu = Int(data.ifi_mtu)
-                            // Swift binds if_data.ifi_baudrate as UInt32 (covers up to ~4.3 Gbps).
                             let baud = UInt64(data.ifi_baudrate)
                             interfaces[name]?.linkSpeedBps = baud > 0 ? baud : nil
 

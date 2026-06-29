@@ -84,6 +84,46 @@ struct DeviceTooltip: View {
     }
 }
 
+/// Hover detail for a connection wire: what link it is, its negotiated speed,
+/// live throughput in each direction, and the session byte totals.
+struct LinkTooltip: View {
+    let iface: InterfaceInfo
+    let traffic: TrafficState?
+
+    private var roleLabel: String {
+        // "Wi-Fi link", "Thunderbolt 1 link", "VPN Tunnel link", etc.
+        let base = iface.displayName ?? iface.subtitleLabel
+        return "\(base) link"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(iface.id).font(.system(.headline, design: .monospaced))
+            Text(roleLabel).font(.system(size: 9)).foregroundColor(.secondary)
+            Divider()
+            row("Link speed", iface.formattedSpeed ?? "—")
+            row("Down", traffic.flatMap { formatRate($0.rxRate) } ?? "idle")
+            row("Up", traffic.flatMap { formatRate($0.txRate) } ?? "idle")
+            Divider()
+            row("Total ↓", formatByteCount(iface.rxBytes))
+            row("Total ↑", formatByteCount(iface.txBytes))
+        }
+        .frame(width: 210, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial)
+            .shadow(color: .black.opacity(0.3), radius: 8))
+    }
+
+    @ViewBuilder private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(label + ": ").font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary).frame(width: 80, alignment: .leading)
+            Text(value).font(.system(size: 11, weight: .medium, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct GatewayTooltip: View {
     let gateway: GatewayNode
     let routes: [RouteEntry]
