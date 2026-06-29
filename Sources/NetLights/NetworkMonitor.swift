@@ -19,6 +19,14 @@ final class NetworkMonitor: ObservableObject {
     /// be read). Gating on actual authorization — not a nil SSID — avoids enabling
     /// the item on Ethernet-only / Wi-Fi-off Macs where Location was never the issue.
     @Published var locationHelpAvailable: Bool = false
+    /// Whether the "Check Bluetooth Permission" menu item is actionable: the feature
+    /// is active (usage string present) but no Bluetooth devices are showing yet —
+    /// so the user may need to grant access (or nothing's connected). Greyed once
+    /// devices appear, since access is then clearly working. (Derived from the
+    /// @Published attachedDevices, so the menu updates as devices come and go.)
+    var bluetoothHelpAvailable: Bool {
+        BluetoothProbe.available && !attachedDevices.contains { $0.receptacle == -4 }
+    }
     /// System AC/charging state (NOT per-port). nil on battery-less Macs.
     @Published var systemPower: SystemPower?
     @Published var serviceRank: [String: Int] = [:]   // interface → macOS service-order rank

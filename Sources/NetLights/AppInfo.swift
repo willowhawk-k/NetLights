@@ -28,6 +28,9 @@ enum AppInfo {
     /// Deep link to System Settings ▸ Privacy & Security ▸ Location Services.
     static let locationSettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
 
+    /// Deep link to System Settings ▸ Privacy & Security ▸ Bluetooth.
+    static let bluetoothSettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth"
+
     static var versionString: String {
         "Version \(version) (\(build))" + (releaseDate.isEmpty ? "" : " · \(releaseDate)")
     }

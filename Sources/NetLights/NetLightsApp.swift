@@ -20,6 +20,7 @@ struct NetLightsApp: App {
             CommandGroup(replacing: .help) {
                 HelpMenuButton()
                 LocationHelpMenuButton(monitor: monitor)
+                BluetoothHelpMenuButton(monitor: monitor)
                 Divider()
                 Button(AppInfo.sponsorTitle) {
                     if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
@@ -62,11 +63,25 @@ private struct HelpMenuButton: View {
 private struct LocationHelpMenuButton: View {
     @ObservedObject var monitor: NetworkMonitor
     var body: some View {
-        Button("Check Location Privacy Settings…") {
+        Button("Check Location Permission (Wi-Fi names)…") {
             if let url = URL(string: AppInfo.locationSettingsURL) { NSWorkspace.shared.open(url) }
         }
         .disabled(!monitor.locationHelpAvailable)
         .help("Needed only to show the Wi-Fi network name (SSID).")
+    }
+}
+
+/// Opens System Settings ▸ Privacy & Security ▸ Bluetooth, for users who declined
+/// Bluetooth and later want connected devices enumerated. Greyed out once Bluetooth
+/// devices are showing (access already working).
+private struct BluetoothHelpMenuButton: View {
+    @ObservedObject var monitor: NetworkMonitor
+    var body: some View {
+        Button("Check Bluetooth Permission (device list)…") {
+            if let url = URL(string: AppInfo.bluetoothSettingsURL) { NSWorkspace.shared.open(url) }
+        }
+        .disabled(!monitor.bluetoothHelpAvailable)
+        .help("Needed only to list connected Bluetooth devices.")
     }
 }
 
