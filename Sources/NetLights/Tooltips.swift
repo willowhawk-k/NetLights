@@ -49,6 +49,7 @@ struct DeviceTooltip: View {
     let portLabel: String?
 
     private var isDisplay: Bool { device.connection == "Display" }
+    private var isBluetooth: Bool { device.connection == "Bluetooth" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -58,6 +59,10 @@ struct DeviceTooltip: View {
             if let mfr = device.vendorName { row("Maker", mfr) }
             if isDisplay {
                 if let res = device.detail { row("Mode", res) }
+            } else if isBluetooth {
+                row("Link", "Bluetooth")
+                if let batt = device.batteryLabel { row("Battery", batt) }
+                if let addr = device.serial { row("Address", addr) }
             } else {
                 row("Bus", device.connectionLabel)
                 if device.speedLabel != "—" { row("Speed", device.speedLabel) }

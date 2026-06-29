@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.5-orange)
+![version](https://img.shields.io/badge/version-1.6-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
@@ -74,7 +74,7 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 
 | Band | OSI | Contents |
 |------|-----|----------|
-| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, the Wi-Fi network entity, a Displays entity, plus attached devices (iPhone, MiFi, dongles) — hubs/docks expand into a tree. Position labels come from a per-model layout table. |
+| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, the Wi-Fi network entity, a Displays entity, a Bluetooth entity, plus attached devices (iPhone, MiFi, dongles) — hubs/docks expand into a tree. Position labels come from a per-model layout table. |
 | **Physical** | L1 | Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (`en1`–`en3`), USB Ethernet, and app/VM virtual adapters. TB & iPhone interfaces sit under their hardware port. |
 | **Data Link** | L2 | Bridges and VLANs (e.g. `bridge0`, the Thunderbolt Bridge), centered over their members. |
 | **Virtual** | L3+ | Software-defined interfaces: VPN/`utun` tunnels, loopback, AWDL (AirDrop), Continuity, system interfaces. |
@@ -151,6 +151,22 @@ the display data carries no connection type. There's no permission that unlocks
 this (unlike the Wi-Fi SSID, which Location access does gate), so NetLights lists
 displays instead of guessing a wrong port.
 
+### Bluetooth devices
+Connected Bluetooth devices are grouped under a **Bluetooth** entity in the Hardware
+row ("Bluetooth is a kind of network"), each shown with its type and — for input
+devices (mice, keyboards, trackpads) — its **battery %**.
+
+macOS gates the Bluetooth device list behind a privacy permission, so NetLights asks
+for **Bluetooth access** (the same opt-in model as the Wi-Fi SSID's Location prompt).
+Decline and the Bluetooth entity simply doesn't appear; the prompt only shows in the
+packaged app, not under `swift run`. The access is **read-only** — NetLights lists
+already-connected devices and never scans, pairs, or connects.
+
+> **Audio-device battery** (AirPods, headphones, speakers) is **not shown**: macOS
+> keeps it in the Bluetooth daemon, reachable only via the `system_profiler`
+> subprocess NetLights dropped for sandbox compatibility. Input-device battery comes
+> from the IORegistry, which is readable in-process.
+
 ### Gateways & the Internet
 - The **Internet** node sits in the top row; every default gateway links up to it.
 - **GW #1, #2, … (orange)** — default-route gateways, each pinned in a tier above
@@ -181,6 +197,8 @@ configuration.
 | External displays | CoreGraphics `CGGetActiveDisplayList` |
 | System charging (AC / wattage) | IOKit `AppleSmartBattery` (system-level, not per-port) |
 | Wi-Fi link speed | CoreWLAN negotiated transmit rate |
+| Connected Bluetooth devices | `IOBluetooth` paired-device list (needs Bluetooth permission) |
+| Bluetooth HID battery | IOKit registry `BatteryPercent` (HID devices only; no audio battery) |
 
 > **All in-process** as of 1.4 — no `system_profiler`/`ioreg` subprocesses — so NetLights runs under the App Sandbox. See [`APPSTORE.md`](APPSTORE.md).
 
@@ -208,6 +226,13 @@ configuration.
   uplink**. No location coordinates are ever read, stored, or shared; declining is
   fine (the uplink just shows "Wi-Fi"). The prompt only appears in the packaged
   app, not under `swift run`.
+- **Bluetooth devices (permission)** — macOS gates the connected-device list behind
+  Bluetooth access, so NetLights requests it **solely to list already-connected
+  devices** (it never scans/pairs/connects). Decline and the Bluetooth entity just
+  doesn't appear; like the SSID prompt, it only shows in the packaged app.
+- **Bluetooth audio battery** — input-device battery is read from the IORegistry, but
+  AirPods/headphone/speaker battery lives in the Bluetooth daemon (no in-process API),
+  so it isn't shown.
 
 ---
 
@@ -221,12 +246,13 @@ Sources/NetLights/
 ├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices
 ├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/CoreWLAN/CoreGraphics, in-process)
 ├── IOKitProbe.swift          # Low-level IOKit/CoreGraphics probes (USB tree, TB, displays, power)
+├── BluetoothProbe.swift      # IOBluetooth connected-device list (TCC-gated, optional)
 ├── InterfaceModel.swift      # Data models + per-Mac port layout table
 ├── NetworkGraphView.swift    # The layered graph: band sizing, tidy-tree layout, lines
 ├── InterfaceNodeView.swift   # Interface node + tooltip
 ├── HardwarePortNodeView.swift# Hardware port / iPhone node
 ├── DeviceNodeView.swift      # USB / display device chip
-├── WifiEntityView.swift / VideoEntityView.swift  # Wi-Fi + Displays hardware-row entities
+├── WifiEntityView / VideoEntityView / BluetoothEntityView / BatteryEntityView  # Hardware-row entities
 ├── GatewayNodeView.swift     # Gateway node + tooltip
 ├── Tooltips.swift            # Central hover tooltips (port / device / gateway / link)
 ├── AppIconView.swift         # SwiftUI app icon (also rasterized for the dock)

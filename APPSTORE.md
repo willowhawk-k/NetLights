@@ -35,12 +35,17 @@ Verified against `ioreg`/`system_profiler` ground truth on real hardware:
 | `com.apple.security.app-sandbox` | Mandatory for the Mac App Store |
 | `com.apple.security.network.client` | CoreWLAN / interface reads under sandbox |
 | `com.apple.security.personal-information.location` | Unlocks the Wi-Fi SSID (CoreWLAN gates it behind Location) |
+| `com.apple.security.device.bluetooth` | Read the connected-Bluetooth-device list (IOBluetooth) under sandbox |
 
 `com.apple.security.device.usb` is intentionally **omitted** — it only gates opening
 USB *user clients*; NetLights merely reads IORegistry properties, which the sandbox
 allows without it (verified empirically).
 
-`Info.plist` already carries `NSLocationWhenInUseUsageDescription`.
+`Info.plist` carries `NSLocationWhenInUseUsageDescription` and
+`NSBluetoothAlwaysUsageDescription`. The Bluetooth string is **mandatory** even for
+the Dev-ID build: touching any IOBluetooth API without it triggers an immediate TCC
+privacy crash. `BluetoothProbe` only calls IOBluetooth when the string is present, so
+`swift run` (no Info.plist key) safely runs with the feature off.
 
 ## Versioning (single source of truth)
 
@@ -75,13 +80,16 @@ compiles the *same* `Sources/NetLights/*.swift` (no copies → one codebase).
 6. **General** → Minimum Deployments → macOS **13.0**.
 7. **Signing & Capabilities** → Team = yours, "Automatically manage signing" ✓,
    Bundle Identifier `com.willowhawk.netlights`. Click **+ Capability → App Sandbox**,
-   then check **Network ▸ Outgoing Connections (Client)** and **App Data ▸ Location**
-   (this matches `NetLights.entitlements`).
+   then check **Network ▸ Outgoing Connections (Client)**, **App Data ▸ Location**, and
+   **Hardware ▸ Bluetooth** (this matches `NetLights.entitlements`).
 8. **Info** tab → add **Privacy – Location When In Use Usage Description** =
    *"NetLights uses your location only to read the current Wi-Fi network name (SSID),
    which macOS protects behind location access. No location coordinates are read,
-   stored, or shared."* → set **Application Category** = Utilities → (optional) add a
-   row `NLReleaseDate` = `$(NL_RELEASE_DATE)`.
+   stored, or shared."* → add **Privacy – Bluetooth Always Usage Description** =
+   *"NetLights uses Bluetooth only to list your already-connected Bluetooth devices
+   (name, type, and battery where reported) in the graph. It never scans for, pairs
+   with, or connects to anything."* → set **Application Category** = Utilities →
+   (optional) add a row `NLReleaseDate` = `$(NL_RELEASE_DATE)`.
 
 **C. Version single-source-of-truth**
 9. Drag `~/Source/NetLights/Version.xcconfig` into the project navigator (uncheck Copy).
@@ -126,9 +134,9 @@ Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
 > OSI-style bands, from the physical chassis ports at the top down to virtual tunnels
 > at the bottom, with small LEDs showing live link and traffic.
 >
-> • See the whole picture: ports, the Wi-Fi network, external displays, and attached
-> devices (iPhone/iPad, hubs, docks, drives, keyboards) — with USB hubs expanded into
-> a tidy tree.
+> • See the whole picture: ports, the Wi-Fi network, external displays, connected
+> Bluetooth devices, and attached devices (iPhone/iPad, hubs, docks, drives, keyboards)
+> — with USB hubs expanded into a tidy tree.
 > • Follow your traffic: live up/down throughput is drawn right on the links, default
 > gateways are ranked by precedence so you can see which uplink actually carries your
 > packets, and VPN tunnels show where they egress.
@@ -159,6 +167,9 @@ In App Store Connect → App Privacy:
   is **not** declared as collected data. If App Review asks, the answer is: Location
   is requested solely to read the current Wi-Fi network name for the uplink label; no
   coordinates are read, stored, or transmitted (see the usage string + `PRIVACY.md`).
+- Bluetooth is used **on-device only** to list already-connected devices (name, type,
+  input-device battery) — *not* collected, *not* declared as collected data. NetLights
+  never scans, pairs, or connects; it only reads the existing connected-device list.
 
 ## Screenshots
 

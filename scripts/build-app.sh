@@ -74,6 +74,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSApplicationCategoryType</key> <string>public.app-category.utilities</string>
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>NetLights uses your location only to read the current Wi-Fi network name (SSID), which macOS protects behind location access. No location coordinates are read, stored, or shared.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>NetLights uses Bluetooth only to list your already-connected Bluetooth devices (name, type, and battery where reported) in the graph. It never scans for, pairs with, or connects to anything.</string>
 </dict>
 </plist>
 PLIST

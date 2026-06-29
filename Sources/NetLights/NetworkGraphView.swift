@@ -299,6 +299,15 @@ struct NetworkGraphView: View {
                 rootsByPort[d.receptacle, default: []].append(d)
             }
         }
+        // Order siblings by type, then name, so chips read tidily at every level
+        // of the tree (USB hub children, Bluetooth devices, displays).
+        func byTypeThenName(_ a: AttachedDevice, _ b: AttachedDevice) -> Bool {
+            a.kind.label == b.kind.label
+                ? a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+                : a.kind.label < b.kind.label
+        }
+        childrenOf = childrenOf.mapValues { $0.sorted(by: byTypeThenName) }
+        rootsByPort = rootsByPort.mapValues { $0.sorted(by: byTypeThenName) }
         return (childrenOf, rootsByPort)
     }
 
@@ -532,6 +541,7 @@ struct NetworkGraphView: View {
 
     private var hasDisplays: Bool { attachedDevices.contains { $0.receptacle == -2 } }
     private var hasBattery: Bool { systemPower != nil }
+    private var hasBluetooth: Bool { attachedDevices.contains { $0.receptacle == -4 } }
 
     /// The ordered hardware-row slot ids (TB ports, iPhone = 0, Wi-Fi = -1,
     /// Displays = -2, Battery = -3). Deliberately free of band geometry so
@@ -539,7 +549,7 @@ struct NetworkGraphView: View {
     /// layout recursion cycle.
     private var hwPortOrder: [Int] {
         let hasWifi = wifiUplinkInterface != nil
-        guard !hardwarePorts.isEmpty || hasWifi || hasDisplays || hasBattery else { return [] }
+        guard !hardwarePorts.isEmpty || hasWifi || hasDisplays || hasBattery || hasBluetooth else { return [] }
 
         // Order the slots so the iPhone node sits immediately to the right of the
         // TB receptacle it's plugged into (making the "plugged into Port N" link
@@ -568,6 +578,8 @@ struct NetworkGraphView: View {
         }
         // The "Displays" entity (-2) groups external monitors at the far end.
         if hasDisplays { order.append(-2) }
+        // The "Bluetooth" entity (-4) groups connected BT devices.
+        if hasBluetooth { order.append(-4) }
         // The Battery entity (-3) — the Mac's own power, at the far end.
         if hasBattery { order.append(-3) }
         return order
@@ -686,6 +698,12 @@ struct NetworkGraphView: View {
                 if let dp = hwPortPositions[-2] {
                     VideoEntityView(count: attachedDevices.filter { $0.receptacle == -2 }.count)
                         .position(dp).zIndex(1)
+                }
+
+                // Bluetooth entity, if any devices are connected (permission granted).
+                if let btp = hwPortPositions[-4] {
+                    BluetoothEntityView(count: attachedDevices.filter { $0.receptacle == -4 }.count)
+                        .position(btp).zIndex(1)
                 }
 
                 // Battery entity (the Mac's own power), if this Mac has a battery.

@@ -110,8 +110,15 @@ final class NetworkMonitor: ObservableObject {
             // NSScreen names must be read on the main actor; capture them here and
             // hand them to the off-main IOKit/CoreGraphics port query.
             let displayNames = IOKitProbe.displayNames()
+            // IOBluetooth's classic API wants the main run loop and goes through
+            // bluetoothd over XPC, so refresh the connected-device list on a slower
+            // cadence (every 4th port query, ~21s) and reuse the cache in between —
+            // connection state changes rarely, and this keeps IPC off the hot path.
+            btRefreshTick += 1
+            if btRefreshTick % 4 == 1 { btDevicesCache = BluetoothProbe.connectedDevices() }
+            let bluetooth = btDevicesCache
             Task.detached(priority: .utility) {
-                let status = NetworkMonitor.queryPortStatus(displayNames: displayNames)
+                let status = NetworkMonitor.queryPortStatus(displayNames: displayNames, bluetooth: bluetooth)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     self.lastPortStatus = status
@@ -128,6 +135,9 @@ final class NetworkMonitor: ObservableObject {
 
     private var portQueryCounter = 0
     private var portQueryInFlight = false
+    // Bluetooth device list cache (refreshed less often than the port query; see refresh()).
+    private var btRefreshTick = 0
+    private var btDevicesCache: [BluetoothProbe.RawBT] = []
     private var lastPortStatus: PortStatus = PortStatus()
 
     struct PortStatus {
@@ -531,9 +541,11 @@ final class NetworkMonitor: ObservableObject {
     /// - The USB device tree (hubs, peripherals, network adapters)
     /// - USB-C power state, and external displays
     ///
-    /// `displayNames` (CGDirectDisplayID → NSScreen name) is gathered on the main
-    /// actor by the caller and passed in, since NSScreen is main-thread-only.
-    nonisolated static func queryPortStatus(displayNames: [UInt32: String]) -> PortStatus {
+    /// `displayNames` (CGDirectDisplayID → NSScreen name) and `bluetooth` (connected
+    /// devices) are gathered on the main actor by the caller and passed in, since
+    /// NSScreen and IOBluetooth's classic API are main-thread-affine.
+    nonisolated static func queryPortStatus(displayNames: [UInt32: String],
+                                            bluetooth: [BluetoothProbe.RawBT] = []) -> PortStatus {
         var status = PortStatus()
 
         // Build the IOService-plane registry tree ONCE (equivalent to `ioreg -a -l`);
@@ -565,6 +577,8 @@ final class NetworkMonitor: ObservableObject {
         // entity (receptacle -2): macOS exposes no port mapping for them.
         status.attachedDevices = scan.devices
             + buildDisplays(IOKitProbe.externalDisplays(), names: displayNames)
+            + buildBluetooth(bluetooth, battery: IOKitProbe.bluetoothHIDBattery(),
+                             hidUsage: IOKitProbe.hidGenericDesktopUsage())
 
         // System AC/charging state (AppleSmartBattery) — system-level, not per-port.
         if let p = IOKitProbe.systemPower() {
@@ -617,6 +631,26 @@ final class NetworkMonitor: ObservableObject {
             } else { detail = nil }
             return AttachedDevice(id: "disp-\(d.id)", name: name, receptacle: -2, kind: .display,
                                   vendorName: vendor, detail: detail, connection: "Display")
+        }
+    }
+
+    /// Builds connected-Bluetooth device chips (receptacle -4) from the IOBluetooth
+    /// list, merging in HID battery % from the IORegistry by address. Audio devices
+    /// won't have a battery (macOS exposes it only via the Bluetooth daemon).
+    nonisolated private static func buildBluetooth(_ raws: [BluetoothProbe.RawBT],
+                                                   battery: [String: Int],
+                                                   hidUsage: [String: Int]) -> [AttachedDevice] {
+        raws.compactMap { d in
+            // The address is the stable identity and the battery-merge key; an
+            // address-less device can't be uniquely identified, so skip it.
+            guard !d.address.isEmpty else { return nil }
+            // HID usage is authoritative for input devices and is the ONLY reliable
+            // signal for BLE mice/keyboards (no Class-of-Device); fall back to CoD + name.
+            let kind = hidUsage[d.name].flatMap(USBDeviceKind.classifyHIDUsage)
+                ?? USBDeviceKind.classifyBluetooth(major: d.major, minor: d.minor, name: d.name)
+            let pct  = battery[normalizeBTAddress(d.address)]
+            return AttachedDevice(id: "bt-\(d.address)", name: d.name, receptacle: -4, kind: kind,
+                                  serial: d.address, connection: "Bluetooth", batteryPercent: pct)
         }
     }
 

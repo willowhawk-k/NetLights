@@ -76,6 +76,41 @@ enum IOKitProbe {
         }
     }
 
+    // MARK: - Bluetooth HID battery (IORegistry — no IOBluetooth, no prompt)
+
+    /// Normalized BT address → battery %, for connected HID devices (mouse /
+    /// keyboard / trackpad). macOS surfaces these under the HID event service with
+    /// `Transport = "Bluetooth"`; audio devices (AirPods/headphones) keep their
+    /// battery in the Bluetooth daemon, which has no in-process API. Reads only
+    /// registry properties (sandbox-permitted, entitlement-free) — never IOBluetooth.
+    static func bluetoothHIDBattery() -> [String: Int] {
+        var out: [String: Int] = [:]
+        forEach(matching: "AppleDeviceManagementHIDEventService") { p in
+            guard (p["Transport"] as? String) == "Bluetooth",
+                  let pct = (p["BatteryPercent"] as? NSNumber)?.intValue,
+                  let addr = p["DeviceAddress"] as? String else { return }
+            out[normalizeBTAddress(addr)] = pct
+        }
+        return out
+    }
+
+    /// Product name → its top-level HID Generic-Desktop usage (page 1). Lets us
+    /// classify Bluetooth-LE input devices (Logitech MX mice/keyboards, etc.) that
+    /// carry NO Class-of-Device — CoD is a classic-Bluetooth concept, so BLE devices
+    /// report major/minor 0. The system still drives them as standard HID, so their
+    /// IOHIDDevice entry has a real usage: 2 = mouse, 6 = keyboard (HID usage tables).
+    static func hidGenericDesktopUsage() -> [String: Int] {
+        var out: [String: Int] = [:]
+        forEach(matching: "IOHIDDevice") { p in
+            guard let name = p["Product"] as? String,
+                  (p["PrimaryUsagePage"] as? NSNumber)?.intValue == 1,
+                  let usage = (p["PrimaryUsage"] as? NSNumber)?.intValue else { return }
+            // A composite device exposes several interfaces; prefer the mouse/keyboard one.
+            if out[name] == nil || usage == 2 || usage == 6 { out[name] = usage }
+        }
+        return out
+    }
+
     // MARK: - USB-C Power Delivery (AppleHPM) — replaces `ioreg -c AppleHPMInterfaceType10`
 
     /// Per USB-C port: whether anything is attached, and whether it's power-only.

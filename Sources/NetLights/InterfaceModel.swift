@@ -395,7 +395,7 @@ enum USBDeviceKind {
         if n.contains("airpod") || n.contains("headphone") || n.contains("buds")
             || n.contains("speaker") || n.contains("audio") || n.contains("beats") { return .audio }
         if n.contains("keyboard") { return .keyboard }
-        if n.contains("mouse") || n.contains("trackpad") { return .pointing }
+        if n.contains("mouse") || n.contains("trackpad") || n.contains("touchpad") { return .pointing }
         if n.contains("ssd") || n.contains("disk") || n.contains("drive")
             || n.contains("storage") || n.contains("t7") || n.contains("flash") { return .storage }
         if n.contains("hub") || n.contains("dock") { return .hub }
@@ -410,6 +410,36 @@ enum USBDeviceKind {
         case 0x01: return .audio
         case 0x0E: return .camera
         default:   return .generic
+        }
+    }
+
+    /// Kind from a HID Generic-Desktop top-level usage (page 1). nil for usages we
+    /// don't map (joystick / gamepad / system controls), so other signals can decide.
+    static func classifyHIDUsage(_ usage: Int) -> USBDeviceKind? {
+        switch usage {
+        case 1, 2: return .pointing   // Pointer, Mouse
+        case 6, 7: return .keyboard   // Keyboard, Keypad
+        default:   return nil
+        }
+    }
+
+    /// Classification from a Bluetooth Class-of-Device (major/minor). The major
+    /// class gives the broad category; for peripherals (arbitrary names) we prefer
+    /// the name, then fall back to the keyboard/pointing minor bits.
+    static func classifyBluetooth(major: Int, minor: Int, name: String) -> USBDeviceKind {
+        switch major {
+        case 0x04: return .audio        // Audio/Video — headset, headphones, speaker
+        case 0x06: return .camera       // Imaging
+        case 0x05:                      // Peripheral — keyboard / mouse / trackpad / …
+            let byName = classify(name: name, classCode: 0)
+            if byName != .generic { return byName }
+            switch minor & 0x30 {
+            case 0x10:        return .keyboard
+            case 0x20, 0x30:  return .pointing
+            default:          return .generic
+            }
+        default:
+            return classify(name: name, classCode: 0)
         }
     }
 }
@@ -432,13 +462,21 @@ struct AttachedDevice: Identifiable, Equatable {
     var usbVersion: String? = nil     // e.g. "USB 2.1" (from bcdUSB)
     var linkSpeedBps: UInt64? = nil   // negotiated USB link speed (UsbLinkSpeed)
     var detail: String? = nil         // displays: "5120 × 2160 @ 100 Hz"
-    var connection: String = "USB"    // "USB" / "Display"
+    var connection: String = "USB"    // "USB" / "Display" / "Bluetooth"
+    var batteryPercent: Int? = nil    // device battery %, where the OS reports it (BT HID)
 
     var systemImage: String { kind.systemImage }
     var isNetwork: Bool { interfaceBSD != nil }
+    var batteryLabel: String? { batteryPercent.map { "\($0)%" } }
 
     /// Bus / link type, for the Devices table.
-    var connectionLabel: String { connection == "Display" ? "Display" : (usbVersion ?? "USB") }
+    var connectionLabel: String {
+        switch connection {
+        case "Display":   return "Display"
+        case "Bluetooth": return "Bluetooth"
+        default:          return usbVersion ?? "USB"
+        }
+    }
 
     /// Throughput/capability: USB link speed, or a display's resolution/refresh.
     var speedLabel: String {
@@ -453,6 +491,7 @@ struct AttachedDevice: Identifiable, Equatable {
 
     var classLabel: String {
         if connection == "Display" { return "Display" }
+        if connection == "Bluetooth" { return kind.label }
         if let c = classCode { return usbClassName(c) }
         return "—"
     }
@@ -466,6 +505,7 @@ struct AttachedDevice: Identifiable, Equatable {
     static func == (l: AttachedDevice, r: AttachedDevice) -> Bool {
         l.id == r.id && l.name == r.name && l.receptacle == r.receptacle
             && l.interfaceBSD == r.interfaceBSD && l.parentID == r.parentID
+            && l.batteryPercent == r.batteryPercent
     }
 }
 

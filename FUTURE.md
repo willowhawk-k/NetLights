@@ -17,13 +17,14 @@ Backlog for NetLights — not committed work, just where we're headed.
   rx/tx deltas, EMA-smoothed) drawn as `↓/↑` numbers on the wires, plus a link hover
   (negotiated link speed, live Down/Up, session totals). Switched the interface walk to
   `NET_RT_IFLIST2` so 4 GiB counter wrap and the ~4.3 Gbps baudrate cap are gone.
+- **Bluetooth devices** — connected Bluetooth devices grouped under a Hardware-row
+  "Bluetooth" entity (name + type from Class-of-Device; battery % for HID devices via the
+  IORegistry). Uses `IOBluetooth` behind an optional Bluetooth permission (degrades to
+  nothing if declined; the dev build runs without it). **Audio-device battery
+  (AirPods/headphones) is not available in-process** — macOS keeps it in the Bluetooth
+  daemon, reachable only via the `system_profiler` subprocess we removed for the sandbox.
 
 ## Backlog
-
-### Bluetooth devices ("Bluetooth is a kind of network")
-Enumerate connected Bluetooth devices as a network class. `IOBluetooth` (App Store needs
-the `com.apple.security.device.bluetooth` entitlement). Can surface device name/type, and
-battery level for devices that report it.
 
 ### HDMI port + display capabilities
 Detect whether the dedicated HDMI port has a display attached, identify it, and — stretch —

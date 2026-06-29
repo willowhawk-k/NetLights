@@ -18,6 +18,13 @@
     <key>com.apple.security.personal-information.location</key>
     <true/>
 
+    <!-- Bluetooth: lets the sandboxed app read the list of already-connected
+         Bluetooth devices (IOBluetooth) to show them in the graph. Read-only — no
+         scanning, pairing, or connecting. (NSBluetoothAlwaysUsageDescription is set
+         in Info.plist; without it, touching IOBluetooth crashes via TCC.) -->
+    <key>com.apple.security.device.bluetooth</key>
+    <true/>
+
     <!-- NOTE: com.apple.security.device.usb is deliberately NOT included. It gates
          opening USB *user clients*; NetLights only reads IORegistry properties
          (iokit-get-properties), which the App Sandbox permits without it. Verified
