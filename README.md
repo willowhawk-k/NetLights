@@ -265,6 +265,21 @@ scripts/build-app.sh          # Packages dist/NetLights.app + zip
 extend `hardwarePortLayout(model:)` in `InterfaceModel.swift` with your
 `hw.model` identifier (find it via `sysctl hw.model`).
 
+### Command-line flags
+
+NetLights is a normal GUI app, but the binary also accepts a couple of
+developer/diagnostic flags (each does its job and exits without showing a window):
+
+| Flag | What it does |
+|------|--------------|
+| `--probe-dump` | Prints the in-process IOKit / CoreGraphics probe results (Thunderbolt receptacles, USB-C power, system power, iPhone, BSD→receptacle map, and the full attached-device list with classified kinds) to stdout, so they can be diffed against `ioreg` / `system_profiler` ground truth. Bluetooth is included only when the binary carries the Bluetooth usage string (the packaged app, not `swift run`). |
+| `--export-iconset <dir>` | Renders the SwiftUI app icon to a `.iconset` directory (all sizes) for packaging. Used by `scripts/build-app.sh`. |
+
+```bash
+swift run NetLights --probe-dump          # from source
+dist/NetLights.app/Contents/MacOS/NetLights --probe-dump   # the packaged binary
+```
+
 Found a bug or have a Mac with a different layout? Please open an issue with the
 output of `sysctl hw.model` and a screenshot.
 

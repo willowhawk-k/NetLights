@@ -12,7 +12,7 @@ struct HelpView: View {
 
                 section("The layer bands", icon: "rectangle.3.group.fill") {
                     bullet("Internet + gateways (top)", "A top row holds the Internet node and a tier of gateway chips pinned above the host each one lives on.")
-                    bullet("Hardware (L0)", "The physical USB-C / Thunderbolt receptacles on your Mac's chassis, the Wi-Fi network entity, plus directly-attached devices (iPhone, MiFi, dongles). Position labels (Left · Front, Right, …) come from a per-model layout table.")
+                    bullet("Hardware (L0)", "The physical USB-C / Thunderbolt receptacles on your Mac's chassis, the Wi-Fi network entity, a Displays entity, a Bluetooth entity, the battery, plus directly-attached devices (iPhone, MiFi, dongles). Position labels (Left · Front, Right, …) come from a per-model layout table.")
                     bullet("Physical (L1)", "Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (en1–en3), USB Ethernet, and app/VM virtual adapters. TB and iPhone interfaces sit directly under the hardware port they belong to.")
                     bullet("Data Link (L2)", "Bridges and VLANs — e.g. bridge0, the Thunderbolt Bridge — drawn centered over their member ports.")
                     bullet("Virtual (L3+)", "Everything software-defined: VPN/utun tunnels, loopback, AWDL (AirDrop), Continuity, and system interfaces.")
@@ -23,6 +23,7 @@ struct HelpView: View {
                     bullet("Amber ant-crawl", "Live traffic. The dashes march while bytes are moving and hold steady (no blink) for ~3 s after activity stops.")
                     bullet("Dim dot", "No link / nothing attached.")
                     bullet("Connection lines", "Show relationships: hardware port → its en* interfaces, bridge ↔ members, and interface → gateway. Emphasized links (iPhone↔port, VPN egress) stay brightly lit.")
+                    bullet("Throughput on the wire", "A wire carrying a single interface's flow shows its live rate (↓ down / ↑ up, bytes per second). Hover any wire for a Link tooltip: negotiated link speed, live Down/Up, and Received/Sent totals (counted since the interface came up). Per-app breakdown isn't available to a sandboxed app.")
                 }
 
                 section("Hardware ports & power", icon: "powerplug.fill") {
@@ -53,6 +54,12 @@ struct HelpView: View {
                     bullet("Why they're grouped", "macOS exposes no way for an unprivileged app to learn which physical port a monitor uses — a DisplayPort-over-USB-C display never appears in the Thunderbolt tree, and the display data carries no connection type. So displays are listed rather than pinned to a guessed port.")
                 }
 
+                section("Bluetooth devices", icon: "wave.3.right") {
+                    para("Connected Bluetooth devices are grouped under a Bluetooth entity in the Hardware row — each with its type and, for input devices (mice, keyboards, trackpads), its battery %.")
+                    bullet("Permission", "macOS gates the connected-device list behind Bluetooth access, so NetLights asks for it — solely to list already-connected devices (it never scans, pairs, or connects). Decline and the Bluetooth entity just doesn't appear. Changed your mind? Use Help ▸ Check Bluetooth Permission to reopen the system pane.")
+                    bullet("Audio battery", "AirPods / headphone / speaker battery isn't shown: macOS keeps it in the Bluetooth daemon (no in-process API). Input-device battery comes from the IORegistry, which is readable in-process.")
+                }
+
                 section("Gateways & the Internet", icon: "globe") {
                     bullet("Internet node", "Sits in the top row; every default gateway links up to it. The chip's column traces back down to the device/interface that egress goes through.")
                     bullet("GW #1, #2, … (orange)", "Default-route gateways, pinned in a tier above the host they live on (iPhone, Wi-Fi router, dongle). The number is precedence — GW #1 is the one that wins the 0.0.0.0/0 race (the active uplink).")
@@ -60,11 +67,12 @@ struct HelpView: View {
                 }
 
                 section("Where the data comes from", icon: "cpu.fill") {
-                    bullet("Interfaces & stats", "getifaddrs() for addresses; sysctl(NET_RT_IFLIST) for link state, MAC, MTU and byte counters.")
+                    bullet("Interfaces & stats", "getifaddrs() for addresses; sysctl(NET_RT_IFLIST2) for link state, MAC, MTU and the 64-bit rx/tx byte counters that drive the on-wire throughput.")
                     bullet("Routes & gateways", "sysctl(NET_RT_DUMP) over the PF_ROUTE socket.")
                     bullet("Friendly names", "SystemConfiguration (SCNetworkInterface) for hardware-port display names.")
                     bullet("Port topology", "Read in-process via IOKit — IOThunderboltSwitch for receptacle status, IOUSBHostDevice for the USB device tree + iPhone port, and AppleHPM (USB-C PD controller) for attachment/charger state. No subprocesses.")
-                    bullet("Device details", "IOKit registry properties (vendor, idVendor/idProduct, bcdUSB, link speed, class) for the device tree and Devices table; CoreGraphics for external displays.")
+                    bullet("Device types", "IOKit registry properties (vendor, idVendor/idProduct, bcdUSB, link speed) plus each device's interface classes and HID usage classify composite devices (mice, keyboards, game controllers, audio, webcams); CoreGraphics for external displays.")
+                    bullet("Bluetooth", "IOBluetooth for the connected-device list (with permission); the IORegistry for input-device battery.")
                     bullet("System power", "AppleSmartBattery for AC/charging state and adapter wattage (system-level only).")
                     bullet("Wi-Fi link speed", "CoreWLAN's negotiated transmit rate (the legacy baud field under-reports modern Wi-Fi).")
                 }
@@ -72,12 +80,13 @@ struct HelpView: View {
                 section("Capabilities & restrictions", icon: "exclamationmark.triangle.fill") {
                     bullet("No admin rights", "Everything is read-only and runs as your user — NetLights never changes configuration.")
                     bullet("Refresh cadence", "Interface/route data refreshes every 0.75 s; the slower port-topology probe runs ~every 5 s on a background thread so the UI never stalls.")
-                    bullet("Link speed", "Wired links use the interface's 32-bit baud field (values above ~4.3 Gbps may read low); Wi-Fi uses CoreWLAN's current transmit rate, which fluctuates as the radio adapts.")
+                    bullet("Link speed", "Wired links read the interface's negotiated baud rate (64-bit via NET_RT_IFLIST2); Wi-Fi uses CoreWLAN's current transmit rate, which fluctuates as the radio adapts.")
                     bullet("Display ports", "External monitors are detected but not mapped to a specific port — macOS doesn't expose which receptacle (or HDMI) a display uses to an unprivileged app, and there's no permission that unlocks it.")
                     bullet("USB-C power direction", "macOS exposes no per-port power direction. A receiving port (a dock charging the Mac) and a providing port (the Mac powering an accessory) are byte-for-byte identical in the registry — only system-wide charging is knowable (AppleSmartBattery). So charging is shown in the status bar, never pinned to a port.")
                     bullet("Port front/rear labels", "Receptacle position labels come from a hand-curated per-model table and may be approximate on some Macs — connection/power state itself is read live and accurate.")
                     bullet("iPhone visibility", "A locked iPhone is hidden from some USB listings; NetLights reads the IOKit registry directly to find it.")
-                    bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\"). Changed your mind? Use Help ▸ Check Location Privacy Settings to reopen the system pane.")
+                    bullet("Wi-Fi network name", "macOS only reveals the current SSID to apps with Location access, so NetLights requests it — used solely to label the Wi-Fi uplink. No location coordinates are ever read, stored, or shared, and you can decline (the uplink just shows \"Wi-Fi\"). Changed your mind? Use Help ▸ Check Location Permission (Wi-Fi names) to reopen the system pane.")
+                    bullet("Bluetooth devices", "macOS gates the connected-device list behind Bluetooth access; NetLights requests it solely to list already-connected devices (never scanning/pairing). Decline and the Bluetooth entity is hidden. Audio-device battery (AirPods/headphones) isn't available to an in-process app.")
                 }
 
                 Divider()
@@ -85,6 +94,16 @@ struct HelpView: View {
                 section("Credits", icon: "heart.fill") {
                     para("NetLights was created by \(AppInfo.author), pair-programmed with Claude (Anthropic). Claude helped architect the layered layout engine, the low-level sysctl/IOKit data plumbing, and this help system.")
                     para(AppInfo.copyright)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("NetLights is 100% free and open source under the MIT License.")
+                        .font(.callout).foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Link("Source, issues & releases on GitHub →", destination: URL(string: AppInfo.repoURL)!)
+                        .font(.callout)
                 }
             }
             .padding(28)

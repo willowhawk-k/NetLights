@@ -102,8 +102,12 @@ private func uniformRects(groups: [IfaceGroup], band: CGRect, w: CGFloat) -> [CG
     let totalN = groups.map { $0.interfaces.count }.reduce(0, +)
     let usable = w - margin * 2 - CGFloat(groups.count - 1) * gap
     let wPerN  = min(nodeW, usable / CGFloat(max(totalN, 1)))
+    // Center the packed groups in the band: when the content is narrower than the
+    // usable span (few interfaces, or "Hide inactive"), it would otherwise be left-
+    // aligned while every other band centers. With full content the offset is ~0.
+    let contentW = wPerN * CGFloat(totalN) + gap * CGFloat(groups.count - 1)
     var rects: [CGRect] = []
-    var x = margin
+    var x = margin + max(0, (w - margin * 2 - contentW) / 2)
     for group in groups {
         let gw = wPerN * CGFloat(group.interfaces.count)
         rects.append(CGRect(x: x, y: band.minY, width: gw, height: band.height))
