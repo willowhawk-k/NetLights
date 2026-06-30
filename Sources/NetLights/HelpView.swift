@@ -23,7 +23,7 @@ struct HelpView: View {
                     bullet("Amber ant-crawl", "Live traffic. The dashes march while bytes are moving and hold steady (no blink) for ~3 s after activity stops.")
                     bullet("Dim dot", "No link / nothing attached.")
                     bullet("Connection lines", "Show relationships: hardware port → its en* interfaces, bridge ↔ members, and interface → gateway. Emphasized links (iPhone↔port, VPN egress) stay brightly lit.")
-                    bullet("Throughput on the wire", "A wire carrying a single interface's flow shows its live rate (↓ down / ↑ up, bytes per second). Hover any wire for a Link tooltip: negotiated link speed, live Down/Up, and Received/Sent totals (counted since the interface came up). Per-app breakdown isn't available to a sandboxed app.")
+                    bullet("Throughput on the wire", "A wire carrying a single interface's flow shows its live rate (↓ down / ↑ up, in bits per second — Kbps/Mbps/Gbps, like the link speed). Hover any wire for a Link tooltip: negotiated link speed, live Down/Up, and Received/Sent byte totals (counted since the interface came up). Per-app breakdown isn't available to a sandboxed app.")
                 }
 
                 section("Hardware ports & power", icon: "powerplug.fill") {

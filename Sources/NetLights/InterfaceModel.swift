@@ -638,26 +638,32 @@ struct TrafficState {
 // MARK: - Throughput / byte formatting (shared)
 
 /// Below this many bytes/sec a link reads as idle — no number is shown.
+/// (1024 B/s ≈ 8 Kbps.)
 let trafficNoiseFloor: Double = 1024
 
-/// Full throughput label, e.g. "12.3 MB/s". Returns nil below the noise floor.
+// Throughput is shown in BITS per second (Kbps/Mbps/Gbps) — the networking
+// convention, matching the negotiated link speed. Input is the byte-counter rate;
+// we convert ×8 and use decimal (1000) magnitudes, as link/data rates are decimal.
+// (Cumulative volume — Received/Sent — stays in bytes; see formatByteCount.)
+
+/// Full throughput label in bits/sec, e.g. "98.4 Mbps". nil below the noise floor.
 func formatRate(_ bytesPerSec: Double) -> String? {
     guard bytesPerSec >= trafficNoiseFloor else { return nil }
-    let kb = bytesPerSec / 1024
-    if kb < 1024 { return String(format: "%.0f KB/s", kb) }
-    let mb = kb / 1024
-    if mb < 1024 { return String(format: mb < 10 ? "%.1f MB/s" : "%.0f MB/s", mb) }
-    return String(format: "%.2f GB/s", mb / 1024)
+    let kbps = bytesPerSec * 8 / 1000
+    if kbps < 1000 { return String(format: "%.0f Kbps", kbps) }
+    let mbps = kbps / 1000
+    if mbps < 1000 { return String(format: mbps < 10 ? "%.1f Mbps" : "%.0f Mbps", mbps) }
+    return String(format: "%.2f Gbps", mbps / 1000)
 }
 
-/// Compact throughput for drawing on the wire, e.g. "12.3M", "850K". nil if idle.
+/// Compact bits/sec for drawing on the wire, e.g. "98Mbps", "850Kbps". nil if idle.
 func formatRateShort(_ bytesPerSec: Double) -> String? {
     guard bytesPerSec >= trafficNoiseFloor else { return nil }
-    let kb = bytesPerSec / 1024
-    if kb < 1024 { return String(format: "%.0fK", kb) }
-    let mb = kb / 1024
-    if mb < 1024 { return String(format: mb < 10 ? "%.1fM" : "%.0fM", mb) }
-    return String(format: "%.1fG", mb / 1024)
+    let kbps = bytesPerSec * 8 / 1000
+    if kbps < 1000 { return String(format: "%.0fKbps", kbps) }
+    let mbps = kbps / 1000
+    if mbps < 1000 { return String(format: mbps < 10 ? "%.1fMbps" : "%.0fMbps", mbps) }
+    return String(format: "%.1fGbps", mbps / 1000)
 }
 
 /// Cumulative byte total, e.g. "1.4 GB".

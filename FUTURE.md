@@ -14,9 +14,10 @@ Backlog for NetLights — not committed work, just where we're headed.
   `FamilyCode=0xE000000A`). Identified Apple adapters do expose `Name`/`Watts`, which we show.
 - **Mac App Store submission** (1.4.2, build 8) — sandboxed build submitted; see `APPSTORE.md`.
 - **Up/down traffic rate on links** — per-interface throughput (from 64-bit `if_data64`
-  rx/tx deltas, EMA-smoothed) drawn as `↓/↑` numbers on the wires, plus a link hover
-  (negotiated link speed, live Down/Up, session totals). Switched the interface walk to
-  `NET_RT_IFLIST2` so 4 GiB counter wrap and the ~4.3 Gbps baudrate cap are gone.
+  rx/tx deltas, EMA-smoothed) drawn as `↓/↑` numbers on the wires in bits/sec
+  (Kbps/Mbps/Gbps), plus a link hover (negotiated link speed, live Down/Up, byte
+  totals). Switched the interface walk to `NET_RT_IFLIST2` so 4 GiB counter wrap and
+  the ~4.3 Gbps baudrate cap are gone.
 - **Bluetooth devices** — connected Bluetooth devices grouped under a Hardware-row
   "Bluetooth" entity (name + type from Class-of-Device; battery % for HID devices via the
   IORegistry). Uses `IOBluetooth` behind an optional Bluetooth permission (degrades to

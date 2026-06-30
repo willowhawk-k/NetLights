@@ -84,12 +84,13 @@ A top row holds the **Internet** node and a tier of **gateway chips**; below it 
 - **Amber ant-crawl** — live traffic; the dashes march while bytes move and hold steady (no blink) for ~3 s after activity stops.
 - **Dim dot** — no link / nothing attached.
 - **Connection lines** — hardware port → its `en*` interfaces, bridge ↔ members, interface → gateway. Emphasized links (iPhone ↔ port, VPN egress) stay brightly lit.
-- **Throughput on the wire** — a wire carrying a single interface's flow shows its live rate right on the line (e.g. **↓ 12.3M  ↑ 1.1M**, bytes/sec), updated every refresh.
+- **Throughput on the wire** — a wire carrying a single interface's flow shows its live rate right on the line (e.g. **↓ 98 Mbps  ↑ 12 Mbps**, in bits/sec like the link speed), updated every refresh.
 
 ### Link throughput
 Hover any connection wire for a **Link** tooltip: the negotiated **link speed**,
-the live **Down / Up** rate (per second, smoothed so it doesn't jitter between
-refreshes), and **Received / Sent** byte totals. The totals are the OS's
+the live **Down / Up** rate (in bits/sec — Kbps/Mbps/Gbps, like the link speed —
+smoothed so it doesn't jitter between refreshes), and **Received / Sent** byte
+totals (data volume, so these stay in bytes). The totals are the OS's
 cumulative interface counters — i.e. **since that interface came up** (boot for
 built-in interfaces; plug-in for hot-plugged ones like a USB-Ethernet dock or an
 iPhone), not since the app launched.
