@@ -273,7 +273,7 @@ developer/diagnostic flags (each does its job and exits without showing a window
 
 | Flag | What it does |
 |------|--------------|
-| `--probe-dump` | Prints the in-process IOKit / CoreGraphics probe results (Thunderbolt receptacles, USB-C power, system power, iPhone, BSD→receptacle map, and the full attached-device list with classified kinds) to stdout, so they can be diffed against `ioreg` / `system_profiler` ground truth. Bluetooth is included only when the binary carries the Bluetooth usage string (the packaged app, not `swift run`). |
+| `--probe-dump` | Prints the in-process IOKit / CoreGraphics probe results (Thunderbolt receptacles, USB-C power, system power, iPhone, BSD→receptacle map, and the USB/display attached-device list with classified kinds) to stdout, so they can be diffed against `ioreg` / `system_profiler` ground truth. (Bluetooth devices aren't included in the dump.) |
 | `--export-iconset <dir>` | Renders the SwiftUI app icon to a `.iconset` directory (all sizes) for packaging. Used by `scripts/build-app.sh`. |
 
 ```bash

@@ -14,7 +14,7 @@ final class NetworkMonitor: ObservableObject {
     @Published var hardwarePorts: [HardwarePort] = []
     @Published var attachedDevices: [AttachedDevice] = []
     @Published var egress: EgressInfo?
-    /// True when the "Check Location Privacy Settings" Help item should be enabled:
+    /// True when the "Check Location Permission (Wi-Fi names)" Help item should be enabled:
     /// the Mac has Wi-Fi hardware AND Location isn't authorized (so the SSID can't
     /// be read). Gating on actual authorization — not a nil SSID — avoids enabling
     /// the item on Ethernet-only / Wi-Fi-off Macs where Location was never the issue.
@@ -652,10 +652,15 @@ final class NetworkMonitor: ObservableObject {
             // The address is the stable identity and the battery-merge key; an
             // address-less device can't be uniquely identified, so skip it.
             guard !d.address.isEmpty else { return nil }
-            // Name first (matches the USB path: "…Keyboard" stays a keyboard even with
-            // an integrated trackpad), then HID usage — the only reliable signal for BLE
-            // mice/keyboards, which carry no Class-of-Device — then CoD + name.
-            let byName = USBDeviceKind.classify(name: d.name, classCode: -1)
+            // Classify name-first (so a named "…Keyboard" with an integrated trackpad
+            // stays a keyboard), EXCEPT when the Class-of-Device already confirms audio
+            // (0x04) or imaging (0x06) — there the hardware class is authoritative and a
+            // trap keyword in the name (e.g. "Marshall Monitor" headphones, a "Studio
+            // Monitor" speaker) must not override it. Then HID usage — the only reliable
+            // signal for BLE mice/keyboards, which carry no Class-of-Device — then CoD.
+            let codConfirmed = d.major == 0x04 || d.major == 0x06
+            let byName: USBDeviceKind = codConfirmed ? .generic
+                : USBDeviceKind.classify(name: d.name, classCode: -1)
             let kind = byName != .generic ? byName
                 : (hidUsage[d.name].flatMap(USBDeviceKind.classifyHIDUsages)
                     ?? USBDeviceKind.classifyBluetooth(major: d.major, minor: d.minor, name: d.name))
