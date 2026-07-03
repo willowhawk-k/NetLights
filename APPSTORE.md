@@ -82,6 +82,12 @@ compiles the *same* `Sources/NetLights/*.swift` (no copies → one codebase).
    Bundle Identifier `com.willowhawk.netlights`. Click **+ Capability → App Sandbox**,
    then check **Network ▸ Outgoing Connections (Client)**, **App Data ▸ Location**, and
    **Hardware ▸ Bluetooth** (this matches `NetLights.entitlements`).
+7a. **Build Settings** → search "Active Compilation Conditions" → add **`APPSTORE`** (to
+   both Debug and Release for this target). This omits the GitHub Sponsors donation link
+   from the App Store build — guideline 3.1.1 requires donations to use In-App Purchase, so
+   the Store build carries no external donation link while the Dev-ID/GitHub build keeps it.
+   (`AppInfo.hideDonations` also falls back to a runtime Mac-App-Store-receipt check, so a
+   missing flag still won't ship the link — but set the flag; it's the deterministic guard.)
 8. **Info** tab → add **Privacy – Location When In Use Usage Description** =
    *"NetLights uses your location only to read the current Wi-Fi network name (SSID),
    which macOS protects behind location access. No location coordinates are read,
@@ -123,7 +129,11 @@ Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
   layered map — Wi-Fi, Thunderbolt, USB, VPNs, gateways, and attached devices, all
   updating in real time.
 - **Keywords (≤100):** `network,wifi,ethernet,thunderbolt,usb,vpn,gateway,ports,monitor,interface,lan,topology`
-- **Support URL:** `https://github.com/willowhawk-k/NetLights`
+- **Support URL:** `https://github.com/willowhawk-k/NetLights/issues` — the repo root was
+  rejected under guideline 1.5 as not being a support page; the issues tracker (backed by
+  `SUPPORT.md`, which GitHub surfaces on the "new issue" screen) is a functional support
+  destination. (This is a metadata change in App Store Connect — no new build required for
+  it, but it ships alongside the resubmission below.)
 - **Privacy Policy URL:** `https://github.com/willowhawk-k/NetLights/blob/main/PRIVACY.md`
 - **Copyright:** `© 2026 Keith Willowhawk`
 - **Age rating:** 4+
@@ -187,3 +197,21 @@ External-display **maker/model labels** degrade (e.g. "External Display" instead
 don't carry the EDID strings that `system_profiler` parsed. Detection, resolution, and
 refresh are unaffected. The Developer-ID build has the same in-process code, so the
 behavior is identical across both channels.
+
+## App Review — first rejection & resolution
+
+First submission (1.4.2, build 8) was rejected July 2026 on three guidelines. All three
+are addressed in the current source (ship a build ≥ the rejected one, e.g. 1.6.x):
+
+- **4 (Design) — overlapping / cut-off text.** At short window heights the OSI bands
+  compressed proportionally and their fixed-size tiles overflowed into neighbors. Fixed:
+  `bh` now floors at the graph's natural `contentHeight` (every band at full need) and the
+  graph sits in a vertical `ScrollView`, so a short window scrolls instead of overlapping.
+  Verify by resizing the window very short — bands stay intact and it scrolls.
+- **1.5 (Safety) — Support URL.** Point the App Store Connect **Support URL** at
+  `…/NetLights/issues` (not the repo root); `SUPPORT.md` gives real support info.
+- **3.1.1 (Payments) — donations must use IAP.** For-profit/individual donations linked
+  out of the app aren't allowed (only approved-nonprofit fundraising via Apple Pay, or IAP,
+  is). Rather than add IAP, the **App Store build omits the donation link** (the Dev-ID /
+  GitHub build keeps GitHub Sponsors). Gated by the `APPSTORE` compile flag (step 7a) with a
+  runtime receipt fallback. A plain "source on GitHub" link (not a payment) remains.

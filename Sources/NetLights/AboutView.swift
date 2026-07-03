@@ -42,16 +42,20 @@ struct AboutView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
-            } label: {
-                Label("Support free software ☕️ 🌮", systemImage: "heart.fill")
-                    .font(.callout.weight(.medium))
+            // The donation link is omitted from the Mac App Store build (App Store
+            // guideline 3.1.1 requires donations to use In-App Purchase).
+            if !AppInfo.hideDonations {
+                Button {
+                    if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
+                } label: {
+                    Label("Support free software ☕️ 🌮", systemImage: "heart.fill")
+                        .font(.callout.weight(.medium))
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.pink)
+                .padding(.top, 4)
+                .help(AppInfo.sponsorTitle)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.pink)
-            .padding(.top, 4)
-            .help(AppInfo.sponsorTitle)
         }
         .padding(28)
         .frame(width: 380)

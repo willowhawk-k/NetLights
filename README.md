@@ -286,7 +286,14 @@ output of `sysctl hw.model` and a screenshot.
 
 ---
 
-## Support 💜
+## Help & support
+
+Questions, bug reports, and feature requests are welcome on the
+[**issue tracker**](https://github.com/willowhawk-k/NetLights/issues) — see
+[SUPPORT.md](SUPPORT.md) for what to include (macOS version, `hw.model`, app version)
+and answers to common questions. It's the best way to reach the developer.
+
+## Sponsor 💜
 
 NetLights is free and MIT-licensed. If it saved you some head-scratching and
 you'd like to say thanks, you can [**sponsor me on GitHub**](https://github.com/sponsors/willowhawk-k)

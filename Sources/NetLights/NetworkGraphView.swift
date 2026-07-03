@@ -282,8 +282,33 @@ struct NetworkGraphView: View {
 
     // MARK: - Band area geometry (everything right of the gateway sidebar)
 
-    private var bw: CGFloat { max(viewSize.width - gwColWidth, 0) }
-    private var bh: CGFloat { max(viewSize.height, 520) }
+    // Hardware-band slot sizing (shared by hwSlotLayout + contentWidth so they agree).
+    private let hwMinSlotW: CGFloat = 110    // room for a port node + its label
+    private let hwLeafSlotW: CGFloat = 92    // ideal width per device leaf
+
+    /// Natural (uncompressed) canvas width the graph wants. `bw` floors at this so the
+    /// device tree and node rows keep comfortable spacing instead of scaling down until
+    /// their fixed-size tiles crowd/overlap — a narrow window (or an iOS-sized screen)
+    /// scrolls horizontally instead. Matches the slot/row widths the layouts use.
+    private var contentWidth: CGFloat {
+        let margin: CGFloat = 46
+        let f = deviceForest
+        func leaves(_ id: Int) -> Int {
+            (f.rootsByPort[id] ?? []).map { leafCount($0, f.childrenOf) }.reduce(0, +)
+        }
+        let order = hwPortOrder
+        let hwNatural = order.isEmpty ? 0
+            : order.reduce(0) { $0 + max(hwMinSlotW, CGFloat(leaves($1)) * hwLeafSlotW) } + margin * 2
+        // Virtual band: two balanced rows of ~112-wide node slots.
+        let vN = subgroups(layer: "Virtual", ifaces: visible).reduce(0) { $0 + $1.interfaces.count }
+        let vNatural = vN == 0 ? 0 : CGFloat((vN + 1) / 2) * 112 + margin * 2
+        // Physical free-adapter row.
+        let pN = physFreeVisible.count
+        let pNatural = pN == 0 ? 0 : CGFloat(pN) * 112 + margin * 2
+        return max(hwNatural, max(vNatural, pNatural))
+    }
+    private var bw: CGFloat { max(viewSize.width - gwColWidth, contentWidth) }
+    private var bh: CGFloat { max(viewSize.height, contentHeight) }
 
     private let deviceRowGap: CGFloat = 50
 
@@ -347,7 +372,10 @@ struct NetworkGraphView: View {
     /// grows with the depth of the USB device tree; Physical/Virtual shrink to the
     /// number of rows actually in use. Heights are proportional shares of the area
     /// below the header, so the bands always fill the view without overlapping.
-    private var bands: [LayerBand] {
+    /// Height each band needs to show its content without its fixed-size tiles
+    /// overflowing (which would overlap the neighboring band). Drives both the
+    /// proportional band fractions and the overall content height / scroll floor.
+    private var bandNeeds: [(name: String, need: CGFloat)] {
         let depth = deviceForestDepth
         let deviceLevels = attachedDevices.isEmpty ? 0 : depth + 1
         let hwNeed = 96 + CGFloat(deviceLevels) * deviceRowGap + 24
@@ -364,14 +392,24 @@ struct NetworkGraphView: View {
 
         let vNeed = CGFloat(max(virtualRowsUsed, 1)) * 118 + 20
 
-        let needs = [("Hardware", hwNeed), ("Physical", physNeed),
-                     ("Data Link", dlNeed), ("Virtual", vNeed)]
-        let total = needs.reduce(0) { $0 + $1.1 }
+        return [("Hardware", hwNeed), ("Physical", physNeed),
+                ("Data Link", dlNeed), ("Virtual", vNeed)]
+    }
+
+    private var bands: [LayerBand] {
+        let needs = bandNeeds
+        let total = needs.reduce(0) { $0 + $1.need }
         return needs.map { name, need in
             let s = bandStyles[name] ?? (Color.clear, "")
             return LayerBand(id: name, color: s.color, osiLabel: s.osi, heightFraction: need / total)
         }
     }
+
+    /// The graph's natural height: the header plus every band at its full need. `bh`
+    /// never drops below this, so bands can't compress and spill tiles into each
+    /// other — a short window scrolls (see the ScrollView in `body`) instead of
+    /// overlapping. When the window is taller than this, the graph fills it.
+    private var contentHeight: CGFloat { headerHeight + bandNeeds.reduce(0) { $0 + $1.need } }
 
     private func bandRect(_ name: String) -> CGRect {
         let usable = max(bh - headerHeight, 0)
@@ -605,8 +643,8 @@ struct NetworkGraphView: View {
         func leaves(_ id: Int) -> Int {
             (f.rootsByPort[id] ?? []).map { leafCount($0, f.childrenOf) }.reduce(0, +)
         }
-        let minSlotW: CGFloat = 110   // room for a port node + its label
-        let leafSlotW: CGFloat = 92   // ideal width per device leaf
+        let minSlotW = hwMinSlotW     // room for a port node + its label
+        let leafSlotW = hwLeafSlotW   // ideal width per device leaf
         let margin: CGFloat = 46
         let avail = max(bw - margin * 2, 1)
         var need: [Int: CGFloat] = [:]
@@ -682,19 +720,24 @@ struct NetworkGraphView: View {
 
     /// The egress ("Internet") node sits centered in the top row.
     var egressPosition: CGPoint? {
-        guard egress != nil, viewSize.width > 0 else { return nil }
-        return CGPoint(x: viewSize.width / 2, y: internetRowHeight / 2)
+        guard egress != nil, bw > 0 else { return nil }
+        return CGPoint(x: bw / 2, y: internetRowHeight / 2)
     }
 
     // MARK: - Body
 
     var body: some View {
         GeometryReader { geo in
+            // Scroll when the window is smaller than the graph's natural size (bw/bh
+            // floor at contentWidth/contentHeight), so bands and the device tree keep
+            // full spacing and never compress/overlap — a narrow or short window (or an
+            // iOS-sized screen) pans instead. When the window is larger, the graph fills it.
+            ScrollView([.vertical, .horizontal]) {
             ZStack(alignment: .topLeading) {
                 // Band backgrounds
-                bandBGs(w: geo.size.width, h: geo.size.height)
-                groupLabels(w: geo.size.width, h: geo.size.height)
-                tbBrackets(h: geo.size.height)
+                bandBGs(w: bw, h: bh)
+                groupLabels(w: bw, h: bh)
+                tbBrackets(h: bh)
                 connectionLineViews()
 
                 // Wi-Fi network entity (the AP), if Wi-Fi carries a default route.
@@ -758,8 +801,9 @@ struct NetworkGraphView: View {
                 }
 
                 // Single, pointer-anchored tooltip (immune to per-node hover churn).
-                tooltipLayer(in: geo.size)
+                tooltipLayer(in: CGSize(width: bw, height: bh))
             }
+            .frame(width: bw, height: bh, alignment: .topLeading)
             .contentShape(Rectangle())
             .onContinuousHover(coordinateSpace: .local) { phase in
                 switch phase {
@@ -774,6 +818,7 @@ struct NetworkGraphView: View {
                 case .ended:
                     pendingTarget = nil; scheduleHover(nil)
                 }
+            }
             }
             .onAppear {
                 DispatchQueue.main.async {

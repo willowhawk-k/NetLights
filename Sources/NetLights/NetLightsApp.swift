@@ -21,9 +21,13 @@ struct NetLightsApp: App {
                 HelpMenuButton()
                 LocationHelpMenuButton(monitor: monitor)
                 BluetoothHelpMenuButton(monitor: monitor)
-                Divider()
-                Button(AppInfo.sponsorTitle) {
-                    if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
+                // The donation link is omitted from the Mac App Store build (App Store
+                // guideline 3.1.1 requires donations to use In-App Purchase).
+                if !AppInfo.hideDonations {
+                    Divider()
+                    Button(AppInfo.sponsorTitle) {
+                        if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
+                    }
                 }
             }
         }
