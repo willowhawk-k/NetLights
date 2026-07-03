@@ -132,6 +132,11 @@ struct ContentView: View {
                     .help("System power state from the battery controller. macOS does not reveal which USB-C port delivers or receives power, so this is not tied to a port.")
             }
             Spacer()
+            Text("v\(AppInfo.version) · \(AppInfo.releaseChannel)")
+                .font(.system(size: 10))
+                .foregroundColor(Color(white: 0.42))
+                .help("NetLights \(AppInfo.versionString) — \(AppInfo.releaseChannel) build")
+            Text("·").font(.system(size: 10)).foregroundColor(Color(white: 0.35))
             Text("Auto-refresh every 0.75s")
                 .font(.system(size: 10))
                 .foregroundColor(Color(white: 0.5))

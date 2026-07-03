@@ -24,6 +24,16 @@ enum AppInfo {
         #endif
     }
 
+    /// Which channel this build shipped through — "App Store" (APPSTORE flag or a
+    /// Mac-App-Store receipt) or "GitHub" (the Developer-ID build; also `swift run`).
+    static var releaseChannel: String {
+        #if APPSTORE
+        return "App Store"
+        #else
+        return isMacAppStoreBuild ? "App Store" : "GitHub"
+        #endif
+    }
+
     // Version lives in Version.xcconfig (single source of truth for both release
     // channels) and reaches the bundle's Info.plist at build time; read it back at
     // runtime so the About/Help screen always matches the binary. Falls back to

@@ -30,6 +30,16 @@ Backlog for NetLights — not committed work, just where we're headed.
 
 ## Backlog
 
+### Show active DNS information
+Surface the resolvers name resolution is actually using, so DNS issues are as diagnosable
+as "which interface do we egress on." Read the active DNS config via SystemConfiguration
+(`SCDynamicStore`, key `State:/Network/Global/DNS` for the global resolvers, and the
+per-service `State:/Network/Service/<id>/DNS`) — server addresses, search domains, and
+which interface each set is bound to. All in-process, no privileges, sandbox-safe. Could
+live as a small panel or on the gateway/egress hover (the resolver often rides the same
+uplink), and/or a column in a Routes/Interfaces-style table. Note VPNs frequently push
+their own resolvers — showing which DNS wins is exactly the troubleshooting value here.
+
 ### HDMI port + display capabilities
 Detect whether the dedicated HDMI port has a display attached, identify it, and — stretch —
 whether it supports features like eARC. Display *detection* via CoreGraphics is feasible;

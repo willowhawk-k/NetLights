@@ -19,6 +19,9 @@ struct AboutView: View {
                     .font(.caption.monospaced())
                     .foregroundColor(.secondary)
                     .padding(.top, 2)
+                Text("Release channel: \(AppInfo.releaseChannel)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary.opacity(0.6))
             }
 
             Divider().frame(width: 240)
