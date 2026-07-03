@@ -39,15 +39,12 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 ## Install
 
 ### Mac App Store
-🛒 **Coming soon to the Mac App Store** — NetLights has been submitted and is in
-review. Once it's approved, you'll be able to install it (and get automatic updates)
-in one click. Same app, same MIT source — just the convenient sandboxed build.
+Install it (with automatic updates) in one click — same app, same MIT source, just the
+convenient sandboxed build:
 
-<!-- When Apple marks it "Ready for Sale", replace the line above with the badge + link:
-<a href="https://apps.apple.com/app/idXXXXXXXXXX">
+<a href="https://apps.apple.com/us/app/netlights-map-your-ports/id6784530981?mt=12">
   <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-mac-app-store/black/en-us"
        alt="Download on the Mac App Store" height="44"></a>
-(Grab the numeric app id from App Store Connect → App Information, or the live URL.) -->
 
 ### Download the app (no build required)
 1. Grab the latest `NetLights-*.zip` from the [Releases](../../releases) page.
