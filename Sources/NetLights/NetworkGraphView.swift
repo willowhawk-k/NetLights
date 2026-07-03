@@ -204,10 +204,12 @@ struct NetworkGraphView: View {
         for i in visible {
             h.combine(i.id); h.combine(i.category.rawValue); h.combine(i.hasLink)
             h.combine(i.macAddress ?? "")
+            h.combine(i.groupKey)   // captures displayName→isVirtualAdapter, which changes grouping
         }
         for d in attachedDevices {
             h.combine(d.id); h.combine(d.receptacle); h.combine(d.parentID ?? "")
             h.combine(d.kind.label); h.combine(d.interfaceBSD ?? "")
+            h.combine(d.name)       // sibling sort tiebreak; a late-resolving USB name reorders chips
         }
         for p in hardwarePorts {
             h.combine(p.id); h.combine(p.isPhone)
@@ -218,6 +220,7 @@ struct NetworkGraphView: View {
             h.combine(g.reachableVia.joined(separator: ","))
         }
         h.combine(egress?.name ?? "")
+        h.combine(systemPower != nil)   // battery slot presence adds/removes a Hardware-row slot
         return h.finalize()
     }
 
