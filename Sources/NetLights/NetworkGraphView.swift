@@ -134,6 +134,29 @@ private struct TipSizeKey: PreferenceKey {
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) { value = nextValue() }
 }
 
+/// Per-frame memo for the graph's expensive layout. The whole layout is a pure
+/// function of the input data + window size, but it was recomputed hundreds of times
+/// per frame (every `bw`/`bh` access, every position-dictionary read in the hover
+/// hit-test, etc.), which made scrolling and resizing lag badly. This caches each
+/// heavy result and invalidates the lot whenever the layout signature changes, so a
+/// frame computes the layout once. It's a reference type held in @State so mutating
+/// its fields doesn't trigger a view update (only the data/size inputs do).
+private final class LayoutCache {
+    var sig: Int = .min
+    var forest: (childrenOf: [String: [AttachedDevice]], rootsByPort: [Int: [AttachedDevice]])?
+    var slots: [Int: (center: CGFloat, width: CGFloat)]?
+    var contentW: CGFloat?
+    var contentH: CGFloat?
+    var iface: [String: CGPoint]?
+    var hwPort: [Int: CGPoint]?
+    var dev: [String: CGPoint]?
+    var gw: [String: CGPoint]?
+    func clear() {
+        forest = nil; slots = nil; contentW = nil; contentH = nil
+        iface = nil; hwPort = nil; dev = nil; gw = nil
+    }
+}
+
 struct NetworkGraphView: View {
     let interfaces:    [InterfaceInfo]
     let trafficStates: [String: TrafficState]
@@ -166,7 +189,47 @@ struct NetworkGraphView: View {
     @State private var lastWireProbePoint: CGPoint?
     @State private var lastWireProbeTarget: HoverTarget?
 
+    // Per-frame layout memo (see LayoutCache). Keyed by `layoutSig`.
+    @State private var layoutCache = LayoutCache()
+
     private let dashTimer = Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()
+
+    /// Signature of every input the layout depends on: window size + the identity and
+    /// layout-affecting fields of each interface / device / port / gateway. When this
+    /// changes, the layout memo is invalidated and recomputed once. Cheap (O(n) hashing)
+    /// relative to the layout it guards.
+    private var layoutSig: Int {
+        var h = Hasher()
+        h.combine(Int(viewSize.width)); h.combine(Int(viewSize.height)); h.combine(hideUnused)
+        for i in visible {
+            h.combine(i.id); h.combine(i.category.rawValue); h.combine(i.hasLink)
+            h.combine(i.macAddress ?? "")
+        }
+        for d in attachedDevices {
+            h.combine(d.id); h.combine(d.receptacle); h.combine(d.parentID ?? "")
+            h.combine(d.kind.label); h.combine(d.interfaceBSD ?? "")
+        }
+        for p in hardwarePorts {
+            h.combine(p.id); h.combine(p.isPhone)
+            h.combine(p.childBSDNames.joined(separator: ",")); h.combine(p.physicalReceptacle ?? -999)
+        }
+        for g in gateways {
+            h.combine(g.id); h.combine(g.isDefault); h.combine(g.isVPN)
+            h.combine(g.reachableVia.joined(separator: ","))
+        }
+        h.combine(egress?.name ?? "")
+        return h.finalize()
+    }
+
+    /// Return the cached value for `kp`, computing (and caching) it once per signature.
+    private func memo<T>(_ kp: ReferenceWritableKeyPath<LayoutCache, T?>, _ compute: () -> T) -> T {
+        let sig = layoutSig
+        if layoutCache.sig != sig { layoutCache.sig = sig; layoutCache.clear() }
+        if let cached = layoutCache[keyPath: kp] { return cached }
+        let value = compute()
+        layoutCache[keyPath: kp] = value
+        return value
+    }
 
     var visible: [InterfaceInfo] {
         hideUnused ? interfaces.filter { !$0.isUnused } : interfaces
@@ -290,7 +353,8 @@ struct NetworkGraphView: View {
     /// device tree and node rows keep comfortable spacing instead of scaling down until
     /// their fixed-size tiles crowd/overlap — a narrow window (or an iOS-sized screen)
     /// scrolls horizontally instead. Matches the slot/row widths the layouts use.
-    private var contentWidth: CGFloat {
+    private var contentWidth: CGFloat { memo(\.contentW, computeContentWidth) }
+    private func computeContentWidth() -> CGFloat {
         let margin: CGFloat = 46
         let f = deviceForest
         func leaves(_ id: Int) -> Int {
@@ -310,7 +374,11 @@ struct NetworkGraphView: View {
     private var bw: CGFloat { max(viewSize.width - gwColWidth, contentWidth) }
     private var bh: CGFloat { max(viewSize.height, contentHeight) }
 
-    private let deviceRowGap: CGFloat = 50
+    private let deviceRowGap: CGFloat = 66   // > device chip height (52) so tree levels don't overlap
+    // Strip reserved at the top of the Virtual band for the VPN gateway chip, so it
+    // doesn't collide with the tunnel rows. Shared by bandNeeds, virtualGroupLayout,
+    // and gatewayPositions so they agree.
+    private let vpnStripHeight: CGFloat = 92
 
     // MARK: - Device forest (USB hub → device hierarchy)
 
@@ -318,6 +386,10 @@ struct NetworkGraphView: View {
     /// present nests under it; everything else is a root on its hardware port.
     private var deviceForest: (childrenOf: [String: [AttachedDevice]],
                                rootsByPort: [Int: [AttachedDevice]]) {
+        memo(\.forest, computeDeviceForest)
+    }
+    private func computeDeviceForest() -> (childrenOf: [String: [AttachedDevice]],
+                                           rootsByPort: [Int: [AttachedDevice]]) {
         let byId = Dictionary(attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var childrenOf: [String: [AttachedDevice]] = [:]
         var rootsByPort: [Int: [AttachedDevice]] = [:]
@@ -387,10 +459,16 @@ struct NetworkGraphView: View {
         let physRows = max(lanes + (freeGroups > 0 ? 1 : 0), 1)
         let physNeed = CGFloat(physRows) * 96 + 24
 
+        // Data Link holds full interface tiles (bridge0, VLANs — 90 tall), so the band
+        // must fit one, not just a label; otherwise the tile overflows into neighbors.
         let hasDL = visible.contains { $0.category.layerLabel == "Data Link" }
-        let dlNeed: CGFloat = hasDL ? 66 : 26
+        let dlNeed: CGFloat = hasDL ? 118 : 26
 
-        let vNeed = CGFloat(max(virtualRowsUsed, 1)) * 118 + 20
+        // Virtual holds the tunnel/loopback/system rows; reserve an extra strip at its
+        // top for the VPN gateway chip, which pins above its tunnel (see gatewayPositions)
+        // and would otherwise collide with the Data Link band above.
+        let hasVPNgw = gateways.contains { $0.isVPN }
+        let vNeed = CGFloat(max(virtualRowsUsed, 1)) * 118 + 20 + (hasVPNgw ? vpnStripHeight : 0)
 
         return [("Hardware", hwNeed), ("Physical", physNeed),
                 ("Data Link", dlNeed), ("Virtual", vNeed)]
@@ -409,7 +487,7 @@ struct NetworkGraphView: View {
     /// never drops below this, so bands can't compress and spill tiles into each
     /// other — a short window scrolls (see the ScrollView in `body`) instead of
     /// overlapping. When the window is taller than this, the graph fills it.
-    private var contentHeight: CGFloat { headerHeight + bandNeeds.reduce(0) { $0 + $1.need } }
+    private var contentHeight: CGFloat { memo(\.contentH) { headerHeight + bandNeeds.reduce(0) { $0 + $1.need } } }
 
     private func bandRect(_ name: String) -> CGRect {
         let usable = max(bh - headerHeight, 0)
@@ -424,7 +502,8 @@ struct NetworkGraphView: View {
 
     // MARK: - Position maps (computed, not @State)
 
-    var ifacePositions: [String: CGPoint] {
+    var ifacePositions: [String: CGPoint] { memo(\.iface, computeIfacePositions) }
+    private func computeIfacePositions() -> [String: CGPoint] {
         guard bw > 0, bh > 0 else { return [:] }
         var result: [String: CGPoint] = [:]
 
@@ -500,10 +579,12 @@ struct NetworkGraphView: View {
             let r = counts[0] < half ? 0 : 1
             rows[r].append(g); counts[r] += g.interfaces.count
         }
-        let rowH = band.height / 2
+        // Keep the tunnel rows below the strip reserved for the VPN gateway chip.
+        let inset: CGFloat = gateways.contains { $0.isVPN } ? vpnStripHeight : 0
+        let rowH = max(band.height - inset, 1) / 2
         var out: [(IfaceGroup, CGRect)] = []
         for r in 0..<2 {
-            let rb = CGRect(x: 0, y: band.minY + CGFloat(r) * rowH, width: 0, height: rowH)
+            let rb = CGRect(x: 0, y: band.minY + inset + CGFloat(r) * rowH, width: 0, height: rowH)
             let rects = uniformRects(groups: rows[r], band: rb, w: w)
             for (i, g) in rows[r].enumerated() where i < rects.count { out.append((g, rects[i])) }
         }
@@ -513,7 +594,8 @@ struct NetworkGraphView: View {
     /// Gateways are chips pinned to their host: default gateways sit in the top
     /// gateway tier above the column of the device/interface they live on; a VPN
     /// gateway pins just above its tunnel interface down in the Virtual row.
-    var gatewayPositions: [String: CGPoint] {
+    var gatewayPositions: [String: CGPoint] { memo(\.gw, computeGatewayPositions) }
+    private func computeGatewayPositions() -> [String: CGPoint] {
         guard bw > 0, bh > 0, !gateways.isEmpty else { return [:] }
         let tierY = internetRowHeight + gwTierHeight / 2
         var result: [String: CGPoint] = [:]
@@ -521,7 +603,10 @@ struct NetworkGraphView: View {
             if gw.isVPN {
                 if let tun = gw.reachableVia.first(where: { ifacePositions[$0] != nil }),
                    let p = ifacePositions[tun] {
-                    result[gw.id] = CGPoint(x: p.x, y: p.y - 62)
+                    // Pin the VPN gateway in the strip reserved at the TOP of the Virtual
+                    // band (over its tunnel's column), so it clears the Data Link band
+                    // above and the tunnel row below instead of overlapping them.
+                    result[gw.id] = CGPoint(x: p.x, y: bandRect("Virtual").minY + vpnStripHeight / 2)
                 }
             } else if let hx = gatewayHostX(gw) {
                 result[gw.id] = CGPoint(x: hx, y: tierY)
@@ -636,7 +721,8 @@ struct NetworkGraphView: View {
     /// whole device subtree live inside this region, so two ports' trees — and the
     /// links between them — can never overlap or cross ("don't cross the streams").
     /// Geometry-free in X (no bandRect), so it's safe to call from `hwPortPositions`.
-    private var hwSlotLayout: [Int: (center: CGFloat, width: CGFloat)] {
+    private var hwSlotLayout: [Int: (center: CGFloat, width: CGFloat)] { memo(\.slots, computeHwSlotLayout) }
+    private func computeHwSlotLayout() -> [Int: (center: CGFloat, width: CGFloat)] {
         let order = hwPortOrder
         guard !order.isEmpty, bw > 0 else { return [:] }
         let f = deviceForest
@@ -662,7 +748,8 @@ struct NetworkGraphView: View {
         return out
     }
 
-    var hwPortPositions: [Int: CGPoint] {
+    var hwPortPositions: [Int: CGPoint] { memo(\.hwPort, computeHwPortPositions) }
+    private func computeHwPortPositions() -> [Int: CGPoint] {
         let slots = hwSlotLayout
         guard bw > 0, bh > 0, !slots.isEmpty else { return [:] }
         // Sit the ports near the TOP of the Hardware band so the device tree has
@@ -675,7 +762,8 @@ struct NetworkGraphView: View {
     /// (see `hwSlotLayout`): each leaf consumes one horizontal slot left-to-right
     /// and every hub is centered over the span of its children. Because each port's
     /// forest is confined to its own region, no two ports' trees or links overlap.
-    var devicePositions: [String: CGPoint] {
+    var devicePositions: [String: CGPoint] { memo(\.dev, computeDevicePositions) }
+    private func computeDevicePositions() -> [String: CGPoint] {
         guard bw > 0, bh > 0, !attachedDevices.isEmpty else { return [:] }
         let hw = hwPortPositions
         let slots = hwSlotLayout
@@ -695,7 +783,11 @@ struct NetworkGraphView: View {
             func clampX(_ x: CGFloat) -> CGFloat { min(max(x, loX), max(loX, hiX)) }
 
             var cursor = region.center - usable / 2
-            let topY = base.y + 52
+            // Clear the anchor above: its node is ~62 tall (half 31) and a device chip
+            // ~52 (half 26), so the first row must sit ≥ ~57 below the anchor's center —
+            // 52 left them touching (USB-network chip under a TB port, displays under the
+            // Displays entity). 68 gives a comfortable gap.
+            let topY = base.y + 68
             // Lay a subtree left-to-right; return the node's center x (midpoint of
             // its children's span). Depth-capped as cheap insurance against a
             // pathological registry (parentID is structurally acyclic, but still).
@@ -1273,6 +1365,9 @@ struct NetworkGraphView: View {
         let t = trafficStates[name]; return t?.rxActive == true || t?.txActive == true
     }
 
+    // NOT memoized: this depends on trafficStates (rates, ant-crawl, emphasis), which
+    // change every refresh and aren't in layoutSig. It's cheap now that the positions
+    // it reads are memoized — just an O(n) assembly over cached points.
     private func buildLines() -> [ConnLine] {
         var lines: [ConnLine] = []
 
