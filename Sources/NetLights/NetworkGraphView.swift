@@ -450,6 +450,15 @@ struct NetworkGraphView: View {
     /// Height each band needs to show its content without its fixed-size tiles
     /// overflowing (which would overlap the neighboring band). Drives both the
     /// proportional band fractions and the overall content height / scroll floor.
+    /// True when anchored Physical interfaces (and thus their TB-port brackets) exist.
+    private var hasAnchoredPhysical: Bool {
+        visible.contains { $0.category.layerLabel == "Physical" && isAnchoredPhysical($0) }
+    }
+    /// Strip reserved at the top of the Physical band for the port bracket labels, so
+    /// the interface tiles start below them instead of riding up over the brackets
+    /// when the band has several rows (visible on constrained windows). Geometry-free.
+    private var physBracketInset: CGFloat { hasAnchoredPhysical ? 36 : 0 }
+
     private var bandNeeds: [(name: String, need: CGFloat)] {
         let depth = deviceForestDepth
         let deviceLevels = attachedDevices.isEmpty ? 0 : depth + 1
@@ -460,7 +469,7 @@ struct NetworkGraphView: View {
         let lanes = physicalUpperLaneCount
         let freeGroups = subgroups(layer: "Physical", ifaces: physFreeVisible).count
         let physRows = max(lanes + (freeGroups > 0 ? 1 : 0), 1)
-        let physNeed = CGFloat(physRows) * 96 + 24
+        let physNeed = CGFloat(physRows) * 96 + 24 + physBracketInset
 
         // Data Link holds full interface tiles (bridge0, VLANs — 90 tall), so the band
         // must fit one, not just a label; otherwise the tile overflows into neighbors.
@@ -519,8 +528,9 @@ struct NetworkGraphView: View {
         let (anchoredPos, laneCount) = spreadAnchored(anchoredPhysicalLayout(), minGap: 112)
         let freeGroups = subgroups(layer: "Physical", ifaces: physFreeVisible)
         let totalRows  = max(laneCount + (freeGroups.isEmpty ? 0 : 1), 1)
-        let rowH       = physBand.height / CGFloat(totalRows)
-        func rowY(_ i: Int) -> CGFloat { physBand.minY + rowH * (CGFloat(i) + 0.5) }
+        // Rows sit below the reserved bracket strip so tiles don't overlap the labels.
+        let rowH       = max(physBand.height - physBracketInset, 1) / CGFloat(totalRows)
+        func rowY(_ i: Int) -> CGFloat { physBand.minY + physBracketInset + rowH * (CGFloat(i) + 0.5) }
 
         for (id, p) in anchoredPos {
             result[id] = CGPoint(x: p.x, y: rowY(p.lane))
@@ -1154,10 +1164,10 @@ struct NetworkGraphView: View {
         let physBand = bandRect("Physical")
         let pLanes   = physicalUpperLaneCount
         let pTotal   = max(pLanes + (physFreeVisible.isEmpty ? 0 : 1), 1)
-        let pRowH    = physBand.height / CGFloat(pTotal)
+        let pRowH    = max(physBand.height - physBracketInset, 1) / CGFloat(pTotal)
         labelRow(groups: subgroups(layer: "Physical", ifaces: physFreeVisible),
                  band: physBand, bw2: bw2,
-                 labelY: physBand.minY + pRowH * (CGFloat(pLanes) + 0.5) - 26)
+                 labelY: physBand.minY + physBracketInset + pRowH * (CGFloat(pLanes) + 0.5) - 26)
         // Virtual: a header above each group, in whichever of the two rows it sits.
         ForEach(Array(virtualGroupLayout(w: bw2).enumerated()), id: \.offset) { _, item in
             let rect = item.rect
