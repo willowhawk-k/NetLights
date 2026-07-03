@@ -12,7 +12,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP_NAME="NetLights"
-BUNDLE_ID="com.willowhawk.netlights"
+# Distinct from the Mac App Store build's id (com.willowhawk.NetLights) — the extra
+# ".gh" segment (not just a case difference) lets both installs coexist on one Mac
+# without Launch Services conflating them. Display name stays "NetLights".
+BUNDLE_ID="com.willowhawk.NetLights.gh"
 
 # Version: single source of truth, shared with the Mac App Store Xcode target.
 XCCONFIG="Version.xcconfig"
