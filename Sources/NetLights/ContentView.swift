@@ -11,6 +11,7 @@ struct ContentView: View {
         case routes     = "Routes"
         case interfaces = "Interfaces"
         case devices    = "Devices"
+        case dns        = "DNS"
     }
 
     var body: some View {
@@ -41,6 +42,9 @@ struct ContentView: View {
 
             case .devices:
                 devicesTable
+
+            case .dns:
+                dnsView
             }
 
             Divider()
@@ -70,7 +74,7 @@ struct ContentView: View {
                 ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
-            .frame(width: 360)
+            .frame(width: 430)
 
             Spacer()
 
@@ -360,6 +364,133 @@ struct ContentView: View {
                         .width(min: 80, ideal: 110)
                 }
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - DNS resolvers
+
+    /// Search / scoped domains can name an employer or internal network, so privacy
+    /// mode redacts them (Privacy.mask only covers IP/MAC). "—" when there are none.
+    private func maskDomains(_ list: [String]) -> String {
+        guard !list.isEmpty else { return "—" }
+        if privacy { return "••• (\(list.count) hidden)" }
+        return list.joined(separator: ", ")
+    }
+
+    /// The DNS tab: a banner answering "which resolvers win" (the active/global set)
+    /// above a table of every service's set — so a VPN pushing its own (or a split-DNS)
+    /// resolver is visible, and you can see whether it's the one actually in effect.
+    private var dnsView: some View {
+        let sets = monitor.dnsConfigs
+        let global = sets.first { $0.isGlobal }
+        let services = sets.filter { !$0.isGlobal }
+        return VStack(spacing: 0) {
+            dnsBanner(global)
+            Divider()
+            if services.isEmpty {
+                emptyDNS
+            } else {
+                dnsTable(services)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// "Active resolvers" summary — the effective set the system resolves against.
+    private func dnsBanner(_ g: DNSConfig?) -> some View {
+        let hasServers = g.map { !$0.servers.isEmpty } ?? false
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: hasServers ? "checkmark.seal.fill" : "questionmark.circle")
+                .foregroundColor(hasServers ? .green : .secondary)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Active resolvers")
+                    .font(.caption).foregroundColor(.secondary)
+                if let g, hasServers {
+                    Text(Privacy.mask(g.servers.joined(separator: "   "), on: privacy))
+                        .font(.system(.body, design: .monospaced))
+                    HStack(spacing: 12) {
+                        if let iface = g.interfaceName {
+                            Label(iface, systemImage: "arrow.up.forward")
+                                .font(.caption).foregroundColor(.secondary)
+                                .help("The primary interface the active resolvers ride")
+                        }
+                        if !g.searchDomains.isEmpty {
+                            Text("search: \(maskDomains(g.searchDomains))")
+                                .font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                } else {
+                    Text("None reported").foregroundColor(.secondary)
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var emptyDNS: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 32, weight: .light))
+                .foregroundColor(.secondary)
+            Text("No DNS resolver sets reported")
+                .foregroundColor(.secondary)
+            Text("Unusual — the system normally has at least one active resolver.")
+                .font(.caption).foregroundColor(.secondary.opacity(0.7))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func dnsTable(_ rows: [DNSConfig]) -> some View {
+        Table(rows) {
+            TableColumn("Service / Scope") { c in
+                HStack(spacing: 6) {
+                    if c.isPrimary {
+                        Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption)
+                            .help("Primary service — its resolvers answer unscoped queries")
+                    }
+                    Text(c.scopeLabel)
+                    if c.isSupplemental {
+                        Text("split-DNS")
+                            .font(.caption2)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(Color.orange.opacity(0.22)))
+                            .help("Handles only specific domains — see \"Scoped to\"")
+                    }
+                }
+            }
+            .width(min: 150, ideal: 200)
+
+            TableColumn("Interface") { c in
+                Text(c.interfaceName ?? "—")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(c.interfaceName == nil ? .secondary : .primary)
+            }
+            .width(min: 70, ideal: 90)
+
+            TableColumn("Resolvers") { c in
+                Text(c.servers.isEmpty ? "—" : Privacy.mask(c.servers.joined(separator: ", "), on: privacy))
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundColor(c.servers.isEmpty ? .secondary : .primary)
+            }
+            .width(min: 160, ideal: 220)
+
+            TableColumn("Search Domains") { c in
+                Text(maskDomains(c.searchDomains))
+                    .foregroundColor(c.searchDomains.isEmpty ? .secondary : .primary)
+            }
+            .width(min: 110, ideal: 150)
+
+            TableColumn("Scoped to") { c in
+                Text(maskDomains(c.matchDomains))
+                    .foregroundColor(c.matchDomains.isEmpty ? .secondary : .primary)
+                    .help(c.matchDomains.isEmpty ? "" : "Split-DNS: this set answers only these domains")
+            }
+            .width(min: 110, ideal: 150)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

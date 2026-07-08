@@ -30,6 +30,7 @@ final class NetworkMonitor: ObservableObject {
     /// System AC/charging state (NOT per-port). nil on battery-less Macs.
     @Published var systemPower: SystemPower?
     @Published var serviceRank: [String: Int] = [:]   // interface → macOS service-order rank
+    @Published var dnsConfigs: [DNSConfig] = []        // active + per-service DNS resolver sets
     @Published var trafficStates: [String: TrafficState] = [:]
 
     let macModel: String = AppInfo.macModel
@@ -94,6 +95,7 @@ final class NetworkMonitor: ObservableObject {
         let wifiPresent = newInterfaces.contains { $0.category == .wifi }
         locationHelpAvailable = wifiPresent && !locationAuth.isAuthorized
         serviceRank = Self.serviceOrder()
+        dnsConfigs = Self.gatherDNS()
 
         // Build hardware ports immediately from the *cached* port status so the
         // UI never blocks. The actual TB/USB query (system_profiler + ioreg) is
@@ -1015,6 +1017,83 @@ final class NetworkMonitor: ObservableObject {
             }
         }
         return rank
+    }
+
+    /// Every DNS resolver set the system knows about: the synthesized *active* set
+    /// (`State:/Network/Global/DNS`) first, then each network service's set. The
+    /// primary service's set is what wins for unscoped queries; a set carrying
+    /// `SupplementalMatchDomains` is split-DNS (scoped to just those domains — a VPN
+    /// resolving only its internal names, say). All from SCDynamicStore, no privileges.
+    static func gatherDNS() -> [DNSConfig] {
+        guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil) else { return [] }
+        let globalIPv4 = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
+        let primaryService   = globalIPv4?["PrimaryService"] as? String
+        let primaryInterface = globalIPv4?["PrimaryInterface"] as? String
+
+        // A service's bound interface (v4 then v6) and its human-set name, if any.
+        func boundInterface(_ serviceID: String) -> String? {
+            let v4 = SCDynamicStoreCopyValue(store, "State:/Network/Service/\(serviceID)/IPv4" as CFString) as? [String: Any]
+            let v6 = SCDynamicStoreCopyValue(store, "State:/Network/Service/\(serviceID)/IPv6" as CFString) as? [String: Any]
+            return (v4?["InterfaceName"] as? String) ?? (v6?["InterfaceName"] as? String)
+        }
+        func serviceName(_ serviceID: String) -> String? {
+            (SCDynamicStoreCopyValue(store, "Setup:/Network/Service/\(serviceID)" as CFString) as? [String: Any])?["UserDefinedName"] as? String
+        }
+
+        // configd stores "" as a catch-all match/search entry; drop those so an
+        // internal supplemental doesn't masquerade as a real split-DNS scope.
+        func nonEmpty(_ arr: [String]?) -> [String] {
+            (arr ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        }
+
+        var out: [DNSConfig] = []
+
+        // The effective resolver set — the "which DNS wins" answer.
+        if let g = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any] {
+            out.append(DNSConfig(
+                id: "global", scopeLabel: "Active resolvers",
+                interfaceName: primaryInterface,
+                servers: g["ServerAddresses"] as? [String] ?? [],
+                searchDomains: nonEmpty(g["SearchDomains"] as? [String]),
+                domainName: g["DomainName"] as? String,
+                matchDomains: [], isPrimary: false, isGlobal: true))
+        }
+
+        // Each service's DNS set (includes VPN-pushed and split-DNS resolvers).
+        let pattern = "State:/Network/Service/[^/]+/DNS" as CFString
+        let keys = (SCDynamicStoreCopyKeyList(store, pattern) as? [String]) ?? []
+        var services: [DNSConfig] = []
+        for key in keys {
+            guard let dns = SCDynamicStoreCopyValue(store, key as CFString) as? [String: Any] else { continue }
+            // key = "State:/Network/Service/<id>/DNS"
+            let parts = key.components(separatedBy: "/")
+            guard parts.count >= 4 else { continue }
+            let serviceID = parts[3]
+            let bound = boundInterface(serviceID)
+            let name  = serviceName(serviceID)
+            let match = nonEmpty(dns["SupplementalMatchDomains"] as? [String])
+            // Skip an internal "shadow" set — no interface, no name, and not genuinely
+            // scoped: configd's supplemental catch-all just mirrors the active set.
+            if bound == nil, name == nil, match.isEmpty { continue }
+            services.append(DNSConfig(
+                id: serviceID,
+                scopeLabel: name ?? bound ?? (match.isEmpty ? "Service" : "Scoped resolver"),
+                interfaceName: bound,
+                servers: dns["ServerAddresses"] as? [String] ?? [],
+                searchDomains: nonEmpty(dns["SearchDomains"] as? [String]),
+                domainName: dns["DomainName"] as? String,
+                matchDomains: match,
+                isPrimary: serviceID == primaryService,
+                isGlobal: false))
+        }
+        // Primary first, then sets that actually list resolvers, then by name.
+        services.sort {
+            if $0.isPrimary != $1.isPrimary { return $0.isPrimary }
+            if $0.servers.isEmpty != $1.servers.isEmpty { return !$0.servers.isEmpty }
+            return $0.scopeLabel.localizedCaseInsensitiveCompare($1.scopeLabel) == .orderedAscending
+        }
+        out.append(contentsOf: services)
+        return out
     }
 
     private static func sockaddrToString(buf: [UInt8], offset: Int, family: UInt8) -> String {

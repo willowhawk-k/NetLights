@@ -316,6 +316,29 @@ struct EgressInfo: Equatable {
     var displayName: String { name ?? kind.label }
 }
 
+// MARK: - DNS resolvers
+
+/// A DNS resolver set the system knows about — the synthesized *active* set
+/// (`State:/Network/Global/DNS`) or one network service's set. VPNs and other
+/// services frequently inject their own resolvers, so surfacing every set — and
+/// which one actually wins — is the troubleshooting value. Read from SCDynamicStore:
+/// in-process, privilege-free, sandbox-safe (same store the egress/service-order
+/// lookups already use).
+struct DNSConfig: Identifiable, Equatable {
+    let id: String                 // "global", or the network service id
+    var scopeLabel: String         // "Active resolvers", a service name, or an interface
+    var interfaceName: String?     // interface the set is bound to (en0, utun3), when known
+    var servers: [String]          // resolver addresses, in query order
+    var searchDomains: [String]
+    var domainName: String?
+    var matchDomains: [String]     // SupplementalMatchDomains — split-DNS scoping (VPNs)
+    var isPrimary: Bool            // this service is the OS primary (its DNS becomes global)
+    var isGlobal: Bool             // the synthesized "active" set (State:/Network/Global/DNS)
+
+    /// A split-DNS set: it answers only the domains in `matchDomains`, not every query.
+    var isSupplemental: Bool { !matchDomains.isEmpty }
+}
+
 // MARK: - System power (AC / charging)
 
 /// SYSTEM-level power state from AppleSmartBattery. macOS exposes no per-port
