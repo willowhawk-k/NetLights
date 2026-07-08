@@ -315,17 +315,8 @@ struct NetworkGraphView: View {
     /// side-by-side, not stacked); Wi-Fi anchors at its entity. Geometry-free in x.
     private func anchoredPhysicalLayout() -> [(id: String, x: CGFloat)] {
         let slots = hwSlotLayout
-        var byReceptacle: [Int: [String]] = [:]
-        for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
-            if let port = portForBSD[iface.id] {
-                byReceptacle[port, default: []].append(iface.id)
-            } else if iface.id == wifiUplinkInterface {
-                byReceptacle[-1, default: []].append(iface.id)
-            } else if let dev = attachedDevices.first(where: { $0.interfaceBSD == iface.id }) {
-                byReceptacle[dev.receptacle, default: []].append(iface.id)
-            }
-        }
-        let spacing: CGFloat = 112
+        let byReceptacle = anchoredIfacesByReceptacle
+        let spacing = anchoredSpacing
         var out: [(id: String, x: CGFloat)] = []
         for (recep, ids) in byReceptacle {
             guard let s = slots[recep] else { continue }
@@ -351,6 +342,36 @@ struct NetworkGraphView: View {
     // Hardware-band slot sizing (shared by hwSlotLayout + contentWidth so they agree).
     private let hwMinSlotW: CGFloat = 110    // room for a port node + its label
     private let hwLeafSlotW: CGFloat = 92    // ideal width per device leaf
+    // Horizontal gap between anchored Physical tiles sharing a receptacle. Shared by
+    // anchoredPhysicalLayout (the spread) and the slot-width reservation below.
+    private let anchoredSpacing: CGFloat = 112
+
+    /// Minimum slot width that holds `n` anchored Physical tiles spread at
+    /// `anchoredSpacing`. A port with several anchored interfaces (e.g. an iPhone's
+    /// USB-tether channels) must reserve room for their spread, or the tiles overflow
+    /// the slot and interleave with the neighbouring port's tiles — which collides
+    /// their brackets. `hwSlotLayout` and `computeContentWidth` both fold this in so
+    /// they stay in agreement. Geometry-free.
+    private func anchoredSlotSpan(_ n: Int) -> CGFloat {
+        n > 1 ? CGFloat(n - 1) * anchoredSpacing + hwLeafSlotW : hwMinSlotW
+    }
+
+    /// Anchored Physical interface ids grouped by the physical receptacle they belong
+    /// to (port id, -1 for Wi-Fi, or a USB-network device's receptacle). Single source
+    /// of truth for the anchored spread AND the slot-width reservation. Geometry-free.
+    private var anchoredIfacesByReceptacle: [Int: [String]] {
+        var byReceptacle: [Int: [String]] = [:]
+        for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
+            if let port = portForBSD[iface.id] {
+                byReceptacle[port, default: []].append(iface.id)
+            } else if iface.id == wifiUplinkInterface {
+                byReceptacle[-1, default: []].append(iface.id)
+            } else if let dev = attachedDevices.first(where: { $0.interfaceBSD == iface.id }) {
+                byReceptacle[dev.receptacle, default: []].append(iface.id)
+            }
+        }
+        return byReceptacle
+    }
 
     /// Natural (uncompressed) canvas width the graph wants. `bw` floors at this so the
     /// device tree and node rows keep comfortable spacing instead of scaling down until
@@ -364,8 +385,10 @@ struct NetworkGraphView: View {
             (f.rootsByPort[id] ?? []).map { leafCount($0, f.childrenOf) }.reduce(0, +)
         }
         let order = hwPortOrder
+        let anchoredCounts = anchoredIfacesByReceptacle.mapValues { $0.count }
         let hwNatural = order.isEmpty ? 0
-            : order.reduce(0) { $0 + max(hwMinSlotW, CGFloat(leaves($1)) * hwLeafSlotW) } + margin * 2
+            : order.reduce(0) { $0 + max(hwMinSlotW, CGFloat(leaves($1)) * hwLeafSlotW,
+                                         anchoredSlotSpan(anchoredCounts[$1] ?? 0)) } + margin * 2
         // Virtual band: two balanced rows of ~112-wide node slots.
         let vN = subgroups(layer: "Virtual", ifaces: visible).reduce(0) { $0 + $1.interfaces.count }
         let vNatural = vN == 0 ? 0 : CGFloat((vN + 1) / 2) * 112 + margin * 2
@@ -746,8 +769,11 @@ struct NetworkGraphView: View {
         let leafSlotW = hwLeafSlotW   // ideal width per device leaf
         let margin: CGFloat = 46
         let avail = max(bw - margin * 2, 1)
+        let anchoredCounts = anchoredIfacesByReceptacle.mapValues { $0.count }
         var need: [Int: CGFloat] = [:]
-        for id in order { need[id] = max(minSlotW, CGFloat(leaves(id)) * leafSlotW) }
+        for id in order {
+            need[id] = max(minSlotW, CGFloat(leaves(id)) * leafSlotW, anchoredSlotSpan(anchoredCounts[id] ?? 0))
+        }
         let totalNeed = order.reduce(0) { $0 + (need[$1] ?? 0) }
         // If the content is wider than the view, scale every slot down together.
         let scale = totalNeed > avail ? avail / totalNeed : 1
