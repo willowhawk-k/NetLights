@@ -55,6 +55,42 @@ enum AppInfo {
     static let sponsorURL   = "https://github.com/sponsors/willowhawk-k"
     static let sponsorTitle = "Support free software (because tacos and coffee run the world!)"
 
+    static let feedbackTitle = "Send Feedback / Report an Issue…"
+
+    /// The machine's `hw.model` identifier (e.g. "Mac15,3"). Read once via sysctl.
+    /// Central here so the About window / Help menu can prefill feedback without the
+    /// live monitor, and `NetworkMonitor` reuses it for its port-layout lookup.
+    static let macModel: String = {
+        var size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        guard size > 0 else { return "" }
+        var buf = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.model", &buf, &size, nil, 0)
+        return String(cString: buf)
+    }()
+
+    /// Prefilled "new issue" URL for in-app feedback, bug reports, and — the high-value
+    /// case — port-layout submissions from other Mac models. The environment block is
+    /// auto-filled so a report always carries the `hw.model` that `InterfaceModel.swift`
+    /// keys its per-model port topology off; users drag screenshots into the browser.
+    /// Not gated by `hideDonations` — a bug-report link is allowed on the App Store.
+    static var feedbackURL: URL? {
+        let model = macModel.isEmpty ? "unknown" : macModel
+        let body = """
+        <!-- Bug, feature idea, or a port layout for your Mac model? Describe it here.
+             Drag screenshots into this box to attach them. -->
+
+        ---
+        _Environment (auto-filled — please keep):_
+        - NetLights \(version) (\(build)) · \(releaseChannel)
+        - macOS \(ProcessInfo.processInfo.operatingSystemVersionString)
+        - Mac model: `\(model)`
+        """
+        var comps = URLComponents(string: "\(repoURL)/issues/new")
+        comps?.queryItems = [URLQueryItem(name: "body", value: body)]
+        return comps?.url
+    }
+
     /// Deep link to System Settings ▸ Privacy & Security ▸ Location Services.
     static let locationSettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices"
 

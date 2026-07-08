@@ -32,13 +32,7 @@ final class NetworkMonitor: ObservableObject {
     @Published var serviceRank: [String: Int] = [:]   // interface → macOS service-order rank
     @Published var trafficStates: [String: TrafficState] = [:]
 
-    let macModel: String = {
-        var size = 0
-        sysctlbyname("hw.model", nil, &size, nil, 0)
-        var buf = [CChar](repeating: 0, count: size)
-        sysctlbyname("hw.model", &buf, &size, nil, 0)
-        return String(cString: buf)
-    }()
+    let macModel: String = AppInfo.macModel
 
     private var pollTimer: Timer?
     private var trafficClearTimers: [String: Timer] = [:]

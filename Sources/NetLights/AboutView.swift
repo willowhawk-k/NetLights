@@ -59,6 +59,19 @@ struct AboutView: View {
                 .padding(.top, 4)
                 .help(AppInfo.sponsorTitle)
             }
+
+            // Subtle feedback link — present on both channels (a bug-report link is
+            // allowed on the App Store; it prefills the Mac model for crowdsourcing
+            // per-model port layouts).
+            Button {
+                if let url = AppInfo.feedbackURL { NSWorkspace.shared.open(url) }
+            } label: {
+                Label("Send feedback or report an issue", systemImage: "exclamationmark.bubble")
+                    .font(.caption)
+            }
+            .buttonStyle(.link)
+            .padding(.top, AppInfo.hideDonations ? 4 : 0)
+            .help("Opens a prefilled GitHub issue — bug reports, ideas, and port layouts for your Mac model.")
         }
         .padding(28)
         .frame(width: 380)

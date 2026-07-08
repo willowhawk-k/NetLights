@@ -21,10 +21,15 @@ struct NetLightsApp: App {
                 HelpMenuButton()
                 LocationHelpMenuButton(monitor: monitor)
                 BluetoothHelpMenuButton(monitor: monitor)
+                Divider()
+                // Ships on both channels — a bug-report link isn't a donation (3.1.1).
+                Button(AppInfo.feedbackTitle) {
+                    if let url = AppInfo.feedbackURL { NSWorkspace.shared.open(url) }
+                }
+                .help("Opens a prefilled GitHub issue (bug reports, ideas, and port layouts for your Mac model).")
                 // The donation link is omitted from the Mac App Store build (App Store
                 // guideline 3.1.1 requires donations to use In-App Purchase).
                 if !AppInfo.hideDonations {
-                    Divider()
                     Button(AppInfo.sponsorTitle) {
                         if let url = URL(string: AppInfo.sponsorURL) { NSWorkspace.shared.open(url) }
                     }
