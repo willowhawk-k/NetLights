@@ -334,6 +334,7 @@ struct DNSConfig: Identifiable, Equatable {
     var matchDomains: [String]     // SupplementalMatchDomains — split-DNS scoping (VPNs)
     var isPrimary: Bool            // this service is the OS primary (its DNS becomes global)
     var isGlobal: Bool             // the synthesized "active" set (State:/Network/Global/DNS)
+    var userNamedScope: Bool       // scopeLabel came from a user-defined service name (redact in privacy mode)
 
     /// A split-DNS set: it answers only the domains in `matchDomains`, not every query.
     var isSupplemental: Bool { !matchDomains.isEmpty }

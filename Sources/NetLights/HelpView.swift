@@ -66,10 +66,20 @@ struct HelpView: View {
                     bullet("VPN GW (blue)", "A default route over a tunnel — pinned next to its utun down in the Virtual row, with an egress link to the physical gateway it ultimately exits through.")
                 }
 
+                section("DNS resolvers", icon: "magnifyingglass") {
+                    para("The DNS tab shows which name servers your Mac actually resolves against — making name-resolution issues as diagnosable as knowing which interface you egress on.")
+                    bullet("Active resolvers", "The banner at the top is the effective set in use right now — the \"which DNS wins\" answer — along with the interface it rides.")
+                    bullet("Per-service rows", "Every network service's resolvers: bound interface, server addresses, and search domains. The ⭐ marks the OS primary service, whose resolvers answer ordinary (unscoped) queries.")
+                    bullet("VPN & split-DNS", "A VPN often pushes its own resolvers — you'll see them win over your physical uplink's. A row tagged “split-DNS” answers only specific domains (shown under “Scoped to”) rather than everything.")
+                    bullet("Privacy mode", "Masks resolver IPs and redacts search / scoped domains and user-named services (which can name an employer) — safe for screenshots.")
+                    bullet("How it's read", "SystemConfiguration (SCDynamicStore) — the same live store the network service order comes from. In-process, no privileges.")
+                }
+
                 section("Where the data comes from", icon: "cpu.fill") {
                     bullet("Interfaces & stats", "getifaddrs() for addresses; sysctl(NET_RT_IFLIST2) for link state, MAC, MTU and the 64-bit rx/tx byte counters that drive the on-wire throughput.")
                     bullet("Routes & gateways", "sysctl(NET_RT_DUMP) over the PF_ROUTE socket.")
                     bullet("Friendly names", "SystemConfiguration (SCNetworkInterface) for hardware-port display names.")
+                    bullet("DNS resolvers", "SystemConfiguration (SCDynamicStore) — the active global set plus each network service's resolvers, search domains, and split-DNS scoping.")
                     bullet("Port topology", "Read in-process via IOKit — IOThunderboltSwitch for receptacle status, IOUSBHostDevice for the USB device tree + iPhone port, and AppleHPM (USB-C PD controller) for attachment/charger state. No subprocesses.")
                     bullet("Device types", "IOKit registry properties (vendor, idVendor/idProduct, bcdUSB, link speed) plus each device's interface classes and HID usage classify composite devices (mice, keyboards, game controllers, audio, webcams); CoreGraphics for external displays.")
                     bullet("Bluetooth", "IOBluetooth for the connected-device list (with permission); the IORegistry for input-device battery.")

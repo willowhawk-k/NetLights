@@ -1026,9 +1026,14 @@ final class NetworkMonitor: ObservableObject {
     /// resolving only its internal names, say). All from SCDynamicStore, no privileges.
     static func gatherDNS() -> [DNSConfig] {
         guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil) else { return [] }
+        // Prefer the IPv4 global primary, but fall back to IPv6 — on an IPv6-only path
+        // (NAT64/DNS64, IPv6-only cellular/LAN) State:/Network/Global/IPv4 is absent and
+        // the primary is published under .../Global/IPv6, so IPv4-only would drop the
+        // primary badge and leave the active-resolvers row without an interface.
         let globalIPv4 = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
-        let primaryService   = globalIPv4?["PrimaryService"] as? String
-        let primaryInterface = globalIPv4?["PrimaryInterface"] as? String
+        let globalIPv6 = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv6" as CFString) as? [String: Any]
+        let primaryService   = (globalIPv4?["PrimaryService"] as? String)   ?? (globalIPv6?["PrimaryService"] as? String)
+        let primaryInterface = (globalIPv4?["PrimaryInterface"] as? String) ?? (globalIPv6?["PrimaryInterface"] as? String)
 
         // A service's bound interface (v4 then v6) and its human-set name, if any.
         func boundInterface(_ serviceID: String) -> String? {
@@ -1046,17 +1051,20 @@ final class NetworkMonitor: ObservableObject {
             (arr ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         }
 
+        let globalDNS = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any]
+        let activeServers = Set(globalDNS?["ServerAddresses"] as? [String] ?? [])
+
         var out: [DNSConfig] = []
 
         // The effective resolver set — the "which DNS wins" answer.
-        if let g = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any] {
+        if let g = globalDNS {
             out.append(DNSConfig(
                 id: "global", scopeLabel: "Active resolvers",
                 interfaceName: primaryInterface,
                 servers: g["ServerAddresses"] as? [String] ?? [],
                 searchDomains: nonEmpty(g["SearchDomains"] as? [String]),
                 domainName: g["DomainName"] as? String,
-                matchDomains: [], isPrimary: false, isGlobal: true))
+                matchDomains: [], isPrimary: false, isGlobal: true, userNamedScope: false))
         }
 
         // Each service's DNS set (includes VPN-pushed and split-DNS resolvers).
@@ -1072,19 +1080,23 @@ final class NetworkMonitor: ObservableObject {
             let bound = boundInterface(serviceID)
             let name  = serviceName(serviceID)
             let match = nonEmpty(dns["SupplementalMatchDomains"] as? [String])
-            // Skip an internal "shadow" set — no interface, no name, and not genuinely
-            // scoped: configd's supplemental catch-all just mirrors the active set.
-            if bound == nil, name == nil, match.isEmpty { continue }
+            let servers = dns["ServerAddresses"] as? [String] ?? []
+            // Skip an internal "shadow" set — no interface, no name, not scoped — ONLY
+            // when its servers merely duplicate the active set (configd's supplemental
+            // mirror). A nameless set with DISTINCT resolvers (e.g. an MDM / encrypted-DNS
+            // provider) is kept so troubleshooting never hides an anomalous resolver.
+            if bound == nil, name == nil, match.isEmpty, Set(servers).isSubset(of: activeServers) { continue }
             services.append(DNSConfig(
                 id: serviceID,
                 scopeLabel: name ?? bound ?? (match.isEmpty ? "Service" : "Scoped resolver"),
                 interfaceName: bound,
-                servers: dns["ServerAddresses"] as? [String] ?? [],
+                servers: servers,
                 searchDomains: nonEmpty(dns["SearchDomains"] as? [String]),
                 domainName: dns["DomainName"] as? String,
                 matchDomains: match,
                 isPrimary: serviceID == primaryService,
-                isGlobal: false))
+                isGlobal: false,
+                userNamedScope: name != nil))
         }
         // Primary first, then sets that actually list resolvers, then by name.
         services.sort {

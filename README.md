@@ -22,7 +22,7 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 <a href="assets/netlights_routes.png"><img src="assets/netlights_routes.png" alt="Routes table" width="190"></a>
 <a href="assets/netlights_interfaces.png"><img src="assets/netlights_interfaces.png" alt="Interfaces table" width="190"></a>
 
-<sub>Graph with live traffic · Devices · Routes · Interfaces — click to enlarge</sub>
+<sub>Graph with live traffic · Devices · Routes · Interfaces · DNS — click to enlarge</sub>
 
 <br><br>
 
@@ -174,6 +174,23 @@ already-connected devices and never scans, pairs, or connects.
 - **VPN GW (blue)** — a default route over a tunnel, pinned next to its `utun` down
   in the Virtual row, with an egress link to the physical gateway it exits through.
 
+### DNS resolvers
+
+The **DNS** tab surfaces the resolvers name resolution actually uses — as diagnosable
+as knowing which interface you egress on. A banner shows the **active/global** set (the
+"which DNS wins" answer) above a table of every network service's set: bound interface,
+server addresses, search domains, and **split-DNS** scoping (`SupplementalMatchDomains`).
+The OS **primary** service is starred, so a VPN pushing its own resolvers is plainly
+visible winning over your physical uplinks'. Read live from SystemConfiguration
+(`SCDynamicStore`) — in-process, no privileges. Privacy mode masks resolver IPs and
+redacts search / scoped domains and user-named services.
+
+### Feedback & device-tree submissions
+
+**Help ▸ Send Feedback / Report an Issue…** (and a link in About) opens a prefilled
+GitHub issue tagged with your app version, macOS version, and Mac model — handy for bug
+reports, ideas, and **contributing your Mac's port layout** for the per-model table.
+
 ---
 
 ## How it works (data sources)
@@ -188,6 +205,7 @@ configuration.
 | Per-link throughput (↓/↑ rate) | computed from rx/tx counter deltas, EMA-smoothed |
 | Routes & gateways | `sysctl(NET_RT_DUMP)` over `PF_ROUTE` |
 | Friendly hardware-port names | SystemConfiguration (`SCNetworkInterface`) |
+| Active + per-service DNS resolvers | SystemConfiguration (`SCDynamicStore`: `State:/Network/Global/DNS`, `.../Service/<id>/DNS`) |
 | Thunderbolt receptacle status | IOKit `IOThunderboltSwitch` (in-process) |
 | Attached devices, hub tree, iPhone port | IOKit `IOUSBHostDevice` registry (in-process) |
 | USB-C attachment / charger badge | IOKit `AppleHPM` PD controller (in-process) |
@@ -241,7 +259,7 @@ PRs and forks welcome! The project is a single SwiftPM executable target.
 ```
 Sources/NetLights/
 ├── NetLightsApp.swift        # @main App, menu commands, dock icon, lifecycle
-├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices
+├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices / DNS
 ├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/CoreWLAN/CoreGraphics, in-process)
 ├── IOKitProbe.swift          # Low-level IOKit/CoreGraphics probes (USB tree, TB, displays, power)
 ├── BluetoothProbe.swift      # IOBluetooth connected-device list (TCC-gated, optional)

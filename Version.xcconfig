@@ -10,6 +10,6 @@
 // (App Store rule: CFBundleVersion / CURRENT_PROJECT_VERSION must strictly increase
 //  with each upload to App Store Connect; MARKETING_VERSION may repeat across channels.)
 
-MARKETING_VERSION = 1.6.4
-CURRENT_PROJECT_VERSION = 14
-NL_RELEASE_DATE = July 3, 2026
+MARKETING_VERSION = 1.7.0
+CURRENT_PROJECT_VERSION = 15
+NL_RELEASE_DATE = July 8, 2026

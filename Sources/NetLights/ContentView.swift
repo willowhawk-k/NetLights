@@ -378,6 +378,14 @@ struct ContentView: View {
         return list.joined(separator: ", ")
     }
 
+    /// The scope label — but a user-defined service name (e.g. "Acme-Corp-VPN") can
+    /// name an employer/person, so privacy mode swaps it for the bound interface or a
+    /// generic label. Interface names (en0 / utun3) are non-identifying and stay.
+    private func scopeText(_ c: DNSConfig) -> String {
+        if privacy && c.userNamedScope { return c.interfaceName ?? "Service" }
+        return c.scopeLabel
+    }
+
     /// The DNS tab: a banner answering "which resolvers win" (the active/global set)
     /// above a table of every service's set — so a VPN pushing its own (or a split-DNS)
     /// resolver is visible, and you can see whether it's the one actually in effect.
@@ -453,7 +461,7 @@ struct ContentView: View {
                         Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption)
                             .help("Primary service — its resolvers answer unscoped queries")
                     }
-                    Text(c.scopeLabel)
+                    Text(scopeText(c))
                     if c.isSupplemental {
                         Text("split-DNS")
                             .font(.caption2)
