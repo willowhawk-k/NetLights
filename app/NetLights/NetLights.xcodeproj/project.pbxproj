@@ -1,0 +1,494 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		967ABDF72FEE2BAC006115F2 /* NetLightsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF02FEE2BAC006115F2 /* NetLightsApp.swift */; };
+		967ABDF82FEE2BAC006115F2 /* BatteryEntityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE42FEE2BAC006115F2 /* BatteryEntityView.swift */; };
+		967ABDF92FEE2BAC006115F2 /* DeviceNodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE62FEE2BAC006115F2 /* DeviceNodeView.swift */; };
+		BB00000000000000000002 /* BluetoothProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000001 /* BluetoothProbe.swift */; };
+		BB00000000000000000004 /* BluetoothEntityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000000000000000003 /* BluetoothEntityView.swift */; };
+		967ABDFA2FEE2BAC006115F2 /* EgressNodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE72FEE2BAC006115F2 /* EgressNodeView.swift */; };
+		967ABDFB2FEE2BAC006115F2 /* InterfaceNodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDEC2FEE2BAC006115F2 /* InterfaceNodeView.swift */; };
+		967ABDFC2FEE2BAC006115F2 /* LEDView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDEE2FEE2BAC006115F2 /* LEDView.swift */; };
+		967ABDFD2FEE2BAC006115F2 /* LocationAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDEF2FEE2BAC006115F2 /* LocationAuth.swift */; };
+		967ABDFE2FEE2BAC006115F2 /* NetworkGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF12FEE2BAC006115F2 /* NetworkGraphView.swift */; };
+		967ABDFF2FEE2BAC006115F2 /* AppIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE12FEE2BAC006115F2 /* AppIconView.swift */; };
+		967ABE002FEE2BAC006115F2 /* InterfaceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDEB2FEE2BAC006115F2 /* InterfaceModel.swift */; };
+		967ABE012FEE2BAC006115F2 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF22FEE2BAC006115F2 /* NetworkMonitor.swift */; };
+		967ABE022FEE2BAC006115F2 /* Privacy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF32FEE2BAC006115F2 /* Privacy.swift */; };
+		967ABE032FEE2BAC006115F2 /* VideoEntityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF52FEE2BAC006115F2 /* VideoEntityView.swift */; };
+		967ABE042FEE2BAC006115F2 /* GatewayNodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE82FEE2BAC006115F2 /* GatewayNodeView.swift */; };
+		967ABE052FEE2BAC006115F2 /* HelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDEA2FEE2BAC006115F2 /* HelpView.swift */; };
+		967ABE062FEE2BAC006115F2 /* IOKitProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDED2FEE2BAC006115F2 /* IOKitProbe.swift */; };
+		967ABE072FEE2BAC006115F2 /* WifiEntityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF62FEE2BAC006115F2 /* WifiEntityView.swift */; };
+		967ABE082FEE2BAC006115F2 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE02FEE2BAC006115F2 /* AboutView.swift */; };
+		967ABE092FEE2BAC006115F2 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE52FEE2BAC006115F2 /* ContentView.swift */; };
+		967ABE0A2FEE2BAC006115F2 /* AssetExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE32FEE2BAC006115F2 /* AssetExport.swift */; };
+		967ABE0B2FEE2BAC006115F2 /* Tooltips.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDF42FEE2BAC006115F2 /* Tooltips.swift */; };
+		967ABE0C2FEE2BAC006115F2 /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE22FEE2BAC006115F2 /* AppInfo.swift */; };
+		967ABE0D2FEE2BAC006115F2 /* HardwarePortNodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967ABDE92FEE2BAC006115F2 /* HardwarePortNodeView.swift */; };
+		967ABE122FEE2E40006115F2 /* Version.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = 967ABE112FEE2E40006115F2 /* Version.xcconfig */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		967ABDD22FEE2B5F006115F2 /* NetLights.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NetLights.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		967ABDE02FEE2BAC006115F2 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AboutView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/AboutView.swift; sourceTree = "<absolute>"; };
+		967ABDE12FEE2BAC006115F2 /* AppIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppIconView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/AppIconView.swift; sourceTree = "<absolute>"; };
+		967ABDE22FEE2BAC006115F2 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppInfo.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/AppInfo.swift; sourceTree = "<absolute>"; };
+		967ABDE32FEE2BAC006115F2 /* AssetExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AssetExport.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/AssetExport.swift; sourceTree = "<absolute>"; };
+		967ABDE42FEE2BAC006115F2 /* BatteryEntityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BatteryEntityView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/BatteryEntityView.swift; sourceTree = "<absolute>"; };
+		967ABDE52FEE2BAC006115F2 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/ContentView.swift; sourceTree = "<absolute>"; };
+		967ABDE62FEE2BAC006115F2 /* DeviceNodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceNodeView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/DeviceNodeView.swift; sourceTree = "<absolute>"; };
+		BB00000000000000000001 /* BluetoothProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BluetoothProbe.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/BluetoothProbe.swift; sourceTree = "<absolute>"; };
+		BB00000000000000000003 /* BluetoothEntityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BluetoothEntityView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/BluetoothEntityView.swift; sourceTree = "<absolute>"; };
+		967ABDE72FEE2BAC006115F2 /* EgressNodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EgressNodeView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/EgressNodeView.swift; sourceTree = "<absolute>"; };
+		967ABDE82FEE2BAC006115F2 /* GatewayNodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GatewayNodeView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/GatewayNodeView.swift; sourceTree = "<absolute>"; };
+		967ABDE92FEE2BAC006115F2 /* HardwarePortNodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HardwarePortNodeView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/HardwarePortNodeView.swift; sourceTree = "<absolute>"; };
+		967ABDEA2FEE2BAC006115F2 /* HelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HelpView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/HelpView.swift; sourceTree = "<absolute>"; };
+		967ABDEB2FEE2BAC006115F2 /* InterfaceModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = InterfaceModel.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/InterfaceModel.swift; sourceTree = "<absolute>"; };
+		967ABDEC2FEE2BAC006115F2 /* InterfaceNodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = InterfaceNodeView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/InterfaceNodeView.swift; sourceTree = "<absolute>"; };
+		967ABDED2FEE2BAC006115F2 /* IOKitProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IOKitProbe.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/IOKitProbe.swift; sourceTree = "<absolute>"; };
+		967ABDEE2FEE2BAC006115F2 /* LEDView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LEDView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/LEDView.swift; sourceTree = "<absolute>"; };
+		967ABDEF2FEE2BAC006115F2 /* LocationAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LocationAuth.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/LocationAuth.swift; sourceTree = "<absolute>"; };
+		967ABDF02FEE2BAC006115F2 /* NetLightsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NetLightsApp.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/NetLightsApp.swift; sourceTree = "<absolute>"; };
+		967ABDF12FEE2BAC006115F2 /* NetworkGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NetworkGraphView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/NetworkGraphView.swift; sourceTree = "<absolute>"; };
+		967ABDF22FEE2BAC006115F2 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NetworkMonitor.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/NetworkMonitor.swift; sourceTree = "<absolute>"; };
+		967ABDF32FEE2BAC006115F2 /* Privacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Privacy.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/Privacy.swift; sourceTree = "<absolute>"; };
+		967ABDF42FEE2BAC006115F2 /* Tooltips.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Tooltips.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/Tooltips.swift; sourceTree = "<absolute>"; };
+		967ABDF52FEE2BAC006115F2 /* VideoEntityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VideoEntityView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/VideoEntityView.swift; sourceTree = "<absolute>"; };
+		967ABDF62FEE2BAC006115F2 /* WifiEntityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WifiEntityView.swift; path = /Users/kwillowhawk/Source/NetLights/Sources/NetLights/WifiEntityView.swift; sourceTree = "<absolute>"; };
+		967ABE0E2FEE2BC4006115F2 /* NetLights-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "NetLights-Bridging-Header.h"; sourceTree = "<group>"; };
+		967ABE112FEE2E40006115F2 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Version.xcconfig; path = /Users/kwillowhawk/Source/NetLights/Version.xcconfig; sourceTree = "<absolute>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		967ABE102FEE2CE3006115F2 /* Exceptions for "NetLights" folder in "NetLights" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 967ABDD12FEE2B5F006115F2 /* NetLights */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		967ABDD42FEE2B5F006115F2 /* NetLights */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				967ABE102FEE2CE3006115F2 /* Exceptions for "NetLights" folder in "NetLights" target */,
+			);
+			path = NetLights;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		967ABDCF2FEE2B5F006115F2 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		967ABDC92FEE2B5F006115F2 = {
+			isa = PBXGroup;
+			children = (
+				967ABDD42FEE2B5F006115F2 /* NetLights */,
+				967ABDD32FEE2B5F006115F2 /* Products */,
+				967ABDE02FEE2BAC006115F2 /* AboutView.swift */,
+				967ABDE12FEE2BAC006115F2 /* AppIconView.swift */,
+				967ABDE22FEE2BAC006115F2 /* AppInfo.swift */,
+				967ABDE32FEE2BAC006115F2 /* AssetExport.swift */,
+				967ABDE42FEE2BAC006115F2 /* BatteryEntityView.swift */,
+				967ABDE52FEE2BAC006115F2 /* ContentView.swift */,
+				967ABDE62FEE2BAC006115F2 /* DeviceNodeView.swift */,
+				BB00000000000000000001 /* BluetoothProbe.swift */,
+				BB00000000000000000003 /* BluetoothEntityView.swift */,
+				967ABDE72FEE2BAC006115F2 /* EgressNodeView.swift */,
+				967ABDE82FEE2BAC006115F2 /* GatewayNodeView.swift */,
+				967ABDE92FEE2BAC006115F2 /* HardwarePortNodeView.swift */,
+				967ABDEA2FEE2BAC006115F2 /* HelpView.swift */,
+				967ABDEB2FEE2BAC006115F2 /* InterfaceModel.swift */,
+				967ABDEC2FEE2BAC006115F2 /* InterfaceNodeView.swift */,
+				967ABDED2FEE2BAC006115F2 /* IOKitProbe.swift */,
+				967ABDEE2FEE2BAC006115F2 /* LEDView.swift */,
+				967ABDEF2FEE2BAC006115F2 /* LocationAuth.swift */,
+				967ABDF02FEE2BAC006115F2 /* NetLightsApp.swift */,
+				967ABDF12FEE2BAC006115F2 /* NetworkGraphView.swift */,
+				967ABDF22FEE2BAC006115F2 /* NetworkMonitor.swift */,
+				967ABDF32FEE2BAC006115F2 /* Privacy.swift */,
+				967ABDF42FEE2BAC006115F2 /* Tooltips.swift */,
+				967ABDF52FEE2BAC006115F2 /* VideoEntityView.swift */,
+				967ABDF62FEE2BAC006115F2 /* WifiEntityView.swift */,
+				967ABE0E2FEE2BC4006115F2 /* NetLights-Bridging-Header.h */,
+				967ABE112FEE2E40006115F2 /* Version.xcconfig */,
+			);
+			sourceTree = "<group>";
+		};
+		967ABDD32FEE2B5F006115F2 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				967ABDD22FEE2B5F006115F2 /* NetLights.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		967ABDD12FEE2B5F006115F2 /* NetLights */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 967ABDDD2FEE2B61006115F2 /* Build configuration list for PBXNativeTarget "NetLights" */;
+			buildPhases = (
+				967ABDCE2FEE2B5F006115F2 /* Sources */,
+				967ABDCF2FEE2B5F006115F2 /* Frameworks */,
+				967ABDD02FEE2B5F006115F2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				967ABDD42FEE2B5F006115F2 /* NetLights */,
+			);
+			name = NetLights;
+			packageProductDependencies = (
+			);
+			productName = NetLights;
+			productReference = 967ABDD22FEE2B5F006115F2 /* NetLights.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		967ABDCA2FEE2B5F006115F2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+				TargetAttributes = {
+					967ABDD12FEE2B5F006115F2 = {
+						CreatedOnToolsVersion = 26.5;
+						LastSwiftMigration = 2650;
+					};
+				};
+			};
+			buildConfigurationList = 967ABDCD2FEE2B5F006115F2 /* Build configuration list for PBXProject "NetLights" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 967ABDC92FEE2B5F006115F2;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 967ABDD32FEE2B5F006115F2 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				967ABDD12FEE2B5F006115F2 /* NetLights */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		967ABDD02FEE2B5F006115F2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				967ABE122FEE2E40006115F2 /* Version.xcconfig in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		967ABDCE2FEE2B5F006115F2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				967ABDF72FEE2BAC006115F2 /* NetLightsApp.swift in Sources */,
+				967ABDF82FEE2BAC006115F2 /* BatteryEntityView.swift in Sources */,
+				967ABDF92FEE2BAC006115F2 /* DeviceNodeView.swift in Sources */,
+				BB00000000000000000002 /* BluetoothProbe.swift in Sources */,
+				BB00000000000000000004 /* BluetoothEntityView.swift in Sources */,
+				967ABDFA2FEE2BAC006115F2 /* EgressNodeView.swift in Sources */,
+				967ABDFB2FEE2BAC006115F2 /* InterfaceNodeView.swift in Sources */,
+				967ABDFC2FEE2BAC006115F2 /* LEDView.swift in Sources */,
+				967ABDFD2FEE2BAC006115F2 /* LocationAuth.swift in Sources */,
+				967ABDFE2FEE2BAC006115F2 /* NetworkGraphView.swift in Sources */,
+				967ABDFF2FEE2BAC006115F2 /* AppIconView.swift in Sources */,
+				967ABE002FEE2BAC006115F2 /* InterfaceModel.swift in Sources */,
+				967ABE012FEE2BAC006115F2 /* NetworkMonitor.swift in Sources */,
+				967ABE022FEE2BAC006115F2 /* Privacy.swift in Sources */,
+				967ABE032FEE2BAC006115F2 /* VideoEntityView.swift in Sources */,
+				967ABE042FEE2BAC006115F2 /* GatewayNodeView.swift in Sources */,
+				967ABE052FEE2BAC006115F2 /* HelpView.swift in Sources */,
+				967ABE062FEE2BAC006115F2 /* IOKitProbe.swift in Sources */,
+				967ABE072FEE2BAC006115F2 /* WifiEntityView.swift in Sources */,
+				967ABE082FEE2BAC006115F2 /* AboutView.swift in Sources */,
+				967ABE092FEE2BAC006115F2 /* ContentView.swift in Sources */,
+				967ABE0A2FEE2BAC006115F2 /* AssetExport.swift in Sources */,
+				967ABE0B2FEE2BAC006115F2 /* Tooltips.swift in Sources */,
+				967ABE0C2FEE2BAC006115F2 /* AppInfo.swift in Sources */,
+				967ABE0D2FEE2BAC006115F2 /* HardwarePortNodeView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		967ABDDB2FEE2B61006115F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 967ABE112FEE2E40006115F2 /* Version.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		967ABDDC2FEE2B61006115F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 967ABE112FEE2E40006115F2 /* Version.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		967ABDDE2FEE2B61006115F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 967ABE112FEE2E40006115F2 /* Version.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 2KU2Y7CKHS;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NetLights/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NetLights;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "NetLights uses Bluetooth only to list your already-connected Bluetooth devices (name, type, and battery where reported) in the graph. It never scans for, pairs with, or connects to anything.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "NetLights uses your location only to read the current Wi-Fi network name (SSID), which macOS protects behind location access. No location coordinates are read, stored, or shared.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.willowhawk.NetLights;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
+				PRODUCT_NAME = NetLights;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = NO;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "NetLights-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		967ABDDF2FEE2B61006115F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 967ABE112FEE2E40006115F2 /* Version.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 2KU2Y7CKHS;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = NO;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_AUDIO_INPUT = NO;
+				ENABLE_RESOURCE_ACCESS_BLUETOOTH = YES;
+				ENABLE_RESOURCE_ACCESS_CALENDARS = NO;
+				ENABLE_RESOURCE_ACCESS_CAMERA = NO;
+				ENABLE_RESOURCE_ACCESS_CONTACTS = NO;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
+				ENABLE_RESOURCE_ACCESS_USB = NO;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NetLights/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = NetLights;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "NetLights uses Bluetooth only to list your already-connected Bluetooth devices (name, type, and battery where reported) in the graph. It never scans for, pairs with, or connects to anything.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "NetLights uses your location only to read the current Wi-Fi network name (SSID), which macOS protects behind location access. No location coordinates are read, stored, or shared.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.5;
+				PRODUCT_BUNDLE_IDENTIFIER = com.willowhawk.NetLights;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
+				PRODUCT_NAME = NetLights;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = NO;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "NetLights-Bridging-Header.h";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		967ABDCD2FEE2B5F006115F2 /* Build configuration list for PBXProject "NetLights" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				967ABDDB2FEE2B61006115F2 /* Debug */,
+				967ABDDC2FEE2B61006115F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		967ABDDD2FEE2B61006115F2 /* Build configuration list for PBXNativeTarget "NetLights" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				967ABDDE2FEE2B61006115F2 /* Debug */,
+				967ABDDF2FEE2B61006115F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 967ABDCA2FEE2B5F006115F2 /* Project object */;
+}

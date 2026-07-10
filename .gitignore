@@ -16,6 +16,13 @@ Package.resolved
 .claude/
 *.xcodeproj
 *.xcworkspace
+# Exception: keep the Mac App Store Xcode project's manifest in git so it's recoverable
+# if lost (it's the one un-versioned, hand-edited artifact). The SPM / Developer-ID
+# GitHub build never reads it, so tracking it doesn't affect that channel. User-specific
+# Xcode state (xcuserdata) stays ignored.
+!/app/NetLights/NetLights.xcodeproj/
+/app/NetLights/NetLights.xcodeproj/xcuserdata/
+/app/NetLights/NetLights.xcodeproj/**/xcuserdata/
 
 # Local-only collaboration notes
 docs/AI-ASSIST.md
