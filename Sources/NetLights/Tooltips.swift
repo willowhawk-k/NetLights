@@ -63,6 +63,13 @@ struct DeviceTooltip: View {
                 row("Link", "Bluetooth")
                 if let batt = device.batteryLabel { row("Battery", batt) }
                 if let addr = device.serial { row("Address", addr) }
+            } else if device.kind == .storage {
+                if let cap = device.capacityLabel { row("Capacity", cap) }
+                if let med = device.detail { row("Medium", med) }
+                row("Interconnect", device.connection)
+            } else if device.kind == .computer {
+                if let mode = device.detail { row("Mode", mode) }
+                row("Link", device.connection)
             } else {
                 row("Bus", device.connectionLabel)
                 if device.speedLabel != "—" { row("Speed", device.speedLabel) }

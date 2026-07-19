@@ -106,9 +106,12 @@ final class NetworkMonitor: ObservableObject {
         attachedDevices = lastPortStatus.attachedDevices
         systemPower = lastPortStatus.systemPower
 
-        // Re-query topology roughly every ~5s, and never run two at once.
+        // Re-query topology roughly every ~3s so a plug/unplug shows promptly, and
+        // never run two at once. The in-process IOKit walk is cheap; the genuinely slow
+        // part (Bluetooth's XPC device list) is throttled separately below. Note some of
+        // the unplug lag is macOS tearing the device down in the IORegistry, not us.
         portQueryCounter += 1
-        if (portQueryCounter == 1 || portQueryCounter % 7 == 0) && !portQueryInFlight {
+        if (portQueryCounter == 1 || portQueryCounter % 4 == 0) && !portQueryInFlight {
             portQueryInFlight = true
             let model = macModel
             // NSScreen names must be read on the main actor; capture them here and
@@ -580,6 +583,7 @@ final class NetworkMonitor: ObservableObject {
         // External displays (CoreGraphics) grouped under the synthetic "Displays"
         // entity (receptacle -2): macOS exposes no port mapping for them.
         status.attachedDevices = scan.devices
+            + storageScan(tree: tree, busToReceptacle: tb.busToReceptacle)
             + buildDisplays(IOKitProbe.externalDisplays(), names: displayNames)
             + buildBluetooth(bluetooth, battery: IOKitProbe.bluetoothHIDBattery(),
                              hidUsage: IOKitProbe.hidGenericDesktopUsage())
@@ -619,6 +623,89 @@ final class NetworkMonitor: ObservableObject {
         }
         walk(tree, nil)
         return (busToReceptacle, tbConnected)
+    }
+
+    /// External storage devices (a Mac in Target Disk Mode, TB/USB SSDs) from the same
+    /// registry tree, mapped to their Thunderbolt receptacle. A block-storage device
+    /// node carries a "Protocol Characteristics" dict and has an `IOBlockStorageDriver`
+    /// child; we keep only those whose interconnect Location is External. A device
+    /// flagged "Target Disk Mode" is another Mac sharing its internal disk over
+    /// Thunderbolt — rendered as a Mac chip with the disk nested beneath it. Reads only
+    /// device metadata (name/size/interconnect); never the mounted volume's files, so no
+    /// removable-volume TCC prompt and no new entitlement — same posture as the USB/TB
+    /// probes. Geometry-free.
+    nonisolated private static func storageScan(tree: [String: Any], busToReceptacle: [Int: Int]) -> [AttachedDevice] {
+        var out: [AttachedDevice] = []
+
+        // A block-storage device node: has Protocol Characteristics AND an
+        // IOBlockStorageDriver child (excludes the SCSI/TDM intermediate nodes).
+        func isStorageDevice(_ node: [String: Any]) -> Bool {
+            guard node["Protocol Characteristics"] is [String: Any] else { return false }
+            return ((node["IORegistryEntryChildren"] as? [[String: Any]]) ?? [])
+                .contains { ($0["IOObjectClass"] as? String) == "IOBlockStorageDriver" }
+        }
+        // Whole-disk capacity: the descendant IOMedia flagged Whole = Yes.
+        func wholeDiskSize(_ node: [String: Any]) -> UInt64? {
+            if (node["IOObjectClass"] as? String) == "IOMedia",
+               (node["Whole"] as? NSNumber)?.boolValue == true {
+                return (node["Size"] as? NSNumber)?.uint64Value
+            }
+            for c in (node["IORegistryEntryChildren"] as? [[String: Any]]) ?? [] {
+                if let s = wholeDiskSize(c) { return s }
+            }
+            return nil
+        }
+        func mediumLabel(_ m: String?) -> String? {
+            switch m { case "Solid State": return "SSD"; case "Rotational": return "HDD"; default: return nil }
+        }
+        func nonEmpty(_ s: String?) -> String? { (s?.isEmpty == false) ? s : nil }
+
+        func walk(_ node: [String: Any], _ hostBus: Int?) {
+            var host = hostBus
+            if (node["IOObjectClass"] as? String)?.contains("IOThunderboltSwitch") == true,
+               (node["Depth"] as? NSNumber)?.intValue == 0,
+               let rid = (node["Router ID"] as? NSNumber)?.intValue {
+                host = rid
+            }
+            if isStorageDevice(node),
+               let proto = node["Protocol Characteristics"] as? [String: Any],
+               (proto["Physical Interconnect Location"] as? String) == "External",
+               let recep = host.flatMap({ busToReceptacle[$0] }) {
+                let dev = node["Device Characteristics"] as? [String: Any]
+                let interconnect = (proto["Physical Interconnect"] as? String) ?? "External"
+                let isTDM   = (dev?["Target Disk Mode"] as? NSNumber)?.boolValue ?? false
+                let vendor  = nonEmpty(dev?["Vendor Name"] as? String)
+                let product = nonEmpty(dev?["Product Name"] as? String)
+                let medium  = mediumLabel(dev?["Medium Type"] as? String)
+                let size    = wholeDiskSize(node)
+                let capMed  = [size.map(formatDiskCapacity), medium].compactMap { $0 }.joined(separator: " ")
+
+                if isTDM {
+                    // Another Mac sharing its disk: Mac chip + disk nested beneath it.
+                    let macID = "tdm-mac-\(recep)"
+                    out.append(AttachedDevice(id: macID, name: "Macintosh", receptacle: recep,
+                                              kind: .computer, detail: "Target Disk Mode",
+                                              connection: interconnect))
+                    out.append(AttachedDevice(id: "tdm-disk-\(recep)",
+                                              name: capMed.isEmpty ? "Internal Disk" : capMed,
+                                              receptacle: recep, kind: .storage, parentID: macID,
+                                              vendorName: vendor, detail: medium,
+                                              connection: interconnect, capacityBytes: size))
+                } else {
+                    // A plain external drive on this port.
+                    out.append(AttachedDevice(id: "disk-\(recep)-\(product ?? interconnect)",
+                                              name: product ?? (capMed.isEmpty ? "Disk" : capMed),
+                                              receptacle: recep, kind: .storage,
+                                              vendorName: vendor, detail: medium,
+                                              connection: interconnect, capacityBytes: size))
+                }
+            }
+            for child in (node["IORegistryEntryChildren"] as? [[String: Any]]) ?? [] {
+                walk(child, host)
+            }
+        }
+        walk(tree, nil)
+        return out
     }
 
     /// Builds Display device chips (receptacle -2) from CoreGraphics displays, using

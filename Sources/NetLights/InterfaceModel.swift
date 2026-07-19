@@ -381,7 +381,7 @@ struct SystemPower: Equatable {
 
 /// Classification of a USB device attached to a hardware port, for iconography.
 enum USBDeviceKind {
-    case audio, storage, hub, keyboard, pointing, gamecontroller, display, camera, battery, network, generic
+    case audio, storage, hub, keyboard, pointing, gamecontroller, display, camera, battery, network, computer, generic
 
     var systemImage: String {
         switch self {
@@ -395,6 +395,7 @@ enum USBDeviceKind {
         case .camera:         return "camera.fill"
         case .battery:        return "battery.100.bolt"
         case .network:        return "antenna.radiowaves.left.and.right"
+        case .computer:       return "laptopcomputer"
         case .generic:        return "cube.box.fill"
         }
     }
@@ -411,6 +412,7 @@ enum USBDeviceKind {
         case .camera:         return "Camera"
         case .battery:        return "Battery"
         case .network:        return "Network"
+        case .computer:       return "Mac"
         case .generic:        return "USB Device"
         }
     }
@@ -509,24 +511,32 @@ struct AttachedDevice: Identifiable, Equatable {
     var usbVersion: String? = nil     // e.g. "USB 2.1" (from bcdUSB)
     var linkSpeedBps: UInt64? = nil   // negotiated USB link speed (UsbLinkSpeed)
     var detail: String? = nil         // displays: "5120 × 2160 @ 100 Hz"
-    var connection: String = "USB"    // "USB" / "Display" / "Bluetooth"
+    var connection: String = "USB"    // "USB" / "Display" / "Bluetooth" / "Thunderbolt" (storage interconnect)
     var batteryPercent: Int? = nil    // device battery %, where the OS reports it (BT HID)
+    var capacityBytes: UInt64? = nil  // storage devices: whole-disk capacity
 
     var systemImage: String { kind.systemImage }
     var isNetwork: Bool { interfaceBSD != nil }
     var batteryLabel: String? { batteryPercent.map { "\($0)%" } }
+
+    /// Whole-disk capacity, decimal (drives are marketed in powers of 1000).
+    var capacityLabel: String? {
+        guard let b = capacityBytes, b > 0 else { return nil }
+        return formatDiskCapacity(b)
+    }
 
     /// Bus / link type, for the Devices table.
     var connectionLabel: String {
         switch connection {
         case "Display":   return "Display"
         case "Bluetooth": return "Bluetooth"
-        default:          return usbVersion ?? "USB"
+        default:          return usbVersion ?? connection   // "USB", or a storage interconnect (Thunderbolt)
         }
     }
 
-    /// Throughput/capability: USB link speed, or a display's resolution/refresh.
+    /// Throughput/capability: storage capacity, USB link speed, or a display's resolution/refresh.
     var speedLabel: String {
+        if kind == .storage { return capacityLabel ?? "—" }
         if let d = detail { return d }
         guard let b = linkSpeedBps, b > 0 else { return "—" }
         switch b {
@@ -698,4 +708,15 @@ func formatByteCount(_ n: UInt64) -> String {
     case ..<1_073_741_824: return String(format: "%.1f MB", Double(n) / 1_048_576)
     default:               return String(format: "%.2f GB", Double(n) / 1_073_741_824)
     }
+}
+
+/// Storage capacity in decimal units (drives are marketed in powers of 1000, so a
+/// "1 TB" disk is 1,000,000,000,000 bytes — not the binary GiB `formatByteCount` uses).
+func formatDiskCapacity(_ bytes: UInt64) -> String {
+    let units = ["B", "KB", "MB", "GB", "TB", "PB"]
+    var v = Double(bytes), i = 0
+    while v >= 1000, i < units.count - 1 { v /= 1000; i += 1 }
+    // One decimal below 10 (1.5 TB), whole above — and drop a bare ".0" (1 TB, not 1.0 TB).
+    let n = String(format: (i > 0 && v < 10) ? "%.1f" : "%.0f", v)
+    return "\(n.hasSuffix(".0") ? String(n.dropLast(2)) : n) \(units[i])"
 }

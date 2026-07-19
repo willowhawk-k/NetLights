@@ -34,6 +34,15 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
+### 1.7.1 — 2026-07-18
+- **External storage & Target Disk Mode on the map.** External drives now appear as
+  storage chips on the Thunderbolt/USB port they're plugged into. A Mac connected in
+  **Target Disk Mode** shows as a Mac chip with its disk nested beneath it (capacity,
+  medium, and interconnect on hover) — so you can see a decommissioning target Mac and
+  its drive right on the port. Read in-process from IOKit device metadata; no new
+  permission, and never the volume's files.
+- Attach/detach now shows within ~3s (was ~5s).
+
 ### 1.7.0 — 2026-07-08
 - **iPhone / Thunderbolt bracket overlap fixed.** A hardware port now reserves layout
   width for its anchored interfaces' spread, not just its device-tree leaves — so an
