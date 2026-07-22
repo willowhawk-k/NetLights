@@ -79,8 +79,12 @@ final class NetworkMonitor: ObservableObject {
         interfaces = newInterfaces
         let newRoutes = Self.gatherRoutes()
         routes = newRoutes
-        var newGateways = Self.buildGatewayNodes(from: newRoutes, interfaces: newInterfaces)
-        let newEgress = Self.computeEgress(routes: newRoutes, interfaces: newInterfaces)
+        let rankNow = Self.serviceOrder()   // macOS network service order → gateway precedence
+        var newGateways = Self.buildGatewayNodes(from: newRoutes, interfaces: newInterfaces, rank: rankNow)
+        var newEgress = Self.computeEgress(routes: newRoutes, interfaces: newInterfaces)
+        // SSID comes from macOS-specific CoreWLAN, so it's attached here rather than
+        // inside computeEgress — keeping that transform pure/portable.
+        if newEgress?.kind == .wifi { newEgress?.name = Self.currentSSID() }
         // Option A: tag the egress gateway with the network's name (SSID/domain).
         if let e = newEgress,
            let gi = newGateways.firstIndex(where: {
@@ -94,7 +98,7 @@ final class NetworkMonitor: ObservableObject {
         // by Location authorization — not when there's simply no Wi-Fi association.
         let wifiPresent = newInterfaces.contains { $0.category == .wifi }
         locationHelpAvailable = wifiPresent && !locationAuth.isAuthorized
-        serviceRank = Self.serviceOrder()
+        serviceRank = rankNow
         dnsConfigs = Self.gatherDNS()
 
         // Build hardware ports immediately from the *cached* port status so the
@@ -1005,10 +1009,11 @@ final class NetworkMonitor: ObservableObject {
         default:                      kind = .other
         }
 
-        // Only the Wi-Fi SSID is a trustworthy network identity. (DNS search
-        // domains were misleading — corporate domains persist even off-VPN.)
-        let name: String? = (kind == .wifi) ? currentSSID() : nil
-        return EgressInfo(viaInterface: ifname, kind: kind, name: name)
+        // The network name (Wi-Fi SSID) is attached by the caller — it comes from a
+        // macOS-specific API (CoreWLAN), so leaving it out keeps this transform pure and
+        // portable. (Only the SSID is a trustworthy identity; DNS search domains were
+        // misleading — corporate domains persist even off-VPN.)
+        return EgressInfo(viaInterface: ifname, kind: kind, name: nil)
     }
 
     /// Current Wi-Fi SSID, or nil if unavailable (needs Location authorization on
@@ -1021,7 +1026,7 @@ final class NetworkMonitor: ObservableObject {
 
     // MARK: - Gateway node construction
 
-    static func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceInfo]) -> [GatewayNode] {
+    static func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceInfo], rank: [String: Int]) -> [GatewayNode] {
         // Collect all IPs assigned to local interfaces so we don't re-show them as gateways
         let localIPs = Set(interfaces.flatMap { $0.ipv4Addresses })
 
@@ -1049,11 +1054,10 @@ final class NetworkMonitor: ObservableObject {
                 byIP[gw]?.reachableVia.append(route.interfaceName)
             }
         }
-        // Order each gateway's interfaces by the macOS network SERVICE ORDER (the
-        // System Settings drag-list — macOS's actual source of truth, since it
-        // exposes no numeric route metric), so a gateway shared by several uplinks
-        // anchors to whichever the OS prefers.
-        let rank = serviceOrder()
+        // Order each gateway's interfaces by the caller-supplied `rank` — the macOS
+        // network SERVICE ORDER (System Settings drag-list; macOS exposes no numeric
+        // route metric). A Linux collector will pass a route-metric-derived rank
+        // instead, so a gateway shared by several uplinks anchors to whichever wins.
         for (ip, var node) in byIP {
             node.reachableVia.sort { (rank[$0] ?? Int.max) < (rank[$1] ?? Int.max) }
             byIP[ip] = node
