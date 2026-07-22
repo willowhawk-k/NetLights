@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Interface Type
 
-enum InterfaceCategory: String, CaseIterable {
+enum InterfaceCategory: String, CaseIterable, Codable {
     case ethernet   = "Ethernet"
     case wifi       = "Wi-Fi"
     case awdl       = "AWDL"        // AirDrop/AirPlay wireless service
@@ -41,13 +41,13 @@ enum InterfaceCategory: String, CaseIterable {
 
 // MARK: - Link State
 
-enum LinkState {
+enum LinkState: Codable {
     case up, down, unknown
 }
 
 // MARK: - Interface Info
 
-struct InterfaceInfo: Identifiable, Equatable {
+struct InterfaceInfo: Identifiable, Equatable, Codable {
     let id: String          // BSD name, e.g. "en0"
     var displayName: String? // Human name from SystemConfiguration, e.g. "Wi-Fi", "Thunderbolt 1"
     var category: InterfaceCategory
@@ -223,7 +223,7 @@ struct InterfaceInfo: Identifiable, Equatable {
 
 // MARK: - Route Entry
 
-struct RouteEntry: Identifiable {
+struct RouteEntry: Identifiable, Codable {
     let id = UUID()
     var destination: String
     var gateway: String
@@ -237,7 +237,7 @@ struct RouteEntry: Identifiable {
 
 /// Represents a next-hop router visible in the routing table.
 /// These are external to the machine — shown in the bottom "Gateways" band.
-struct GatewayNode: Identifiable, Equatable {
+struct GatewayNode: Identifiable, Equatable, Codable {
     let id: String              // gateway IP address
     var isDefault: Bool         // appears as a default (0.0.0.0) route gateway
     var reachableVia: [String]  // BSD interface names that have a route to this gateway
@@ -269,7 +269,7 @@ struct GatewayNode: Identifiable, Equatable {
 
 /// Represents a physical USB-C / Thunderbolt port slot on the machine chassis,
 /// or a connected USB peripheral (iPhone/iPad, id = 0).
-struct HardwarePort: Identifiable {
+struct HardwarePort: Identifiable, Codable {
     let id: Int             // Thunderbolt port number (1-based); 0 = iPhone/iPad
     var side: String        // "Left", "Right", "Rear", or "" if unknown
     var position: String    // e.g. "Front", "Middle", "Rear" on that side, or ""
@@ -287,8 +287,8 @@ struct HardwarePort: Identifiable {
 
 /// Describes how the machine reaches the internet — the last physical hop and,
 /// when known, the network's identity (Wi-Fi SSID, wired search domain, …).
-struct EgressInfo: Equatable {
-    enum Kind: Equatable {
+struct EgressInfo: Equatable, Codable {
+    enum Kind: Equatable, Codable {
         case wifi, wired, cellular, other
         var label: String {
             switch self {
@@ -324,7 +324,7 @@ struct EgressInfo: Equatable {
 /// which one actually wins — is the troubleshooting value. Read from SCDynamicStore:
 /// in-process, privilege-free, sandbox-safe (same store the egress/service-order
 /// lookups already use).
-struct DNSConfig: Identifiable, Equatable {
+struct DNSConfig: Identifiable, Equatable, Codable {
     let id: String                 // "global", or the network service id
     var scopeLabel: String         // "Active resolvers", a service name, or an interface
     var interfaceName: String?     // interface the set is bound to (en0, utun3), when known
@@ -344,7 +344,7 @@ struct DNSConfig: Identifiable, Equatable {
 
 /// SYSTEM-level power state from AppleSmartBattery. macOS exposes no per-port
 /// power direction, so this is intentionally not tied to any USB-C port.
-struct SystemPower: Equatable {
+struct SystemPower: Equatable, Codable {
     var onAC: Bool
     var charging: Bool
     var fullyCharged: Bool
@@ -380,7 +380,7 @@ struct SystemPower: Equatable {
 // MARK: - Attached USB device (non-network peripherals)
 
 /// Classification of a USB device attached to a hardware port, for iconography.
-enum USBDeviceKind {
+enum USBDeviceKind: Codable {
     case audio, storage, hub, keyboard, pointing, gamecontroller, display, camera, battery, network, computer, generic
 
     var systemImage: String {
@@ -494,7 +494,7 @@ enum USBDeviceKind {
 }
 
 /// A non-network USB peripheral attached to a hardware port (shown as a device chip).
-struct AttachedDevice: Identifiable, Equatable {
+struct AttachedDevice: Identifiable, Equatable, Codable {
     let id: String        // stable per device (locationID)
     var name: String
     var receptacle: Int   // physical port id it's plugged into (-1 Wi-Fi, -2 Displays)
@@ -658,7 +658,7 @@ func hardwarePortLayout(model: String) -> [Int: (side: String, position: String)
 
 // MARK: - Traffic State (for LED blinking)
 
-struct TrafficState {
+struct TrafficState: Codable {
     var rxActive: Bool = false
     var txActive: Bool = false
     var lastRx: UInt64 = 0
@@ -719,4 +719,26 @@ func formatDiskCapacity(_ bytes: UInt64) -> String {
     // One decimal below 10 (1.5 TB), whole above — and drop a bare ".0" (1 TB, not 1.0 TB).
     let n = String(format: (i > 0 && v < 10) ? "%.1f" : "%.0f", v)
     return "\(n.hasSuffix(".0") ? String(n.dropLast(2)) : n) \(units[i])"
+}
+
+// MARK: - Topology snapshot (the cross-platform contract)
+
+/// A platform-neutral, serializable snapshot of everything the graph draws at one
+/// instant. This is THE contract between a platform-specific collector (macOS
+/// IOKit/sysctl/SCDynamicStore, Linux /sys·netlink·D-Bus, …) and the shared layout +
+/// rendering layers — the single artifact every platform agrees on. `Codable` so it can
+/// cross a process/socket boundary (a Linux collector → a web renderer), be captured for
+/// tests, or dumped as JSON. Live throughput is NOT stored here: it's derived from each
+/// interface's cumulative `rxBytes`/`txBytes` by a stateful rate deriver, per platform.
+struct TopologySnapshot: Codable {
+    var schemaVersion: Int = 1
+    var machineModel: String            // hw.model (macOS) / DMI product name (Linux); "" if unknown
+    var interfaces: [InterfaceInfo] = []
+    var routes: [RouteEntry] = []
+    var gateways: [GatewayNode] = []
+    var hardwarePorts: [HardwarePort] = []
+    var attachedDevices: [AttachedDevice] = []
+    var egress: EgressInfo? = nil
+    var systemPower: SystemPower? = nil
+    var dnsConfigs: [DNSConfig] = []
 }
