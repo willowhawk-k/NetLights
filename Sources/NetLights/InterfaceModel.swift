@@ -41,7 +41,7 @@ enum InterfaceCategory: String, CaseIterable, Codable {
 
 // MARK: - Link State
 
-enum LinkState: Codable {
+enum LinkState: String, Codable {
     case up, down, unknown
 }
 
@@ -288,7 +288,7 @@ struct HardwarePort: Identifiable, Codable {
 /// Describes how the machine reaches the internet — the last physical hop and,
 /// when known, the network's identity (Wi-Fi SSID, wired search domain, …).
 struct EgressInfo: Equatable, Codable {
-    enum Kind: Equatable, Codable {
+    enum Kind: String, Equatable, Codable {
         case wifi, wired, cellular, other
         var label: String {
             switch self {
@@ -380,7 +380,7 @@ struct SystemPower: Equatable, Codable {
 // MARK: - Attached USB device (non-network peripherals)
 
 /// Classification of a USB device attached to a hardware port, for iconography.
-enum USBDeviceKind: Codable {
+enum USBDeviceKind: String, Codable {
     case audio, storage, hub, keyboard, pointing, gamecontroller, display, camera, battery, network, computer, generic
 
     var systemImage: String {

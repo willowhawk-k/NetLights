@@ -113,6 +113,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Dev / cross-platform: emit a full TopologySnapshot as JSON — the collector's
+        // serializable output, the same contract a Linux build will produce — then exit.
+        if CommandLine.arguments.contains("--dump-json") {
+            let enc = JSONEncoder()
+            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? enc.encode(NetworkMonitor().snapshot()),
+               let json = String(data: data, encoding: .utf8) {
+                print(json)
+            }
+            NSApp.terminate(nil)
+            return
+        }
+
         // Without a proper .app bundle, SPM executables default to a background
         // activation policy and never show a window. Force foreground mode here.
         NSApp.setActivationPolicy(.regular)

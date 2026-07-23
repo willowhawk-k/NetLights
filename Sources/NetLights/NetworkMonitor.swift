@@ -6,8 +6,17 @@ import CoreWLAN
 
 // MARK: - NetworkMonitor
 
+/// A platform's topology gatherer: one call returns a complete, serializable
+/// `TopologySnapshot`. macOS is `NetworkMonitor` (IOKit / sysctl / SystemConfiguration /
+/// CoreWLAN); a Linux build will add a collector reading /sys · netlink · D-Bus. Marked
+/// `@MainActor` for now because the macOS gather touches main-actor APIs (NSScreen for
+/// display names) — the isolation gets revisited when the Linux collector lands.
+@MainActor protocol TopologyCollector {
+    func snapshot() -> TopologySnapshot
+}
+
 @MainActor
-final class NetworkMonitor: ObservableObject {
+final class NetworkMonitor: ObservableObject, TopologyCollector {
     @Published var interfaces: [InterfaceInfo] = []
     @Published var routes: [RouteEntry] = []
     @Published var gateways: [GatewayNode] = []
@@ -71,6 +80,34 @@ final class NetworkMonitor: ObservableObject {
         locationAuth.onAuthorizationChange = nil
         trafficClearTimers.values.forEach { $0.invalidate() }
         trafficClearTimers.removeAll()
+    }
+
+    /// One-shot, COMPLETE topology gather — the `TopologyCollector` entry point (a Linux
+    /// build mirrors this shape from /sys · netlink · D-Bus). Unlike the live 0.75s poll
+    /// in `refresh()`, this gathers everything synchronously — including the expensive
+    /// port query — so the returned snapshot is self-contained (used by `--dump-json` and
+    /// as the cross-platform contract). Reads no `@Published` state and assigns none.
+    func snapshot() -> TopologySnapshot {
+        let interfaces = Self.gatherInterfaces()
+        let routes     = Self.gatherRoutes()
+        let rank       = Self.serviceOrder()
+        var gateways   = Self.buildGatewayNodes(from: routes, interfaces: interfaces, rank: rank)
+        var egress     = Self.computeEgress(routes: routes, interfaces: interfaces)
+        if egress?.kind == .wifi { egress?.name = Self.currentSSID() }
+        if let e = egress, let gi = gateways.firstIndex(where: {
+            $0.isDefault && !$0.isVPN && $0.reachableVia.contains(e.viaInterface)
+        }) { gateways[gi].networkName = e.name }
+
+        let status = Self.queryPortStatus(displayNames: IOKitProbe.displayNames(),
+                                          bluetooth: BluetoothProbe.connectedDevices())
+        let ports  = Self.buildHardwarePorts(from: interfaces, macModel: macModel, portStatus: status)
+
+        return TopologySnapshot(
+            machineModel: macModel,
+            interfaces: interfaces, routes: routes, gateways: gateways,
+            hardwarePorts: ports, attachedDevices: status.attachedDevices,
+            egress: egress, systemPower: status.systemPower,
+            dnsConfigs: Self.gatherDNS())
     }
 
     func refresh() {
