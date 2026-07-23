@@ -187,42 +187,25 @@ private final class LayoutCache {
     }
 }
 
-struct NetworkGraphView: View {
-    let interfaces:    [InterfaceInfo]
-    let trafficStates: [String: TrafficState]
-    let routes:        [RouteEntry]
-    let gateways:      [GatewayNode]
-    let hardwarePorts: [HardwarePort]
+// MARK: - GraphLayoutEngine (SwiftUI-free layout geometry)
+
+/// The pure layout-geometry of the graph, lifted verbatim out of `NetworkGraphView`
+/// so a future non-SwiftUI (web/SVG) renderer can reuse it. It reads only Foundation
+/// model types + `ColorToken`; the SwiftUI view builds one per `body` evaluation and
+/// delegates through thin forwarders. The shared `cache` (a class held in the view
+/// @State) persists memoization across rebuilds, so behavior is unchanged.
+fileprivate struct GraphLayoutEngine {
+    let interfaces:      [InterfaceInfo]
+    let trafficStates:   [String: TrafficState]
+    let routes:          [RouteEntry]
+    let gateways:        [GatewayNode]
+    let hardwarePorts:   [HardwarePort]
     let attachedDevices: [AttachedDevice]
-    let egress:        EgressInfo?
-    let systemPower:   SystemPower?
-    let hideUnused:    Bool
-
-    @State private var viewSize: CGSize = .zero
-    // dashPhase drives the ant-crawl on active traffic lines.
-    // It only advances when there is traffic (no blink; just moving vs. static).
-    @State private var dashPhase: CGFloat = 0
-
-    // Central pointer-driven hover (see HoverTarget).
-    @State private var pendingTarget: HoverTarget?
-    @State private var shownTarget: HoverTarget?
-    @State private var hoverTask: Task<Void, Never>?
-    @State private var tipSize: CGSize = .zero
-    // Pointer location captured when a wire hover begins. linkHoverPoint tracks the
-    // PENDING target; shownLinkPoint is promoted from it only when the target is
-    // committed — so a link tooltip's position and its content always agree (no
-    // brief "old link's info at the new cursor spot" while the debounce settles).
-    @State private var linkHoverPoint: CGPoint = .zero
-    @State private var shownLinkPoint: CGPoint = .zero
-    // Memo of the last wire hit-test: buildLines() is relatively expensive, so we
-    // reuse the result while the pointer hasn't moved far enough to change it.
-    @State private var lastWireProbePoint: CGPoint?
-    @State private var lastWireProbeTarget: HoverTarget?
-
-    // Per-frame layout memo (see LayoutCache). Keyed by `layoutSig`.
-    @State private var layoutCache = LayoutCache()
-
-    private let dashTimer = Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()
+    let egress:          EgressInfo?
+    let systemPower:     SystemPower?
+    let hideUnused:      Bool
+    let viewSize:        CGSize
+    let cache:           LayoutCache
 
     /// Signature of every input the layout depends on: window size + the identity and
     /// layout-affecting fields of each interface / device / port / gateway. When this
@@ -257,10 +240,10 @@ struct NetworkGraphView: View {
     /// Return the cached value for `kp`, computing (and caching) it once per signature.
     private func memo<T>(_ kp: ReferenceWritableKeyPath<LayoutCache, T?>, _ compute: () -> T) -> T {
         let sig = layoutSig
-        if layoutCache.sig != sig { layoutCache.sig = sig; layoutCache.clear() }
-        if let cached = layoutCache[keyPath: kp] { return cached }
+        if cache.sig != sig { cache.sig = sig; cache.clear() }
+        if let cached = cache[keyPath: kp] { return cached }
         let value = compute()
-        layoutCache[keyPath: kp] = value
+        cache[keyPath: kp] = value
         return value
     }
 
@@ -298,7 +281,7 @@ struct NetworkGraphView: View {
 
     /// Physical interfaces NOT anchored to a hardware port — grouped + labelled
     /// on their own lower row, the same way they were before HW-port anchoring.
-    private var physFreeVisible: [InterfaceInfo] {
+    var physFreeVisible: [InterfaceInfo] {
         visible.filter { $0.category.layerLabel == "Physical" && !isAnchoredPhysical($0) }
     }
 
@@ -363,7 +346,7 @@ struct NetworkGraphView: View {
 
     /// How many stacked rows the anchored Physical interfaces need (1 unless the
     /// window is too narrow to spread them horizontally). Geometry-free.
-    private var physicalUpperLaneCount: Int {
+    var physicalUpperLaneCount: Int {
         spreadAnchored(anchoredPhysicalLayout(), minGap: 112).lanes
     }
 
@@ -427,8 +410,8 @@ struct NetworkGraphView: View {
         let pNatural = pN == 0 ? 0 : CGFloat(pN) * 112 + margin * 2
         return max(hwNatural, max(vNatural, pNatural))
     }
-    private var bw: CGFloat { max(viewSize.width - gwColWidth, contentWidth) }
-    private var bh: CGFloat { max(viewSize.height, contentHeight) }
+    var bw: CGFloat { max(viewSize.width - gwColWidth, contentWidth) }
+    var bh: CGFloat { max(viewSize.height, contentHeight) }
 
     private let deviceRowGap: CGFloat = 66   // > device chip height (52) so tree levels don't overlap
     // Strip reserved at the top of the Virtual band for the VPN gateway chip, so it
@@ -510,7 +493,7 @@ struct NetworkGraphView: View {
     /// Strip reserved at the top of the Physical band for the port bracket labels, so
     /// the interface tiles start below them instead of riding up over the brackets
     /// when the band has several rows (visible on constrained windows). Geometry-free.
-    private var physBracketInset: CGFloat { hasAnchoredPhysical ? 36 : 0 }
+    var physBracketInset: CGFloat { hasAnchoredPhysical ? 36 : 0 }
 
     private var bandNeeds: [(name: String, need: CGFloat)] {
         let depth = deviceForestDepth
@@ -539,7 +522,7 @@ struct NetworkGraphView: View {
                 ("Data Link", dlNeed), ("Virtual", vNeed)]
     }
 
-    private var bands: [LayerBand] {
+    var bands: [LayerBand] {
         let needs = bandNeeds
         let total = needs.reduce(0) { $0 + $1.need }
         return needs.map { name, need in
@@ -554,7 +537,7 @@ struct NetworkGraphView: View {
     /// overlapping. When the window is taller than this, the graph fills it.
     private var contentHeight: CGFloat { memo(\.contentH) { headerHeight + bandNeeds.reduce(0) { $0 + $1.need } } }
 
-    private func bandRect(_ name: String) -> CGRect {
+    func bandRect(_ name: String) -> CGRect {
         let usable = max(bh - headerHeight, 0)
         var y: CGFloat = headerHeight
         for band in bands {
@@ -633,7 +616,7 @@ struct NetworkGraphView: View {
     /// Lays the Virtual-band subgroups across TWO rows (balanced by interface
     /// count). Returns each group with its x-rect (whose y/height encode its row),
     /// shared by node placement and the group headers.
-    private func virtualGroupLayout(w: CGFloat) -> [(group: IfaceGroup, rect: CGRect)] {
+    func virtualGroupLayout(w: CGFloat) -> [(group: IfaceGroup, rect: CGRect)] {
         let band = bandRect("Virtual")
         let groups = subgroups(layer: "Virtual", ifaces: visible)
         guard !groups.isEmpty else { return [] }
@@ -885,6 +868,328 @@ struct NetworkGraphView: View {
         return CGPoint(x: bw / 2, y: internetRowHeight / 2)
     }
 
+    /// Min distance from `p` to a quadratic Bézier, by sampling points along it.
+    func distanceToCurve(_ p: CGPoint, _ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGFloat {
+        var best = CGFloat.greatestFiniteMagnitude
+        // Scale samples to length so spacing stays well under the hit threshold —
+        // a fixed count leaves dead gaps between samples on long (400–600px) wires.
+        let steps = max(12, Int(hypot(b.x - a.x, b.y - a.y) / 6))
+        for i in 0...steps {
+            let t = CGFloat(i) / CGFloat(steps)
+            let mt = 1 - t
+            let x = mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x
+            let y = mt * mt * a.y + 2 * mt * t * c.y + t * t * b.y
+            best = min(best, hypot(p.x - x, p.y - y))
+        }
+        return best
+    }
+
+    func hitRect(_ c: CGPoint, _ w: CGFloat, _ h: CGFloat) -> CGRect {
+        CGRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h)
+    }
+
+    /// All interface tiles sitting on a port's physical receptacle: its own child
+    /// interfaces (TB-bridge members, iPhone channels) PLUS any device-provided
+    /// interface (e.g. a dock's USB-Ethernet) attached to the same receptacle.
+    /// Mirrors the `byReceptacle` grouping in `anchoredPhysicalLayout`, so the
+    /// bracket spans every tile that layout placed under this port.
+    func receptacleBSDs(_ port: HardwarePort) -> [String] {
+        var ids = Set(port.childBSDNames)
+        for dev in attachedDevices where dev.receptacle == port.id {
+            if let bsd = dev.interfaceBSD { ids.insert(bsd) }
+        }
+        return Array(ids)
+    }
+
+    func portBracketLabel(_ p: HardwarePort) -> String {
+        if p.isPhone {
+            let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
+            return loc.isEmpty ? "\(p.deviceName) · \(p.connectionMedium)"
+                               : "\(p.deviceName) · \(p.connectionMedium) (\(loc))"
+        }
+        guard !p.side.isEmpty else { return "TB Port \(p.id)" }
+        let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
+        return "TB Port \(p.id)  (\(loc))"
+    }
+
+    /// Point on a quadratic Bézier at t = 0.5 — the visual middle of the wire.
+    func curveMidpoint(_ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGPoint {
+        CGPoint(x: 0.25 * a.x + 0.5 * c.x + 0.25 * b.x,
+                y: 0.25 * a.y + 0.5 * c.y + 0.25 * b.y)
+    }
+
+    /// Control point for a connector's quadratic curve, bowed perpendicular to the
+    /// line by a deterministic amount so collinear / parallel lines arc apart and
+    /// stay individually legible instead of stacking on one path.
+    func curveControl(_ line: ConnLine) -> CGPoint {
+        let mx = (line.from.x + line.to.x) / 2
+        let my = (line.from.y + line.to.y) / 2
+        // Physical attachments (port→device, hub→child, USB-C cable) are drawn
+        // STRAIGHT: the device tree is laid out so sibling subtrees never overlap,
+        // and the perpendicular bow used for logical links would make these short
+        // fanning lines cross each other unnecessarily.
+        if line.style == .physical { return CGPoint(x: mx, y: my) }
+        let dx = line.to.x - line.from.x
+        let dy = line.to.y - line.from.y
+        let len = max(hypot(dx, dy), 1)
+        let nx = -dy / len, ny = dx / len   // unit normal
+        // Stable sign from endpoints (not the per-render UUID) so it doesn't flicker.
+        let salt = Int(line.from.x * 3 + line.from.y * 7 + line.to.x * 11 + line.to.y * 17)
+        let sign: CGFloat = (salt & 1 == 0) ? 1 : -1
+        let bow = sign * min(26, len * 0.12)
+        return CGPoint(x: mx + nx * bow, y: my + ny * bow)
+    }
+
+    private func hasTraffic(_ name: String) -> Bool {
+        let t = trafficStates[name]; return t?.rxActive == true || t?.txActive == true
+    }
+
+    // NOT memoized: this depends on trafficStates (rates, ant-crawl, emphasis), which
+    // change every refresh and aren't in layoutSig. It's cheap now that the positions
+    // it reads are memoized — just an O(n) assembly over cached points.
+    func buildLines() -> [ConnLine] {
+        var lines: [ConnLine] = []
+
+        // The dominant path most packets take: the winning physical default
+        // gateway (precedence-sorted first non-VPN), its best interface, and the
+        // VPN that rides it (if any). These links are drawn extra-bold.
+        let physDefault = gateways.first { $0.isDefault && !$0.isVPN }
+        let domGwID = physDefault?.id
+        let domIface = physDefault?.reachableVia.first
+        let domVpnID = gateways.first { $0.isDefault && $0.isVPN }?.id
+
+        // L0 → L1: hardware port → its interfaces. Real attached USB devices
+        // (Ethernet adapters, iPhone channels) get an emphasized green link;
+        // Thunderbolt-bridge pseudo-members stay a faint grey.
+        for port in hardwarePorts {
+            guard let portP = hwPortPositions[port.id] else { continue }
+            for bsd in port.childBSDNames {
+                if let ifaceP = ifacePositions[bsd] {
+                    let isDevice = port.isPhone || port.deviceChildren.contains(bsd)
+                    // interface → hardware entity, so the ant-crawl flows OUTBOUND (up).
+                    lines.append(ConnLine(from: ifaceP, to: portP, label: "",
+                        color: isDevice ? .link : .neutral,
+                        hasTraffic: hasTraffic(bsd),
+                        emphasized: isDevice, style: .link, dominant: bsd == domIface,
+                        ifaceID: bsd, showRate: true))
+                }
+            }
+        }
+
+        // Hardware port → attached device chip, and (for network devices) the
+        // chip → the interface it provides (e.g. MiFi → en10). Both are hard
+        // physical attachments → solid.
+        let devPos = devicePositions
+        let devById = Dictionary(attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for dev in attachedDevices {
+            // Hard physical attachment (solid): from the parent hub if this device
+            // hangs off one, otherwise from the hardware port / entity it sits on.
+            let from: CGPoint? = (dev.parentID.flatMap { devById[$0] != nil ? devPos[$0] : nil })
+                                 ?? hwPortPositions[dev.receptacle]
+            if let from, let to = devPos[dev.id] {
+                lines.append(ConnLine(from: from, to: to, label: "",
+                    color: .attach, hasTraffic: false, emphasized: true, style: .physical))
+            }
+            // Device chip → the interface it provides: a hard link that ant-crawls
+            // only when there's traffic.
+            if let bsd = dev.interfaceBSD, let chip = devPos[dev.id], let ifaceP = ifacePositions[bsd] {
+                // interface → device chip, so the ant-crawl flows OUTBOUND (up).
+                lines.append(ConnLine(from: ifaceP, to: chip, label: "",
+                    color: .link, hasTraffic: hasTraffic(bsd), emphasized: true,
+                    style: .link, dominant: bsd == domIface,
+                    ifaceID: bsd, showRate: true))
+            }
+        }
+
+        // iPhone USB-C → the physical TB receptacle it's plugged into.
+        if let phone = hardwarePorts.first(where: { $0.isPhone }),
+           let recep = phone.physicalReceptacle,
+           let phonePos = hwPortPositions[0],
+           let portPos  = hwPortPositions[recep] {
+            // The USB-C cable is a physical attachment.
+            lines.append(ConnLine(from: portPos, to: phonePos, label: "USB-C",
+                color: .link, hasTraffic: false, emphasized: true, style: .physical))
+        }
+
+        // L1 → L2: bridge ↔ member ports (MAC prefix match)
+        for bridge in visible where bridge.category == .bridge {
+            guard let bMac = bridge.macAddress else { continue }
+            let prefix = String(bMac.prefix(8))
+            for member in visible where
+                (member.category == .ethernet || member.category == .thunderbolt)
+                && member.macAddress?.hasPrefix(prefix) == true
+            {
+                if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
+                    lines.append(ConnLine(from: f, to: t, label: "L2",
+                        color: .l2, hasTraffic: hasTraffic(member.id),
+                        ifaceID: member.id))
+                }
+            }
+        }
+
+        // L1 → L2: VLAN → parent
+        for iface in visible where iface.category == .vlan {
+            if let parent = visible.first(where: { $0.category == .ethernet || $0.category == .bridge }),
+               let f = ifacePositions[iface.id], let t = ifacePositions[parent.id] {
+                lines.append(ConnLine(from: f, to: t, label: "VLAN",
+                    color: .l2, hasTraffic: hasTraffic(iface.id),
+                    ifaceID: iface.id))
+            }
+        }
+
+        // L3: active tunnels → physical carrier.
+        // VPN tunnels that have a gateway are routed through the gateway chain
+        // below instead, so we don't draw a redundant direct tunnel→carrier line.
+        let vpnTunnels = Set(gateways.filter { $0.isVPN }.flatMap { $0.reachableVia })
+        let carrier = routes.first { $0.isDefault && !$0.interfaceName.hasPrefix("utun") }?.interfaceName
+        if let carrier, let cPos = ifacePositions[carrier] {
+            for tun in visible where tun.category == .tunnel && tun.hasLink && !vpnTunnels.contains(tun.id) {
+                if let f = ifacePositions[tun.id] {
+                    lines.append(ConnLine(from: f, to: cPos, label: "L3",
+                        color: .gatewayPrimary, hasTraffic: hasTraffic(tun.id),
+                        ifaceID: tun.id, showRate: true))
+                }
+            }
+        }
+
+        // Gateway → its host. The link emerges from the HARDWARE-row entity the
+        // uplink lives on (device chip / port / iPhone / Wi-Fi entity); the L1
+        // interface connects up to that entity separately, so the flow reads
+        // interface → hardware entity → gateway → Internet.
+        let wifiUplink = wifiUplinkInterface
+        for gw in gateways {
+            guard let gwP = gatewayPositions[gw.id] else { continue }
+            // One link per interface that reaches this gateway. The first
+            // (highest-priority) interface is the bold/active link; any others
+            // are faint alternates labeled with their interface, so a shared
+            // gateway shows which uplink wins and which are backups.
+            let vias = gw.reachableVia.isEmpty ? [""] : gw.reachableVia
+            for (i, ifn) in vias.enumerated() {
+                let host = ifn.isEmpty ? gatewayHostAnchor(gw) : hostAnchorForInterface(ifn)
+                guard let from = host else { continue }
+                let primary = (i == 0)
+                lines.append(ConnLine(from: from, to: gwP,
+                    label: primary ? (gw.isVPN ? "VPN" : "") : "\(i + 1)·\(ifn)",
+                    color: gw.isVPN ? .gatewayVPN : (primary ? .gatewayPrimary : .gatewayOther),
+                    hasTraffic: hasTraffic(ifn),
+                    emphasized: primary && (gw.isVPN || gw.isDefault),
+                    dominant: primary && (gw.id == domGwID || gw.id == domVpnID),
+                    ifaceID: ifn.isEmpty ? nil : ifn))
+            }
+        }
+
+        // The Wi-Fi interface (en0) connects up to its AP entity.
+        if let wifi = wifiUplink, let wp = hwPortPositions[-1], let ifP = ifacePositions[wifi] {
+            lines.append(ConnLine(from: ifP, to: wp, label: "",
+                color: .neutral, hasTraffic: hasTraffic(wifi),
+                style: .link, dominant: wifi == domIface,
+                ifaceID: wifi, showRate: true))
+        }
+
+        // Each default gateway chip → the Internet node at the top.
+        if let ep = egressPosition {
+            for gw in gateways where gw.isDefault && !gw.isVPN {
+                if let gp = gatewayPositions[gw.id] {
+                    lines.append(ConnLine(from: gp, to: ep, label: "",
+                        color: .egress, hasTraffic: gatewayActive(gw), emphasized: true,
+                        dominant: gw.id == domGwID, ifaceID: gw.reachableVia.first))
+                }
+            }
+        }
+
+        // VPN gateway → the L1 interface it egresses through (its encrypted
+        // traffic enters the physical stack there, then rides that interface out).
+        if let vpnGW = gateways.first(where: { $0.isVPN }),
+           let vP = gatewayPositions[vpnGW.id],
+           let dIface = domIface, let to = ifacePositions[dIface] {
+            lines.append(ConnLine(from: vP, to: to, label: "egress",
+                color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
+                ifaceID: dIface))
+        }
+
+        return lines
+    }
+
+    /// True when any interface that reaches this gateway has live traffic.
+    private func gatewayActive(_ gw: GatewayNode) -> Bool {
+        gw.reachableVia.contains { hasTraffic($0) }
+    }
+}
+
+struct NetworkGraphView: View {
+    let interfaces:    [InterfaceInfo]
+    let trafficStates: [String: TrafficState]
+    let routes:        [RouteEntry]
+    let gateways:      [GatewayNode]
+    let hardwarePorts: [HardwarePort]
+    let attachedDevices: [AttachedDevice]
+    let egress:        EgressInfo?
+    let systemPower:   SystemPower?
+    let hideUnused:    Bool
+
+    @State private var viewSize: CGSize = .zero
+    // dashPhase drives the ant-crawl on active traffic lines.
+    // It only advances when there is traffic (no blink; just moving vs. static).
+    @State private var dashPhase: CGFloat = 0
+
+    // Central pointer-driven hover (see HoverTarget).
+    @State private var pendingTarget: HoverTarget?
+    @State private var shownTarget: HoverTarget?
+    @State private var hoverTask: Task<Void, Never>?
+    @State private var tipSize: CGSize = .zero
+    // Pointer location captured when a wire hover begins. linkHoverPoint tracks the
+    // PENDING target; shownLinkPoint is promoted from it only when the target is
+    // committed — so a link tooltip's position and its content always agree (no
+    // brief "old link's info at the new cursor spot" while the debounce settles).
+    @State private var linkHoverPoint: CGPoint = .zero
+    @State private var shownLinkPoint: CGPoint = .zero
+    // Memo of the last wire hit-test: buildLines() is relatively expensive, so we
+    // reuse the result while the pointer hasn't moved far enough to change it.
+    @State private var lastWireProbePoint: CGPoint?
+    @State private var lastWireProbeTarget: HoverTarget?
+
+    // Per-frame layout memo (see LayoutCache). Keyed by `layoutSig`.
+    @State private var layoutCache = LayoutCache()
+
+    private let dashTimer = Timer.publish(every: 0.20, on: .main, in: .common).autoconnect()
+
+    // MARK: - Layout engine delegation
+
+    /// Rebuilt each `body` evaluation from the current inputs; the shared
+    /// `layoutCache` (held in @State) carries memoization across rebuilds, so the
+    /// geometry is computed once per signature exactly as before.
+    private var engine: GraphLayoutEngine {
+        GraphLayoutEngine(interfaces: interfaces, trafficStates: trafficStates,
+                          routes: routes, gateways: gateways, hardwarePorts: hardwarePorts,
+                          attachedDevices: attachedDevices, egress: egress,
+                          systemPower: systemPower, hideUnused: hideUnused,
+                          viewSize: viewSize, cache: layoutCache)
+    }
+
+    // Thin forwarders so the render + hover code calls the engine geometry
+    // unchanged. Each returns the engine value verbatim.
+    var visible: [InterfaceInfo] { engine.visible }
+    var ifacePositions: [String: CGPoint] { engine.ifacePositions }
+    var gatewayPositions: [String: CGPoint] { engine.gatewayPositions }
+    var hwPortPositions: [Int: CGPoint] { engine.hwPortPositions }
+    var devicePositions: [String: CGPoint] { engine.devicePositions }
+    var egressPosition: CGPoint? { engine.egressPosition }
+    private var bw: CGFloat { engine.bw }
+    private var bh: CGFloat { engine.bh }
+    private var bands: [LayerBand] { engine.bands }
+    private var physFreeVisible: [InterfaceInfo] { engine.physFreeVisible }
+    private var physicalUpperLaneCount: Int { engine.physicalUpperLaneCount }
+    private var physBracketInset: CGFloat { engine.physBracketInset }
+    private func bandRect(_ name: String) -> CGRect { engine.bandRect(name) }
+    private func virtualGroupLayout(w: CGFloat) -> [(group: IfaceGroup, rect: CGRect)] { engine.virtualGroupLayout(w: w) }
+    private func receptacleBSDs(_ port: HardwarePort) -> [String] { engine.receptacleBSDs(port) }
+    private func portBracketLabel(_ p: HardwarePort) -> String { engine.portBracketLabel(p) }
+    private func buildLines() -> [ConnLine] { engine.buildLines() }
+    private func curveControl(_ line: ConnLine) -> CGPoint { engine.curveControl(line) }
+    private func curveMidpoint(_ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGPoint { engine.curveMidpoint(a, c, b) }
+    private func distanceToCurve(_ p: CGPoint, _ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGFloat { engine.distanceToCurve(p, a, c, b) }
+    private func hitRect(_ c: CGPoint, _ w: CGFloat, _ h: CGFloat) -> CGRect { engine.hitRect(c, w, h) }
+
     // MARK: - Body
 
     var body: some View {
@@ -1121,26 +1426,6 @@ struct NetworkGraphView: View {
         return result
     }
 
-    /// Min distance from `p` to a quadratic Bézier, by sampling points along it.
-    private func distanceToCurve(_ p: CGPoint, _ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGFloat {
-        var best = CGFloat.greatestFiniteMagnitude
-        // Scale samples to length so spacing stays well under the hit threshold —
-        // a fixed count leaves dead gaps between samples on long (400–600px) wires.
-        let steps = max(12, Int(hypot(b.x - a.x, b.y - a.y) / 6))
-        for i in 0...steps {
-            let t = CGFloat(i) / CGFloat(steps)
-            let mt = 1 - t
-            let x = mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x
-            let y = mt * mt * a.y + 2 * mt * t * c.y + t * t * b.y
-            best = min(best, hypot(p.x - x, p.y - y))
-        }
-        return best
-    }
-
-    private func hitRect(_ c: CGPoint, _ w: CGFloat, _ h: CGFloat) -> CGRect {
-        CGRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h)
-    }
-
     /// Debounced commit of the hovered target — transient (refresh-induced) hovers
     /// are cancelled before they can open a popover.
     private func scheduleHover(_ t: HoverTarget?) {
@@ -1264,19 +1549,6 @@ struct NetworkGraphView: View {
 
     // MARK: - Thunderbolt port brackets
 
-    /// All interface tiles sitting on a port's physical receptacle: its own child
-    /// interfaces (TB-bridge members, iPhone channels) PLUS any device-provided
-    /// interface (e.g. a dock's USB-Ethernet) attached to the same receptacle.
-    /// Mirrors the `byReceptacle` grouping in `anchoredPhysicalLayout`, so the
-    /// bracket spans every tile that layout placed under this port.
-    private func receptacleBSDs(_ port: HardwarePort) -> [String] {
-        var ids = Set(port.childBSDNames)
-        for dev in attachedDevices where dev.receptacle == port.id {
-            if let bsd = dev.interfaceBSD { ids.insert(bsd) }
-        }
-        return Array(ids)
-    }
-
     @ViewBuilder
     private func tbBrackets(h: CGFloat) -> some View {
         let physBand = bandRect("Physical")
@@ -1305,17 +1577,6 @@ struct NetworkGraphView: View {
                     .position(x: midX, y: bracketY - 6)
             }
         }
-    }
-
-    private func portBracketLabel(_ p: HardwarePort) -> String {
-        if p.isPhone {
-            let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
-            return loc.isEmpty ? "\(p.deviceName) · \(p.connectionMedium)"
-                               : "\(p.deviceName) · \(p.connectionMedium) (\(loc))"
-        }
-        guard !p.side.isEmpty else { return "TB Port \(p.id)" }
-        let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
-        return "TB Port \(p.id)  (\(loc))"
     }
 
     // MARK: - Connection lines
@@ -1402,206 +1663,4 @@ struct NetworkGraphView: View {
         .fixedSize()
     }
 
-    /// Point on a quadratic Bézier at t = 0.5 — the visual middle of the wire.
-    private func curveMidpoint(_ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGPoint {
-        CGPoint(x: 0.25 * a.x + 0.5 * c.x + 0.25 * b.x,
-                y: 0.25 * a.y + 0.5 * c.y + 0.25 * b.y)
-    }
-
-    /// Control point for a connector's quadratic curve, bowed perpendicular to the
-    /// line by a deterministic amount so collinear / parallel lines arc apart and
-    /// stay individually legible instead of stacking on one path.
-    private func curveControl(_ line: ConnLine) -> CGPoint {
-        let mx = (line.from.x + line.to.x) / 2
-        let my = (line.from.y + line.to.y) / 2
-        // Physical attachments (port→device, hub→child, USB-C cable) are drawn
-        // STRAIGHT: the device tree is laid out so sibling subtrees never overlap,
-        // and the perpendicular bow used for logical links would make these short
-        // fanning lines cross each other unnecessarily.
-        if line.style == .physical { return CGPoint(x: mx, y: my) }
-        let dx = line.to.x - line.from.x
-        let dy = line.to.y - line.from.y
-        let len = max(hypot(dx, dy), 1)
-        let nx = -dy / len, ny = dx / len   // unit normal
-        // Stable sign from endpoints (not the per-render UUID) so it doesn't flicker.
-        let salt = Int(line.from.x * 3 + line.from.y * 7 + line.to.x * 11 + line.to.y * 17)
-        let sign: CGFloat = (salt & 1 == 0) ? 1 : -1
-        let bow = sign * min(26, len * 0.12)
-        return CGPoint(x: mx + nx * bow, y: my + ny * bow)
-    }
-
-    private func hasTraffic(_ name: String) -> Bool {
-        let t = trafficStates[name]; return t?.rxActive == true || t?.txActive == true
-    }
-
-    // NOT memoized: this depends on trafficStates (rates, ant-crawl, emphasis), which
-    // change every refresh and aren't in layoutSig. It's cheap now that the positions
-    // it reads are memoized — just an O(n) assembly over cached points.
-    private func buildLines() -> [ConnLine] {
-        var lines: [ConnLine] = []
-
-        // The dominant path most packets take: the winning physical default
-        // gateway (precedence-sorted first non-VPN), its best interface, and the
-        // VPN that rides it (if any). These links are drawn extra-bold.
-        let physDefault = gateways.first { $0.isDefault && !$0.isVPN }
-        let domGwID = physDefault?.id
-        let domIface = physDefault?.reachableVia.first
-        let domVpnID = gateways.first { $0.isDefault && $0.isVPN }?.id
-
-        // L0 → L1: hardware port → its interfaces. Real attached USB devices
-        // (Ethernet adapters, iPhone channels) get an emphasized green link;
-        // Thunderbolt-bridge pseudo-members stay a faint grey.
-        for port in hardwarePorts {
-            guard let portP = hwPortPositions[port.id] else { continue }
-            for bsd in port.childBSDNames {
-                if let ifaceP = ifacePositions[bsd] {
-                    let isDevice = port.isPhone || port.deviceChildren.contains(bsd)
-                    // interface → hardware entity, so the ant-crawl flows OUTBOUND (up).
-                    lines.append(ConnLine(from: ifaceP, to: portP, label: "",
-                        color: isDevice ? .link : .neutral,
-                        hasTraffic: hasTraffic(bsd),
-                        emphasized: isDevice, style: .link, dominant: bsd == domIface,
-                        ifaceID: bsd, showRate: true))
-                }
-            }
-        }
-
-        // Hardware port → attached device chip, and (for network devices) the
-        // chip → the interface it provides (e.g. MiFi → en10). Both are hard
-        // physical attachments → solid.
-        let devPos = devicePositions
-        let devById = Dictionary(attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for dev in attachedDevices {
-            // Hard physical attachment (solid): from the parent hub if this device
-            // hangs off one, otherwise from the hardware port / entity it sits on.
-            let from: CGPoint? = (dev.parentID.flatMap { devById[$0] != nil ? devPos[$0] : nil })
-                                 ?? hwPortPositions[dev.receptacle]
-            if let from, let to = devPos[dev.id] {
-                lines.append(ConnLine(from: from, to: to, label: "",
-                    color: .attach, hasTraffic: false, emphasized: true, style: .physical))
-            }
-            // Device chip → the interface it provides: a hard link that ant-crawls
-            // only when there's traffic.
-            if let bsd = dev.interfaceBSD, let chip = devPos[dev.id], let ifaceP = ifacePositions[bsd] {
-                // interface → device chip, so the ant-crawl flows OUTBOUND (up).
-                lines.append(ConnLine(from: ifaceP, to: chip, label: "",
-                    color: .link, hasTraffic: hasTraffic(bsd), emphasized: true,
-                    style: .link, dominant: bsd == domIface,
-                    ifaceID: bsd, showRate: true))
-            }
-        }
-
-        // iPhone USB-C → the physical TB receptacle it's plugged into.
-        if let phone = hardwarePorts.first(where: { $0.isPhone }),
-           let recep = phone.physicalReceptacle,
-           let phonePos = hwPortPositions[0],
-           let portPos  = hwPortPositions[recep] {
-            // The USB-C cable is a physical attachment.
-            lines.append(ConnLine(from: portPos, to: phonePos, label: "USB-C",
-                color: .link, hasTraffic: false, emphasized: true, style: .physical))
-        }
-
-        // L1 → L2: bridge ↔ member ports (MAC prefix match)
-        for bridge in visible where bridge.category == .bridge {
-            guard let bMac = bridge.macAddress else { continue }
-            let prefix = String(bMac.prefix(8))
-            for member in visible where
-                (member.category == .ethernet || member.category == .thunderbolt)
-                && member.macAddress?.hasPrefix(prefix) == true
-            {
-                if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
-                    lines.append(ConnLine(from: f, to: t, label: "L2",
-                        color: .l2, hasTraffic: hasTraffic(member.id),
-                        ifaceID: member.id))
-                }
-            }
-        }
-
-        // L1 → L2: VLAN → parent
-        for iface in visible where iface.category == .vlan {
-            if let parent = visible.first(where: { $0.category == .ethernet || $0.category == .bridge }),
-               let f = ifacePositions[iface.id], let t = ifacePositions[parent.id] {
-                lines.append(ConnLine(from: f, to: t, label: "VLAN",
-                    color: .l2, hasTraffic: hasTraffic(iface.id),
-                    ifaceID: iface.id))
-            }
-        }
-
-        // L3: active tunnels → physical carrier.
-        // VPN tunnels that have a gateway are routed through the gateway chain
-        // below instead, so we don't draw a redundant direct tunnel→carrier line.
-        let vpnTunnels = Set(gateways.filter { $0.isVPN }.flatMap { $0.reachableVia })
-        let carrier = routes.first { $0.isDefault && !$0.interfaceName.hasPrefix("utun") }?.interfaceName
-        if let carrier, let cPos = ifacePositions[carrier] {
-            for tun in visible where tun.category == .tunnel && tun.hasLink && !vpnTunnels.contains(tun.id) {
-                if let f = ifacePositions[tun.id] {
-                    lines.append(ConnLine(from: f, to: cPos, label: "L3",
-                        color: .gatewayPrimary, hasTraffic: hasTraffic(tun.id),
-                        ifaceID: tun.id, showRate: true))
-                }
-            }
-        }
-
-        // Gateway → its host. The link emerges from the HARDWARE-row entity the
-        // uplink lives on (device chip / port / iPhone / Wi-Fi entity); the L1
-        // interface connects up to that entity separately, so the flow reads
-        // interface → hardware entity → gateway → Internet.
-        let wifiUplink = wifiUplinkInterface
-        for gw in gateways {
-            guard let gwP = gatewayPositions[gw.id] else { continue }
-            // One link per interface that reaches this gateway. The first
-            // (highest-priority) interface is the bold/active link; any others
-            // are faint alternates labeled with their interface, so a shared
-            // gateway shows which uplink wins and which are backups.
-            let vias = gw.reachableVia.isEmpty ? [""] : gw.reachableVia
-            for (i, ifn) in vias.enumerated() {
-                let host = ifn.isEmpty ? gatewayHostAnchor(gw) : hostAnchorForInterface(ifn)
-                guard let from = host else { continue }
-                let primary = (i == 0)
-                lines.append(ConnLine(from: from, to: gwP,
-                    label: primary ? (gw.isVPN ? "VPN" : "") : "\(i + 1)·\(ifn)",
-                    color: gw.isVPN ? .gatewayVPN : (primary ? .gatewayPrimary : .gatewayOther),
-                    hasTraffic: hasTraffic(ifn),
-                    emphasized: primary && (gw.isVPN || gw.isDefault),
-                    dominant: primary && (gw.id == domGwID || gw.id == domVpnID),
-                    ifaceID: ifn.isEmpty ? nil : ifn))
-            }
-        }
-
-        // The Wi-Fi interface (en0) connects up to its AP entity.
-        if let wifi = wifiUplink, let wp = hwPortPositions[-1], let ifP = ifacePositions[wifi] {
-            lines.append(ConnLine(from: ifP, to: wp, label: "",
-                color: .neutral, hasTraffic: hasTraffic(wifi),
-                style: .link, dominant: wifi == domIface,
-                ifaceID: wifi, showRate: true))
-        }
-
-        // Each default gateway chip → the Internet node at the top.
-        if let ep = egressPosition {
-            for gw in gateways where gw.isDefault && !gw.isVPN {
-                if let gp = gatewayPositions[gw.id] {
-                    lines.append(ConnLine(from: gp, to: ep, label: "",
-                        color: .egress, hasTraffic: gatewayActive(gw), emphasized: true,
-                        dominant: gw.id == domGwID, ifaceID: gw.reachableVia.first))
-                }
-            }
-        }
-
-        // VPN gateway → the L1 interface it egresses through (its encrypted
-        // traffic enters the physical stack there, then rides that interface out).
-        if let vpnGW = gateways.first(where: { $0.isVPN }),
-           let vP = gatewayPositions[vpnGW.id],
-           let dIface = domIface, let to = ifacePositions[dIface] {
-            lines.append(ConnLine(from: vP, to: to, label: "egress",
-                color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
-                ifaceID: dIface))
-        }
-
-        return lines
-    }
-
-    /// True when any interface that reaches this gateway has live traffic.
-    private func gatewayActive(_ gw: GatewayNode) -> Bool {
-        gw.reachableVia.contains { hasTraffic($0) }
-    }
 }
