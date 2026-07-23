@@ -18,16 +18,16 @@ private let headerHeight: CGFloat = internetRowHeight + gwTierHeight
 private struct LayerBand: Identifiable {
     let id: String
     var name: String { id }
-    let color: Color
+    let color: ColorToken
     let osiLabel: String
     let heightFraction: CGFloat
 }
 
-private let bandStyles: [String: (color: Color, osi: String)] = [
-    "Hardware":  (Color(white: 0.5).opacity(0.05), "L0"),
-    "Physical":  (Color.blue.opacity(0.055),       "L1"),
-    "Data Link": (Color.purple.opacity(0.055),     "L2"),
-    "Virtual":   (Color.green.opacity(0.045),      "L3+"),
+private let bandStyles: [String: (color: ColorToken, osi: String)] = [
+    "Hardware":  (.bandHardware, "L0"),
+    "Physical":  (.bandPhysical, "L1"),
+    "Data Link": (.bandDataLink, "L2"),
+    "Virtual":   (.bandVirtual,  "L3+"),
 ]
 
 /// Total leaf nodes in a device subtree — used to size the tidy-tree layout.
@@ -77,7 +77,7 @@ private struct ConnLine: Identifiable {
     let id = UUID()
     let from, to: CGPoint
     let label: String
-    let color: Color
+    let color: ColorToken
     let hasTraffic: Bool
     var emphasized: Bool = false   // always-visible link (e.g. iPhone ↔ its port)
     var style: LinkStyle = .data
@@ -91,6 +91,36 @@ private struct ConnLine: Identifiable {
 /// - `.link`: a hard link that also carries data — solid when idle, ant-crawl when busy.
 /// - `.data`: a logical path (dashed; ant-crawl when busy).
 enum LinkStyle { case physical, link, data }
+
+/// Renderer-neutral color reference emitted by the layout geometry, so the engine
+/// carries no SwiftUI dependency. The SwiftUI renderer maps each token back to the
+/// EXACT `Color` it replaced (keeps the macOS graph pixel-identical); a future web/SVG
+/// renderer maps it to its own palette. (The enum is portable → moves to NetLightsCore;
+/// the `swiftUI` mapping below stays in the macOS renderer.)
+enum ColorToken: Equatable {
+    case link, attach, neutral, l2, gatewayPrimary, gatewayVPN, gatewayOther, egress
+    case bandHardware, bandPhysical, bandDataLink, bandVirtual, clear
+}
+
+extension ColorToken {
+    var swiftUI: Color {
+        switch self {
+        case .link:           return .green
+        case .attach:         return .cyan
+        case .neutral:        return Color(white: 0.55)
+        case .l2:             return .purple
+        case .gatewayPrimary: return .orange
+        case .gatewayVPN:     return .blue
+        case .gatewayOther:   return Color(white: 0.4)
+        case .egress:         return .teal
+        case .bandHardware:   return Color(white: 0.5).opacity(0.05)
+        case .bandPhysical:   return Color.blue.opacity(0.055)
+        case .bandDataLink:   return Color.purple.opacity(0.055)
+        case .bandVirtual:    return Color.green.opacity(0.045)
+        case .clear:          return .clear
+        }
+    }
+}
 
 // MARK: - Layout helper (pure)
 
@@ -513,7 +543,7 @@ struct NetworkGraphView: View {
         let needs = bandNeeds
         let total = needs.reduce(0) { $0 + $1.need }
         return needs.map { name, need in
-            let s = bandStyles[name] ?? (Color.clear, "")
+            let s = bandStyles[name] ?? (.clear, "")
             return LayerBand(id: name, color: s.color, osiLabel: s.osi, heightFraction: need / total)
         }
     }
@@ -1174,7 +1204,7 @@ struct NetworkGraphView: View {
                 }
             }
             .frame(width: bw2, height: rect.height)
-            .background(band.color)
+            .background(band.color.swiftUI)
             .border(Color(white: 0.5).opacity(0.07), width: 0.5)
             .position(x: gwColWidth + bw2 / 2, y: rect.midY)
         }
@@ -1302,7 +1332,7 @@ struct NetworkGraphView: View {
                 p.addQuadCurve(to: line.to, control: ctrl)
             }
             .stroke(
-                line.color.opacity({
+                line.color.swiftUI.opacity({
                     let base = drawSolid ? 0.5 : (active ? 0.55 : (line.emphasized ? 0.55 : 0.18))
                     return line.dominant ? max(base, 0.85) : base
                 }()),
@@ -1316,9 +1346,9 @@ struct NetworkGraphView: View {
                 }()
             )
             // A faded halo around the dominant path — fancy is cool.
-            .shadow(color: line.dominant ? line.color.opacity(0.9) : .clear,
+            .shadow(color: line.dominant ? line.color.swiftUI.opacity(0.9) : .clear,
                     radius: line.dominant ? 6 : 0)
-            .shadow(color: line.dominant ? line.color.opacity(0.5) : .clear,
+            .shadow(color: line.dominant ? line.color.swiftUI.opacity(0.5) : .clear,
                     radius: line.dominant ? 13 : 0)
             .animation(.easeInOut(duration: 0.35), value: active)
 
@@ -1334,14 +1364,14 @@ struct NetworkGraphView: View {
             if !line.label.isEmpty, !hasRate {
                 Text(line.label)
                     .font(.system(size: 7.5))
-                    .foregroundColor(active ? line.color.opacity(0.55)
-                                     : (line.emphasized ? line.color.opacity(0.6) : .secondary.opacity(0.20)))
+                    .foregroundColor(active ? line.color.swiftUI.opacity(0.55)
+                                     : (line.emphasized ? line.color.swiftUI.opacity(0.6) : .secondary.opacity(0.20)))
                     .position(x: ctrl.x, y: ctrl.y - 7)
                     .animation(.easeInOut(duration: 0.35), value: active)
             }
 
             if hasRate {
-                wirePill(down: down, up: up, color: line.color)
+                wirePill(down: down, up: up, color: line.color.swiftUI)
                     .position(curveMidpoint(line.from, ctrl, line.to))
                     .allowsHitTesting(false)
             }
@@ -1428,7 +1458,7 @@ struct NetworkGraphView: View {
                     let isDevice = port.isPhone || port.deviceChildren.contains(bsd)
                     // interface → hardware entity, so the ant-crawl flows OUTBOUND (up).
                     lines.append(ConnLine(from: ifaceP, to: portP, label: "",
-                        color: isDevice ? .green : Color(white: 0.55),
+                        color: isDevice ? .link : .neutral,
                         hasTraffic: hasTraffic(bsd),
                         emphasized: isDevice, style: .link, dominant: bsd == domIface,
                         ifaceID: bsd, showRate: true))
@@ -1448,14 +1478,14 @@ struct NetworkGraphView: View {
                                  ?? hwPortPositions[dev.receptacle]
             if let from, let to = devPos[dev.id] {
                 lines.append(ConnLine(from: from, to: to, label: "",
-                    color: .cyan, hasTraffic: false, emphasized: true, style: .physical))
+                    color: .attach, hasTraffic: false, emphasized: true, style: .physical))
             }
             // Device chip → the interface it provides: a hard link that ant-crawls
             // only when there's traffic.
             if let bsd = dev.interfaceBSD, let chip = devPos[dev.id], let ifaceP = ifacePositions[bsd] {
                 // interface → device chip, so the ant-crawl flows OUTBOUND (up).
                 lines.append(ConnLine(from: ifaceP, to: chip, label: "",
-                    color: .green, hasTraffic: hasTraffic(bsd), emphasized: true,
+                    color: .link, hasTraffic: hasTraffic(bsd), emphasized: true,
                     style: .link, dominant: bsd == domIface,
                     ifaceID: bsd, showRate: true))
             }
@@ -1468,7 +1498,7 @@ struct NetworkGraphView: View {
            let portPos  = hwPortPositions[recep] {
             // The USB-C cable is a physical attachment.
             lines.append(ConnLine(from: portPos, to: phonePos, label: "USB-C",
-                color: .green, hasTraffic: false, emphasized: true, style: .physical))
+                color: .link, hasTraffic: false, emphasized: true, style: .physical))
         }
 
         // L1 → L2: bridge ↔ member ports (MAC prefix match)
@@ -1481,7 +1511,7 @@ struct NetworkGraphView: View {
             {
                 if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
                     lines.append(ConnLine(from: f, to: t, label: "L2",
-                        color: .purple, hasTraffic: hasTraffic(member.id),
+                        color: .l2, hasTraffic: hasTraffic(member.id),
                         ifaceID: member.id))
                 }
             }
@@ -1492,7 +1522,7 @@ struct NetworkGraphView: View {
             if let parent = visible.first(where: { $0.category == .ethernet || $0.category == .bridge }),
                let f = ifacePositions[iface.id], let t = ifacePositions[parent.id] {
                 lines.append(ConnLine(from: f, to: t, label: "VLAN",
-                    color: .purple, hasTraffic: hasTraffic(iface.id),
+                    color: .l2, hasTraffic: hasTraffic(iface.id),
                     ifaceID: iface.id))
             }
         }
@@ -1506,7 +1536,7 @@ struct NetworkGraphView: View {
             for tun in visible where tun.category == .tunnel && tun.hasLink && !vpnTunnels.contains(tun.id) {
                 if let f = ifacePositions[tun.id] {
                     lines.append(ConnLine(from: f, to: cPos, label: "L3",
-                        color: .orange, hasTraffic: hasTraffic(tun.id),
+                        color: .gatewayPrimary, hasTraffic: hasTraffic(tun.id),
                         ifaceID: tun.id, showRate: true))
                 }
             }
@@ -1530,7 +1560,7 @@ struct NetworkGraphView: View {
                 let primary = (i == 0)
                 lines.append(ConnLine(from: from, to: gwP,
                     label: primary ? (gw.isVPN ? "VPN" : "") : "\(i + 1)·\(ifn)",
-                    color: gw.isVPN ? .blue : (primary ? .orange : Color(white: 0.4)),
+                    color: gw.isVPN ? .gatewayVPN : (primary ? .gatewayPrimary : .gatewayOther),
                     hasTraffic: hasTraffic(ifn),
                     emphasized: primary && (gw.isVPN || gw.isDefault),
                     dominant: primary && (gw.id == domGwID || gw.id == domVpnID),
@@ -1541,7 +1571,7 @@ struct NetworkGraphView: View {
         // The Wi-Fi interface (en0) connects up to its AP entity.
         if let wifi = wifiUplink, let wp = hwPortPositions[-1], let ifP = ifacePositions[wifi] {
             lines.append(ConnLine(from: ifP, to: wp, label: "",
-                color: Color(white: 0.55), hasTraffic: hasTraffic(wifi),
+                color: .neutral, hasTraffic: hasTraffic(wifi),
                 style: .link, dominant: wifi == domIface,
                 ifaceID: wifi, showRate: true))
         }
@@ -1551,7 +1581,7 @@ struct NetworkGraphView: View {
             for gw in gateways where gw.isDefault && !gw.isVPN {
                 if let gp = gatewayPositions[gw.id] {
                     lines.append(ConnLine(from: gp, to: ep, label: "",
-                        color: .teal, hasTraffic: gatewayActive(gw), emphasized: true,
+                        color: .egress, hasTraffic: gatewayActive(gw), emphasized: true,
                         dominant: gw.id == domGwID, ifaceID: gw.reachableVia.first))
                 }
             }
@@ -1563,7 +1593,7 @@ struct NetworkGraphView: View {
            let vP = gatewayPositions[vpnGW.id],
            let dIface = domIface, let to = ifacePositions[dIface] {
             lines.append(ConnLine(from: vP, to: to, label: "egress",
-                color: .blue, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
+                color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
                 ifaceID: dIface))
         }
 
