@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.6-orange)
+![version](https://img.shields.io/badge/version-1.8-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual

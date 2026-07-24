@@ -42,6 +42,40 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     @Published var dnsConfigs: [DNSConfig] = []        // active + per-service DNS resolver sets
     @Published var trafficStates: [String: TrafficState] = [:]
 
+    // Opt-in external-IP discovery — the app's ONLY active outbound query, populated only
+    // when the user taps Reveal (never automatically; NetLights is otherwise passive).
+    @Published var externalExit: String? = nil       // public IP via the default route (VPN-exit when tunneled)
+    @Published var externalUnderlay: String? = nil   // public IP bound to the carrier (real ISP, bypassing VPN)
+    @Published var externalRevealing: Bool = false
+
+    /// The physical carrier the underlay query binds to: the VPN's resolved carrier when a
+    /// tunnel is up, else the physical (non-tunnel) default interface.
+    private var underlayCarrier: String? {
+        if let c = gateways.first(where: { $0.isVPN && $0.vpnServer != nil })?.vpnCarrier { return c }
+        return routes.first {
+            $0.isDefault && !$0.interfaceName.hasPrefix("utun") && !$0.interfaceName.hasPrefix("ipsec")
+        }?.interfaceName
+    }
+
+    /// Actively look up the machine's public IP(s) — the exit IP (default route, i.e. the
+    /// VPN-exit when tunneled) and, bound to the carrier, the underlay/ISP IP. On demand
+    /// only. Safe to call repeatedly; ignored while a lookup is in flight.
+    func revealExternalIP() {
+        guard !externalRevealing else { return }
+        externalRevealing = true
+        externalExit = nil
+        externalUnderlay = nil
+        let carrier = underlayCarrier
+        Task { [weak self] in
+            async let exit = ExternalIPProbe.exitIP()
+            async let under = ExternalIPProbe.underlayIP(via: carrier)
+            let (e, u) = await (exit, under)
+            self?.externalExit = e
+            self?.externalUnderlay = u
+            self?.externalRevealing = false
+        }
+    }
+
     let macModel: String = AppInfo.macModel
 
     private var pollTimer: Timer?

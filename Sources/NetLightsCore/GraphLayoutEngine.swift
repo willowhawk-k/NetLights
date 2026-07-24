@@ -219,7 +219,7 @@ struct GraphLayoutEngine {
     }
 
     var visible: [InterfaceInfo] {
-        hideUnused ? interfaces.filter { !$0.isUnused } : interfaces
+        hideUnused ? interfaces.filter { !$0.isHiddenWhenInactive(active: hasTraffic($0.id)) } : interfaces
     }
 
     /// BSD name → hardware-port id, derived from each port's child list.

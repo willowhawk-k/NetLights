@@ -147,17 +147,22 @@ Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
 > • See the whole picture: ports, the Wi-Fi network, external displays, connected
 > Bluetooth devices, and attached devices (iPhone/iPad, hubs, docks, drives, keyboards)
 > — with USB hubs expanded into a tidy tree.
-> • Follow your traffic: live up/down throughput is drawn right on the links, default
-> gateways are ranked by precedence so you can see which uplink actually carries your
-> packets, and VPN tunnels show where they egress.
+> • Follow your traffic: live up/down throughput is drawn right on the links, and
+> default gateways are ranked by precedence so you can see which uplink carries your
+> packets.
+> • See your VPN end to end: the encrypted tunnel is drawn as a glowing pipe from your
+> apps out to the far-side server, split-tunnel traffic that bypasses the VPN shows as a
+> separate direct path, and the Routes tab groups routes into Direct, Encrypted, and
+> Local. Optionally reveal your public exit vs. underlay IP.
 > • Inspect anything: hover for details, or use the Routes, Interfaces, and Devices
 > tabs for full tables (manufacturer, link speed, USB class, and more).
 > • Battery & power: a battery entity shows charge level and whether you're on
 > battery, powered, or charging.
 >
 > NetLights is read-only and needs no admin rights — it never changes your
-> configuration. It collects no data and makes no network connections of its own;
-> everything is read from your Mac and shown on your screen.
+> configuration, collects no data, and runs entirely on-device. Its one optional
+> outbound action is a "Public IP" button you can tap to look up the address the
+> internet sees for you (a standard STUN query); nothing else ever leaves your Mac.
 >
 > Free and open source under the MIT License — source at
 > https://github.com/willowhawk-k/NetLights
@@ -180,6 +185,11 @@ In App Store Connect → App Privacy:
 - Bluetooth is used **on-device only** to list already-connected devices (name, type,
   input-device battery) — *not* collected, *not* declared as collected data. NetLights
   never scans, pairs, or connects; it only reads the existing connected-device list.
+- The opt-in **Public IP** button sends a contentless STUN request to reflect back your
+  public IP; it **collects/transmits no personal data**, stores nothing, and is never
+  automatic — so it does not change the **"Data Not Collected"** answer. If App Review
+  asks: it's a user-initiated diagnostic showing the public IP the network already
+  exposes (see `PRIVACY.md`).
 
 ## Screenshots
 

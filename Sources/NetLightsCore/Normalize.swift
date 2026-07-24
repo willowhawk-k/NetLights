@@ -130,3 +130,40 @@ func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceInfo], r
         }
     }
 }
+
+// MARK: - Route classification (Routes view grouping)
+
+/// Split the routing table into the buckets the Routes view groups by: split-tunnel
+/// EXCLUDES that egress directly, unencrypted (`direct`); routes carried over the VPN
+/// tunnel (`encrypted`); and everything else — local subnets, connected & system routes
+/// (`local`). With no active VPN, everything lands in `local`. `direct`/`encrypted`
+/// mirror the graph's own VPN path classification, so the two views agree.
+func classifyRoutes(_ routes: [RouteEntry], gateways: [GatewayNode])
+    -> (direct: [RouteEntry], encrypted: [RouteEntry], local: [RouteEntry]) {
+    let vpnGW = gateways.first { $0.isVPN && $0.vpnServer != nil }
+    let tunnels = Set(gateways.filter { $0.isVPN }.flatMap { $0.reachableVia })
+    var direct: [RouteEntry] = [], encrypted: [RouteEntry] = [], local: [RouteEntry] = []
+    for r in routes {
+        if tunnels.contains(r.interfaceName) {
+            encrypted.append(r)
+        } else if let gw = vpnGW, let carrier = gw.vpnCarrier,
+                  r.interfaceName == carrier, !r.isDefault,
+                  isPublicIPv4(r.destination), r.destination != gw.vpnServer {
+            direct.append(r)
+        } else {
+            local.append(r)
+        }
+    }
+    return (direct, encrypted, local)
+}
+
+/// Numeric ordering key for a route destination: "default" / 0.0.0.0 first, then by the
+/// IPv4 address as a 32-bit number (10.x < 172.x < 192.x); non-IPv4 last, by string.
+func routeSortKey(_ destination: String) -> (UInt32, String) {
+    if destination == "default" || destination == "0.0.0.0" { return (0, "") }
+    let p = destination.split(separator: ".").compactMap { UInt32($0) }
+    if p.count == 4, p.allSatisfy({ $0 <= 255 }) {
+        return (p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3], "")
+    }
+    return (UInt32.max, destination)
+}

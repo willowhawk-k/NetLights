@@ -5,6 +5,8 @@ struct ContentView: View {
     @State private var selectedTab: Tab = .graph
     @State private var hideUnused: Bool = false
     @State private var privacy: Bool = false
+    @State private var routesSorted: Bool = false   // Routes tab: flat numeric sort vs grouped sections
+    @State private var showExternalIP = false       // external-IP reveal popover
 
     enum Tab: String, CaseIterable {
         case graph      = "Graph"
@@ -101,10 +103,73 @@ struct ContentView: View {
                     .font(.callout)
             }
             .buttonStyle(.borderless)
+
+            // Opt-in external-IP reveal — the app's only active outbound query.
+            Button {
+                showExternalIP.toggle()
+                if showExternalIP && monitor.externalExit == nil && !monitor.externalRevealing {
+                    monitor.revealExternalIP()
+                }
+            } label: {
+                Label("Public IP", systemImage: "globe")
+                    .font(.callout)
+            }
+            .buttonStyle(.borderless)
+            .help("Actively look up your public IP as the internet sees it — the app's only outbound query, on demand")
+            .popover(isPresented: $showExternalIP, arrowEdge: .bottom) { externalIPPopover }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+    }
+
+    // MARK: - External IP
+
+    private var externalIPPopover: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Public IP", systemImage: "globe").font(.headline)
+            Text("How the internet sees you — an active STUN lookup, the app's only outbound query.")
+                .font(.caption).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            if monitor.externalRevealing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking up…").font(.callout).foregroundColor(.secondary)
+                }
+            } else {
+                externalRow("Exit — default route", monitor.externalExit,
+                            "What the world sees — through the VPN tunnel when one is up")
+                externalRow("Underlay — carrier", monitor.externalUnderlay,
+                            "Your real ISP address, bypassing the VPN")
+                if let e = monitor.externalExit, let u = monitor.externalUnderlay {
+                    Text(e == u ? "Same address — no active tunnel." : "Addresses differ — traffic is tunneled.")
+                        .font(.caption2).foregroundColor(.secondary).padding(.top, 1)
+                } else if monitor.externalExit == nil && monitor.externalUnderlay == nil {
+                    Text("No response — a STUN server may be blocked on this network.")
+                        .font(.caption2).foregroundColor(.secondary).padding(.top, 1)
+                }
+            }
+            Button {
+                monitor.revealExternalIP()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise").font(.caption)
+            }
+            .disabled(monitor.externalRevealing)
+            .padding(.top, 2)
+        }
+        .padding(14)
+        .frame(width: 300)
+    }
+
+    private func externalRow(_ label: String, _ ip: String?, _ help: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.caption).foregroundColor(.secondary)
+            Text(ip.map { Privacy.mask($0, on: privacy) } ?? "—")
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled)
+                .help(help)
+        }
     }
 
     // MARK: - Status bar
@@ -113,13 +178,13 @@ struct ContentView: View {
         HStack {
             let upCount   = monitor.interfaces.filter(\.hasLink).count
             let totalCount = monitor.interfaces.count
-            let unusedCount = monitor.interfaces.filter(\.isUnused).count
+            let hiddenCount = monitor.interfaces.count - displayedInterfaces.count
             Circle().fill(.green).frame(width: 7, height: 7)
             Text("\(upCount) / \(totalCount) interfaces up")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
-            if hideUnused && unusedCount > 0 {
-                Text("· \(unusedCount) inactive hidden")
+            if hideUnused && hiddenCount > 0 {
+                Text("· \(hiddenCount) inactive hidden")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary.opacity(0.6))
             }
@@ -153,56 +218,105 @@ struct ContentView: View {
     // MARK: - Routes table
 
     private var routesTable: some View {
-        Table(monitor.routes) {
-            TableColumn("Destination") { r in
-                HStack {
-                    if r.isDefault {
-                        Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption)
+        let b = classifyRoutes(monitor.routes, gateways: monitor.gateways)
+        let key: (RouteEntry) -> (UInt32, String) = { routeSortKey($0.destination) }
+        let byKey: (RouteEntry, RouteEntry) -> Bool = { key($0) < key($1) }
+        let direct = b.direct.sorted(by: byKey)
+        let encrypted = b.encrypted.sorted(by: byKey)
+        let local = b.local.sorted(by: byKey)
+        let flat = monitor.routes.sorted(by: byKey)
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(routesSorted
+                     ? "Flat · sorted by destination"
+                     : "Grouped: Direct · Encrypted · Local")
+                    .font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Toggle(isOn: $routesSorted) {
+                    Label("Sort by route", systemImage: "arrow.up.arrow.down")
+                        .font(.caption)
+                }
+                .toggleStyle(.button)
+                .help("Switch between grouped sections (split-tunnel Direct, Encrypted VPN, Local) and one flat list sorted numerically by destination")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 5)
+            Divider()
+            Table(of: RouteEntry.self) {
+                TableColumn("Destination") { r in
+                    HStack {
+                        if r.isDefault {
+                            Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption)
+                        }
+                        Text(Privacy.mask(r.destination, on: privacy)).font(.system(.body, design: .monospaced))
                     }
-                    Text(Privacy.mask(r.destination, on: privacy)).font(.system(.body, design: .monospaced))
                 }
-            }
-            .width(min: 130, ideal: 160)
+                .width(min: 130, ideal: 160)
 
-            TableColumn("Gateway") { r in
-                Text(Privacy.mask(r.gateway, on: privacy)).font(.system(.body, design: .monospaced))
-            }
-            .width(min: 130, ideal: 160)
+                TableColumn("Gateway") { r in
+                    Text(Privacy.mask(r.gateway, on: privacy)).font(.system(.body, design: .monospaced))
+                }
+                .width(min: 130, ideal: 160)
 
-            TableColumn("Netmask") { r in
-                Text(r.netmask ?? "").font(.system(.body, design: .monospaced))
-            }
-            .width(min: 120, ideal: 140)
+                TableColumn("Netmask") { r in
+                    Text(r.netmask ?? "").font(.system(.body, design: .monospaced))
+                }
+                .width(min: 120, ideal: 140)
 
-            TableColumn("Interface") { r in
-                Text(r.interfaceName).font(.system(.body, design: .monospaced))
-            }
-            .width(min: 70, ideal: 90)
+                TableColumn("Interface") { r in
+                    Text(r.interfaceName).font(.system(.body, design: .monospaced))
+                }
+                .width(min: 70, ideal: 90)
 
-            TableColumn("Svc order") { r in
-                // macOS has no numeric route metric; the network service order is
-                // what decides which default wins. Lower = higher priority.
-                if let rank = monitor.serviceRank[r.interfaceName] {
-                    Text("\(rank + 1)").font(.system(.body, design: .monospaced))
-                        .foregroundColor(r.isDefault ? .primary : .secondary)
+                TableColumn("Svc order") { r in
+                    // macOS has no numeric route metric; the network service order is
+                    // what decides which default wins. Lower = higher priority.
+                    if let rank = monitor.serviceRank[r.interfaceName] {
+                        Text("\(rank + 1)").font(.system(.body, design: .monospaced))
+                            .foregroundColor(r.isDefault ? .primary : .secondary)
+                    } else {
+                        Text("—").foregroundColor(.secondary)
+                    }
+                }
+                .width(min: 60, ideal: 70)
+
+                TableColumn("Flags") { r in
+                    Text(r.flags).font(.system(.body, design: .monospaced)).foregroundColor(.secondary)
+                }
+                .width(min: 50, ideal: 60)
+            } rows: {
+                if routesSorted {
+                    ForEach(flat) { TableRow($0) }
                 } else {
-                    Text("—").foregroundColor(.secondary)
+                    if !direct.isEmpty {
+                        Section("Direct — split-tunnel (unencrypted)") {
+                            ForEach(direct) { TableRow($0) }
+                        }
+                    }
+                    if !encrypted.isEmpty {
+                        Section("Encrypted — VPN tunnel") {
+                            ForEach(encrypted) { TableRow($0) }
+                        }
+                    }
+                    Section("Local") {
+                        ForEach(local) { TableRow($0) }
+                    }
                 }
             }
-            .width(min: 60, ideal: 70)
-
-            TableColumn("Flags") { r in
-                Text(r.flags).font(.system(.body, design: .monospaced)).foregroundColor(.secondary)
-            }
-            .width(min: 50, ideal: 60)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Interfaces table
 
+    /// Whether an interface has current rx/tx traffic (drives the bridge's inactive-hide).
+    private func ifaceActive(_ id: String) -> Bool {
+        let t = monitor.trafficStates[id]
+        return t?.rxActive == true || t?.txActive == true
+    }
+
     private var displayedInterfaces: [InterfaceInfo] {
-        hideUnused ? monitor.interfaces.filter { !$0.isUnused } : monitor.interfaces
+        hideUnused ? monitor.interfaces.filter { !$0.isHiddenWhenInactive(active: ifaceActive($0.id)) }
+                   : monitor.interfaces
     }
 
     private var interfaceTable: some View {

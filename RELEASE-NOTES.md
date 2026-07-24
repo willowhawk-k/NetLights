@@ -30,20 +30,38 @@ per-process network attribution needs private frameworks (what `nettop` uses) an
 available to a sandboxed app — may be infeasible without elevated access. App icons
 themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
-### VPN far-side target + encapsulation glow
-Paint what a VPN tunnel actually reaches. For each `utun`, resolve its remote endpoint
-(the VPN server's public IP — the route the *encrypted* packets take) and the private
-subnets it grants (the routes pointing at that `utun`), and draw them beyond the Internet
-node. Style the encapsulated segment — app → `utun` → its physical carrier → Internet →
-server — with a distinct "tunnel" glow to convey encapsulation. IMPORTANT: the physical
-carrier is **per-tunnel**, not always `en0` — it follows the preferred route to each
-server's IP (e.g. currently `en15`), and different `utun`s can egress through different
-physical interfaces. Collector data (endpoint + routed subnets + per-tunnel carrier)
-rides the `TopologySnapshot`; the glow is renderer-side.
-
 ---
 
 ## Release history
+
+### 1.8.0 — unreleased
+- **See your VPN, end to end.** When a VPN is active, NetLights now traces the whole
+  encrypted path as a distinct glowing tunnel — from the tunnel interface, through the
+  physical carrier it actually egresses (per-tunnel, not always `en0`), across the
+  Internet, out to a **far-side concentrator node** drawn beyond the Internet node.
+  Hover any part for the tunnel, carrier, and server. The carrier and server IP are
+  resolved from the routing table (the concentrator's pinned host route) — all
+  in-process, no new permission.
+- **Split tunneling made visible.** Traffic that bypasses the VPN — the public
+  "excludes" that egress directly — is drawn as a separate **unencrypted (amber) strand**
+  running alongside the encrypted pipe up the same carrier, then branching at the Internet
+  to a **"Direct"** node. Encrypted-blue vs. plaintext-amber, side by side.
+- **Routes tab, grouped.** The Routes table now groups into **Direct (split-tunnel)**,
+  **Encrypted (VPN tunnel)**, and **Local** sections, each sorted by destination — with a
+  one-click toggle back to a flat, numerically-sorted list.
+- **Reveal your public IP (opt-in).** A new **Public IP** button looks up how the internet
+  sees you — both the **exit** IP (through the VPN) and the **underlay** IP (your carrier's
+  real address, bypassing the tunnel) — via a single on-demand STUN query. It is the app's
+  only outbound connection, never automatic. See `PRIVACY.md`.
+- **Cleaner trees.** Idle Thunderbolt / L2 **bridge** interfaces no longer clutter the
+  "Hide inactive" view unless they're actually carrying traffic, and stacked
+  device → port → gateway chains now curve gently instead of piling into one column.
+- **Virtual adapters band.** VM/app virtual adapters (`en4`–`en6`) moved from the Physical
+  band to the **Virtual** band where they belong (virtual L2, no hardware port); the band's
+  OSI label is now **L2+**.
+- Under the hood: the network model, pure transforms, and the graph-layout engine were
+  lifted into a portable, Foundation-only core — groundwork for future platforms, with the
+  macOS app behaving identically.
 
 ### 1.7.1 — 2026-07-18
 - **External storage & Target Disk Mode on the map.** External drives now appear as

@@ -90,6 +90,13 @@ struct InterfaceInfo: Identifiable, Equatable, Codable {
         && category != .vlan
     }
 
+    /// Whether to hide this interface in the "hide inactive" view: the usual unused
+    /// test, OR a structurally-up-but-idle L2 bridge — always "up" but rarely carrying
+    /// anything — when it has no live traffic. `active` = has current rx/tx traffic.
+    func isHiddenWhenInactive(active: Bool) -> Bool {
+        isUnused || (category == .bridge && !active)
+    }
+
     /// Short human-readable label shown beneath the interface name in the graph node.
     var subtitleLabel: String {
         // Virtual app adapters: show the app name rather than a generic label
