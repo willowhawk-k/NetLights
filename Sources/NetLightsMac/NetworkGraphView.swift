@@ -30,8 +30,9 @@ enum HoverTarget: Equatable {
     case port(Int)
     case gateway(String)
     case device(String)
-    case link(String)    // a connection wire, identified by the interface it carries
-    case tunnel(String)  // an encrypted VPN egress path — the VPN gateway id
+    case link(String)      // a connection wire, identified by the interface it carries
+    case tunnel(String)    // an encrypted VPN egress path — the VPN gateway id
+    case vpnServer(String) // the far-side VPN concentrator node — its public IP
 }
 
 /// Reports the rendered size of the tooltip so it can be clamped on-screen.
@@ -98,6 +99,8 @@ struct NetworkGraphView: View {
     var hwPortPositions: [Int: CGPoint] { engine.hwPortPositions }
     var devicePositions: [String: CGPoint] { engine.devicePositions }
     var egressPosition: CGPoint? { engine.egressPosition }
+    var vpnServerPosition: CGPoint? { engine.vpnServerPosition }
+    var vpnServerID: String? { engine.vpnServerID }
     private var bw: CGFloat { engine.bw }
     private var bh: CGFloat { engine.bh }
     private var bands: [LayerBand] { engine.bands }
@@ -190,6 +193,12 @@ struct NetworkGraphView: View {
                     EgressNodeView(egress: e).position(p).zIndex(1)
                 }
 
+                // Far-side VPN concentrator, beyond the Internet node (when resolved).
+                if let sid = vpnServerID, let p = vpnServerPosition {
+                    VPNServerNodeView(serverIP: sid, isHovered: shownTarget == .vpnServer(sid))
+                        .position(p).zIndex(1)
+                }
+
                 // Single, pointer-anchored tooltip (immune to per-node hover churn).
                 tooltipLayer(in: CGSize(width: bw, height: bh))
             }
@@ -258,6 +267,7 @@ struct NetworkGraphView: View {
         case .device:  return 232
         case .link:    return 230
         case .tunnel:  return 250
+        case .vpnServer: return 250
         }
     }
 
@@ -310,6 +320,10 @@ struct NetworkGraphView: View {
             if let g = gateways.first(where: { $0.id == id }) {
                 VPNTunnelTooltip(gateway: g)
             }
+        case .vpnServer(let ip):
+            if let g = gateways.first(where: { $0.isVPN && $0.vpnServer == ip }) {
+                VPNServerTooltip(serverIP: ip, gateway: g)
+            }
         case .none:
             EmptyView()
         }
@@ -328,6 +342,9 @@ struct NetworkGraphView: View {
         }
         for gw in gateways {
             if let c = gatewayPositions[gw.id], hitRect(c, 100, 76).contains(p) { return .gateway(gw.id) }
+        }
+        if let sid = vpnServerID, let c = vpnServerPosition, hitRect(c, 100, 76).contains(p) {
+            return .vpnServer(sid)
         }
         let dp = devicePositions
         for dev in attachedDevices {
@@ -387,6 +404,7 @@ struct NetworkGraphView: View {
             // The committed anchor (matches the shown content), not the live
             // pending point — so it never shows the previous link's info here.
             return shownLinkPoint
+        case .vpnServer: return vpnServerPosition
         }
     }
 
@@ -397,6 +415,7 @@ struct NetworkGraphView: View {
         case .gateway: return CGSize(width: 100, height: 76)
         case .device:  return CGSize(width: 74, height: 52)
         case .link, .tunnel: return CGSize(width: 24, height: 24)
+        case .vpnServer:     return CGSize(width: 100, height: 76)
         }
     }
 

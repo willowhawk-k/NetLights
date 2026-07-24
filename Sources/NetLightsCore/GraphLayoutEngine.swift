@@ -14,6 +14,10 @@ let gwColWidth: CGFloat = 0
 private let internetRowHeight: CGFloat = 80
 private let gwTierHeight: CGFloat = 78
 private let headerHeight: CGFloat = internetRowHeight + gwTierHeight
+/// A tier reserved ABOVE the Internet row for the far-side VPN concentrator node.
+/// Only claimed when an active VPN's server is resolved (see `farOffset`), so
+/// non-VPN graphs keep their original extent.
+private let farRowHeight: CGFloat = 88
 
 // MARK: - Band layout (no Gateways — moved to sidebar)
 
@@ -79,7 +83,7 @@ struct ConnLine: Identifiable {
     let id = UUID()
     let from, to: CGPoint
     let label: String
-    let color: ColorToken
+    var color: ColorToken          // recolored when a line is folded into the VPN pipe
     let hasTraffic: Bool
     var emphasized: Bool = false   // always-visible link (e.g. iPhone ↔ its port)
     var style: LinkStyle = .data
@@ -196,6 +200,7 @@ struct GraphLayoutEngine {
         for g in gateways {
             h.combine(g.id); h.combine(g.isDefault); h.combine(g.isVPN)
             h.combine(g.reachableVia.joined(separator: ","))
+            h.combine(g.vpnServer ?? ""); h.combine(g.vpnCarrier ?? "")  // VPN far-side + carrier drive the tier/pipe
         }
         h.combine(egress?.name ?? "")
         h.combine(systemPower != nil)   // battery slot presence adds/removes a Hardware-row slot
@@ -496,15 +501,22 @@ struct GraphLayoutEngine {
         }
     }
 
-    /// The graph's natural height: the header plus every band at its full need. `bh`
-    /// never drops below this, so bands can't compress and spill tiles into each
-    /// other — a short window scrolls (see the ScrollView in `body`) instead of
+    /// True when an active VPN's far-side server has been resolved — the trigger for
+    /// reserving the far-side tier and painting the concentrator node + pipe.
+    private var hasVPNServer: Bool { gateways.contains { $0.isVPN && $0.vpnServer != nil } }
+    /// Extra top inset above the Internet row: the far-side tier when a VPN server is
+    /// present, else zero. Everything below shifts down by this and the canvas grows.
+    private var farOffset: CGFloat { hasVPNServer ? farRowHeight : 0 }
+
+    /// The graph's natural height: the (far tier +) header plus every band at its full
+    /// need. `bh` never drops below this, so bands can't compress and spill tiles into
+    /// each other — a short window scrolls (see the ScrollView in `body`) instead of
     /// overlapping. When the window is taller than this, the graph fills it.
-    private var contentHeight: CGFloat { memo(\.contentH) { headerHeight + bandNeeds.reduce(0) { $0 + $1.need } } }
+    private var contentHeight: CGFloat { memo(\.contentH) { farOffset + headerHeight + bandNeeds.reduce(0) { $0 + $1.need } } }
 
     func bandRect(_ name: String) -> CGRect {
-        let usable = max(bh - headerHeight, 0)
-        var y: CGFloat = headerHeight
+        let usable = max(bh - headerHeight - farOffset, 0)
+        var y: CGFloat = headerHeight + farOffset
         for band in bands {
             let h = band.heightFraction * usable
             if band.name == name { return CGRect(x: 0, y: y, width: 0, height: h) }
@@ -611,7 +623,7 @@ struct GraphLayoutEngine {
     var gatewayPositions: [String: CGPoint] { memo(\.gw, computeGatewayPositions) }
     private func computeGatewayPositions() -> [String: CGPoint] {
         guard bw > 0, bh > 0, !gateways.isEmpty else { return [:] }
-        let tierY = internetRowHeight + gwTierHeight / 2
+        let tierY = farOffset + internetRowHeight + gwTierHeight / 2
         var result: [String: CGPoint] = [:]
         for gw in gateways {
             if gw.isVPN {
@@ -827,11 +839,21 @@ struct GraphLayoutEngine {
         return result
     }
 
-    /// The egress ("Internet") node sits centered in the top row.
+    /// The egress ("Internet") node sits centered in the top row (below the far-side
+    /// tier when a VPN concentrator is shown).
     var egressPosition: CGPoint? {
         guard egress != nil, bw > 0 else { return nil }
-        return CGPoint(x: bw / 2, y: internetRowHeight / 2)
+        return CGPoint(x: bw / 2, y: farOffset + internetRowHeight / 2)
     }
+
+    /// The far-side VPN concentrator, painted BEYOND the Internet node in its own
+    /// reserved top tier. Present only when an active VPN's server IP is resolved.
+    var vpnServerPosition: CGPoint? {
+        guard hasVPNServer, bw > 0 else { return nil }
+        return CGPoint(x: bw / 2, y: farRowHeight / 2)
+    }
+    /// The resolved far-side server IP (the concentrator's public address), if any.
+    var vpnServerID: String? { gateways.first { $0.isVPN && $0.vpnServer != nil }?.vpnServer }
 
     /// Min distance from `p` to a quadratic Bézier, by sampling points along it.
     func distanceToCurve(_ p: CGPoint, _ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGFloat {
@@ -1073,6 +1095,29 @@ struct GraphLayoutEngine {
             lines.append(ConnLine(from: vP, to: to, label: "egress",
                 color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
                 ifaceID: dIface, encapsulated: true))
+        }
+
+        // Slice B: fold the VPN's full path into one continuous encrypted pipe and
+        // carry it out past the Internet to the far-side concentrator. Every wire on
+        // the interfaces the encrypted payload rides (its tunnel(s) + the physical
+        // carrier) becomes encapsulated + VPN-blue, and a final hop crosses from the
+        // Internet node to the server. Only fires when the server is resolved, so
+        // non-VPN graphs and VPNs without a pinned concentrator are untouched.
+        if let vpnGW = gateways.first(where: { $0.isVPN && $0.vpnServer != nil }) {
+            var pipeIfaces = Set(vpnGW.reachableVia)
+            if let c = vpnGW.vpnCarrier { pipeIfaces.insert(c) }
+            lines = lines.map { line in
+                guard let ifn = line.ifaceID, pipeIfaces.contains(ifn) else { return line }
+                var l = line
+                l.encapsulated = true
+                l.color = .gatewayVPN
+                return l
+            }
+            if let ep = egressPosition, let sp = vpnServerPosition {
+                lines.append(ConnLine(from: ep, to: sp, label: "",
+                    color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true,
+                    dominant: true, encapsulated: true))
+            }
         }
 
         return lines

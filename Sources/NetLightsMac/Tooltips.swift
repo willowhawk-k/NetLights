@@ -178,6 +178,42 @@ struct VPNTunnelTooltip: View {
     }
 }
 
+/// Hover detail for the far-side VPN concentrator: the server the encrypted tunnel
+/// terminates at, and the carrier / tunnel it's reached through.
+struct VPNServerTooltip: View {
+    let serverIP: String
+    let gateway: GatewayNode
+    @Environment(\.privacyMode) private var privacyMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("VPN server", systemImage: "lock.shield.fill")
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+            Divider()
+            row("Address", Privacy.mask(serverIP, on: privacyMode))
+            if let c = gateway.vpnCarrier { row("Via", c) }
+            row("Tunnel", gateway.reachableVia.joined(separator: ", "))
+            Text("The concentrator on the far side of the Internet where your encrypted tunnel terminates and traffic is decrypted.")
+                .font(.system(size: 9)).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 1)
+        }
+        .frame(width: 250, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial)
+            .shadow(color: .black.opacity(0.3), radius: 8))
+    }
+
+    @ViewBuilder private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(label + ": ").font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary).frame(width: 66, alignment: .leading)
+            Text(value).font(.system(.caption, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct GatewayTooltip: View {
     let gateway: GatewayNode
     let routes: [RouteEntry]
