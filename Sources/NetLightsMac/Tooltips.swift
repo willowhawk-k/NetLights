@@ -214,6 +214,40 @@ struct VPNServerTooltip: View {
     }
 }
 
+/// Hover detail for the split-tunnel "Direct" node: the public destinations that
+/// bypass the VPN tunnel and egress unencrypted over the carrier.
+struct VPNExcludeTooltip: View {
+    let routes: [RouteEntry]
+    @Environment(\.privacyMode) private var privacyMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Split-tunnel excludes", systemImage: "lock.open.fill")
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+            Divider()
+            Text("\(routes.count) public destinations reached directly — unencrypted, over the carrier — bypassing the VPN tunnel.")
+                .font(.system(size: 9)).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if !routes.isEmpty {
+                Divider()
+                ForEach(routes.prefix(6)) { r in
+                    Text(Privacy.mask(r.destination, on: privacyMode))
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if routes.count > 6 {
+                    Text("… and \(routes.count - 6) more")
+                        .font(.system(size: 8)).foregroundColor(.secondary)
+                }
+            }
+        }
+        .frame(width: 250, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial)
+            .shadow(color: .black.opacity(0.3), radius: 8))
+    }
+}
+
 struct GatewayTooltip: View {
     let gateway: GatewayNode
     let routes: [RouteEntry]

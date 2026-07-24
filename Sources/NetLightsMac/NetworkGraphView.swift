@@ -12,6 +12,7 @@ extension ColorToken {
         case .gatewayVPN:     return .blue
         case .gatewayOther:   return Color(white: 0.4)
         case .egress:         return .teal
+        case .split:          return Color(red: 0.95, green: 0.65, blue: 0.15)
         case .bandHardware:   return Color(white: 0.5).opacity(0.05)
         case .bandPhysical:   return Color.blue.opacity(0.055)
         case .bandDataLink:   return Color.purple.opacity(0.055)
@@ -33,6 +34,7 @@ enum HoverTarget: Equatable {
     case link(String)      // a connection wire, identified by the interface it carries
     case tunnel(String)    // an encrypted VPN egress path — the VPN gateway id
     case vpnServer(String) // the far-side VPN concentrator node — its public IP
+    case vpnExclude        // the split-tunnel "Direct" node (public excludes)
 }
 
 /// Reports the rendered size of the tooltip so it can be clamped on-screen.
@@ -101,6 +103,9 @@ struct NetworkGraphView: View {
     var egressPosition: CGPoint? { engine.egressPosition }
     var vpnServerPosition: CGPoint? { engine.vpnServerPosition }
     var vpnServerID: String? { engine.vpnServerID }
+    var vpnExcludePosition: CGPoint? { engine.vpnExcludePosition }
+    var hasVPNExcludes: Bool { engine.hasVPNExcludes }
+    var vpnExcludeRoutes: [RouteEntry] { engine.vpnExcludeRoutes }
     private var bw: CGFloat { engine.bw }
     private var bh: CGFloat { engine.bh }
     private var bands: [LayerBand] { engine.bands }
@@ -199,6 +204,12 @@ struct NetworkGraphView: View {
                         .position(p).zIndex(1)
                 }
 
+                // Split-tunnel "Direct" node: public excludes that bypass the tunnel.
+                if hasVPNExcludes, let p = vpnExcludePosition {
+                    VPNExcludeNodeView(count: vpnExcludeRoutes.count, isHovered: shownTarget == .vpnExclude)
+                        .position(p).zIndex(1)
+                }
+
                 // Single, pointer-anchored tooltip (immune to per-node hover churn).
                 tooltipLayer(in: CGSize(width: bw, height: bh))
             }
@@ -268,6 +279,7 @@ struct NetworkGraphView: View {
         case .link:    return 230
         case .tunnel:  return 250
         case .vpnServer: return 250
+        case .vpnExclude: return 250
         }
     }
 
@@ -324,6 +336,8 @@ struct NetworkGraphView: View {
             if let g = gateways.first(where: { $0.isVPN && $0.vpnServer == ip }) {
                 VPNServerTooltip(serverIP: ip, gateway: g)
             }
+        case .vpnExclude:
+            VPNExcludeTooltip(routes: vpnExcludeRoutes)
         case .none:
             EmptyView()
         }
@@ -345,6 +359,9 @@ struct NetworkGraphView: View {
         }
         if let sid = vpnServerID, let c = vpnServerPosition, hitRect(c, 100, 76).contains(p) {
             return .vpnServer(sid)
+        }
+        if hasVPNExcludes, let c = vpnExcludePosition, hitRect(c, 100, 76).contains(p) {
+            return .vpnExclude
         }
         let dp = devicePositions
         for dev in attachedDevices {
@@ -405,6 +422,7 @@ struct NetworkGraphView: View {
             // pending point — so it never shows the previous link's info here.
             return shownLinkPoint
         case .vpnServer: return vpnServerPosition
+        case .vpnExclude: return vpnExcludePosition
         }
     }
 
@@ -416,6 +434,7 @@ struct NetworkGraphView: View {
         case .device:  return CGSize(width: 74, height: 52)
         case .link, .tunnel: return CGSize(width: 24, height: 24)
         case .vpnServer:     return CGSize(width: 100, height: 76)
+        case .vpnExclude:    return CGSize(width: 100, height: 76)
         }
     }
 

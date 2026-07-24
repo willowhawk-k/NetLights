@@ -91,6 +91,7 @@ struct ConnLine: Identifiable {
     var ifaceID: String? = nil     // interface this wire carries (rate + link hover)
     var showRate: Bool = false     // draw the throughput number on this wire
     var encapsulated: Bool = false // (VPN) the tunneled outer path — drawn with an encapsulation sheath
+    var laneBias: CGFloat = 0      // extra perpendicular bow, to run parallel beside another wire
 }
 
 /// How a connector reads:
@@ -105,7 +106,7 @@ enum LinkStyle { case physical, link, data }
 /// renderer maps it to its own palette. (The enum is portable → moves to NetLightsCore;
 /// the `swiftUI` mapping below stays in the macOS renderer.)
 enum ColorToken: Equatable {
-    case link, attach, neutral, l2, gatewayPrimary, gatewayVPN, gatewayOther, egress
+    case link, attach, neutral, l2, gatewayPrimary, gatewayVPN, gatewayOther, egress, split
     case bandHardware, bandPhysical, bandDataLink, bandVirtual, clear
 }
 
@@ -384,6 +385,7 @@ struct GraphLayoutEngine {
     var bh: CGFloat { max(viewSize.height, contentHeight) }
 
     private let deviceRowGap: CGFloat = 66   // > device chip height (52) so tree levels don't overlap
+    private let deviceRowZig: CGFloat = 22   // per-row horizontal zigzag for single-file chains
     // Strip reserved at the top of the Virtual band for the VPN gateway chip, so it
     // doesn't collide with the tunnel rows. Shared by bandNeeds, virtualGroupLayout,
     // and gatewayPositions so they agree.
@@ -635,7 +637,14 @@ struct GraphLayoutEngine {
                     result[gw.id] = CGPoint(x: p.x, y: bandRect("Virtual").minY + vpnStripHeight / 2)
                 }
             } else if let hx = gatewayHostX(gw) {
-                result[gw.id] = CGPoint(x: hx, y: tierY)
+                // Nudge the gateway OFF its host's exact column: pinned dead-center above
+                // the port/device it crowds the vertical chain (USB → port → GW stacks in
+                // one narrow pile). Lean toward the canvas center — where the Internet node
+                // sits — so the hop reads as a gentle curve and the tree pulls inward into
+                // the open space. Clamped to stay on-canvas.
+                let lean: CGFloat = 46
+                let x = min(max(hx + (hx <= bw / 2 ? lean : -lean), 60), bw - 60)
+                result[gw.id] = CGPoint(x: x, y: tierY)
             }
         }
         return result
@@ -820,21 +829,27 @@ struct GraphLayoutEngine {
             // Lay a subtree left-to-right; return the node's center x (midpoint of
             // its children's span). Depth-capped as cheap insurance against a
             // pathological registry (parentID is structurally acyclic, but still).
-            func place(_ d: AttachedDevice, _ depth: Int) -> CGFloat {
+            func place(_ d: AttachedDevice, _ depth: Int, _ solo: Bool) -> CGFloat {
                 let y = topY + CGFloat(min(depth, 24)) * deviceRowGap
                 let kids = depth < 24 ? (f.childrenOf[d.id] ?? []) : []   // forest order (type, then name)
+                // Zigzag a SINGLE-FILE run (a lone root / only child) left/right per row
+                // so it reads as a curve instead of a rigid vertical pile. Multi-child
+                // rows already spread, so leave those centered. Applied to the STORED
+                // position only (the returned x keeps the tidy-tree centering exact) and
+                // clamped, so a subtree never leaves its lane.
+                let dx = solo ? (depth % 2 == 0 ? deviceRowZig : -deviceRowZig) : 0
                 if kids.isEmpty {
                     let x = cursor + slot / 2
                     cursor += slot
-                    result[d.id] = CGPoint(x: clampX(x), y: y)
+                    result[d.id] = CGPoint(x: clampX(x + dx), y: y)
                     return x
                 }
-                let xs = kids.map { place($0, depth + 1) }
+                let xs = kids.map { place($0, depth + 1, kids.count == 1) }
                 let x = (xs.first! + xs.last!) / 2
-                result[d.id] = CGPoint(x: clampX(x), y: y)
+                result[d.id] = CGPoint(x: clampX(x + dx), y: y)
                 return x
             }
-            for root in sorted { _ = place(root, 0) }
+            for root in sorted { _ = place(root, 0, sorted.count == 1) }
         }
         return result
     }
@@ -846,14 +861,42 @@ struct GraphLayoutEngine {
         return CGPoint(x: bw / 2, y: farOffset + internetRowHeight / 2)
     }
 
+    /// Horizontal fan-out of the far-side tiles: when BOTH the concentrator and the
+    /// "Direct" excludes node are shown they split to either side of the Internet's
+    /// center column (a symmetric branch, like the displays entity fans downward). A
+    /// single tile stays centered.
+    private var farTileSpread: CGFloat { hasVPNExcludes ? min(92, max(0, bw / 2 - 58)) : 0 }
+
     /// The far-side VPN concentrator, painted BEYOND the Internet node in its own
     /// reserved top tier. Present only when an active VPN's server IP is resolved.
     var vpnServerPosition: CGPoint? {
         guard hasVPNServer, bw > 0 else { return nil }
-        return CGPoint(x: bw / 2, y: farRowHeight / 2)
+        return CGPoint(x: bw / 2 - farTileSpread, y: farRowHeight / 2)
     }
     /// The resolved far-side server IP (the concentrator's public address), if any.
     var vpnServerID: String? { gateways.first { $0.isVPN && $0.vpnServer != nil }?.vpnServer }
+
+    /// Split-tunnel EXCLUDE destinations: public routes pinned to the VPN's physical
+    /// carrier (non-default, and not the concentrator host-pin) that bypass the tunnel
+    /// and egress directly, unencrypted. Local/private subnet excludes are LAN geography
+    /// (handled with the neighbor map), not this beyond-the-Internet contrast.
+    var vpnExcludeRoutes: [RouteEntry] {
+        guard let vpnGW = gateways.first(where: { $0.isVPN && $0.vpnServer != nil }),
+              let carrier = vpnGW.vpnCarrier else { return [] }
+        let server = vpnGW.vpnServer
+        return routes.filter {
+            $0.interfaceName == carrier && !$0.isDefault
+            && isPublicIPv4($0.destination) && $0.destination != server
+        }
+    }
+    var hasVPNExcludes: Bool { !vpnExcludeRoutes.isEmpty }
+
+    /// The "Direct" node — the public split-tunnel excludes — sits in the far tier
+    /// beside the encrypted concentrator, reached by a plain (unencrypted) wire.
+    var vpnExcludePosition: CGPoint? {
+        guard hasVPNExcludes, bw > 0 else { return nil }
+        return CGPoint(x: bw / 2 + farTileSpread, y: farRowHeight / 2)
+    }
 
     /// Min distance from `p` to a quadratic Bézier, by sampling points along it.
     func distanceToCurve(_ p: CGPoint, _ a: CGPoint, _ c: CGPoint, _ b: CGPoint) -> CGFloat {
@@ -923,7 +966,7 @@ struct GraphLayoutEngine {
         // Stable sign from endpoints (not the per-render UUID) so it doesn't flicker.
         let salt = Int(line.from.x * 3 + line.from.y * 7 + line.to.x * 11 + line.to.y * 17)
         let sign: CGFloat = (salt & 1 == 0) ? 1 : -1
-        let bow = sign * min(26, len * 0.12)
+        let bow = sign * min(26, len * 0.12) + line.laneBias
         return CGPoint(x: mx + nx * bow, y: my + ny * bow)
     }
 
@@ -1117,6 +1160,36 @@ struct GraphLayoutEngine {
                 lines.append(ConnLine(from: ep, to: sp, label: "",
                     color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true,
                     dominant: true, encapsulated: true))
+            }
+            // Unencrypted (non-tunnel) egress, traced ALONGSIDE the encrypted pipe: the
+            // same physical carrier hops (interface → USB/TB adapter → LAN gateway) carry
+            // direct traffic too, so draw a parallel amber strand up the carrier. Without
+            // public excludes it terminates at the LAN gateway (local reach only); WITH
+            // excludes it continues THROUGH the Internet out to the Direct destinations
+            // (which are public, so the split is at the Internet, never the LAN gateway).
+            // `laneBias` bows it perpendicular so it runs beside the blue pipe, sharing
+            // each node so there's no kink. Static — we only have per-interface counters,
+            // not per-subnet (per-subnet ant-crawl is a permissioned stretch goal).
+            if let carrier = vpnGW.vpnCarrier {
+                let lane: CGFloat = 22
+                let carrierP = ifacePositions[carrier]
+                // The hardware entity the carrier egresses through — the Wi-Fi AP chip, a
+                // USB adapter, or a TB port — resolved the SAME way the blue pipe's own
+                // hop is, so the strands stay parallel on every uplink type. (nil-equal to
+                // the interface means there's no distinct chip → that hop is skipped.)
+                let hubP = hostAnchorForInterface(carrier)
+                let gwP = physDefault.flatMap { gatewayPositions[$0.id] }
+                func amber(_ a: CGPoint?, _ b: CGPoint?, _ bias: CGFloat) {
+                    guard let a, let b, a != b else { return }
+                    lines.append(ConnLine(from: a, to: b, label: "", color: .split,
+                        hasTraffic: false, emphasized: true, style: .data, laneBias: bias))
+                }
+                amber(carrierP, hubP, lane)
+                amber(hubP ?? carrierP, gwP, lane)
+                if hasVPNExcludes, let xp = vpnExcludePosition {
+                    amber(gwP ?? hubP ?? carrierP, egressPosition, lane)
+                    amber(egressPosition, xp, 0)
+                }
             }
         }
 
