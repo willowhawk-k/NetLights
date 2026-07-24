@@ -34,7 +34,7 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
-### 1.8.0 — unreleased
+### 1.8.0 — 2026-07-24
 - **See your VPN, end to end.** When a VPN is active, NetLights now traces the whole
   encrypted path as a distinct glowing tunnel — from the tunnel interface, through the
   physical carrier it actually egresses (per-tunnel, not always `en0`), across the
@@ -53,9 +53,10 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
   sees you — both the **exit** IP (through the VPN) and the **underlay** IP (your carrier's
   real address, bypassing the tunnel) — via a single on-demand STUN query. It is the app's
   only outbound connection, never automatic. See `PRIVACY.md`.
-- **Cleaner trees.** Idle Thunderbolt / L2 **bridge** interfaces no longer clutter the
-  "Hide inactive" view unless they're actually carrying traffic, and stacked
-  device → port → gateway chains now curve gently instead of piling into one column.
+- **Cleaner trees.** Idle Thunderbolt / L2 **bridge** interfaces — and disconnected VPN
+  tunnels that kept a stale address — no longer clutter the "Hide inactive" view unless
+  they're actually carrying traffic; and stacked device → port → gateway chains now curve
+  gently instead of piling into one column.
 - **Virtual adapters band.** VM/app virtual adapters (`en4`–`en6`) moved from the Physical
   band to the **Virtual** band where they belong (virtual L2, no hardware port); the band's
   OSI label is now **L2+**.
