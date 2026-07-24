@@ -86,6 +86,7 @@ struct ConnLine: Identifiable {
     var dominant: Bool = false     // part of the primary path most packets take
     var ifaceID: String? = nil     // interface this wire carries (rate + link hover)
     var showRate: Bool = false     // draw the throughput number on this wire
+    var encapsulated: Bool = false // (VPN) the tunneled outer path — drawn with an encapsulation sheath
 }
 
 /// How a connector reads:
@@ -1065,10 +1066,13 @@ struct GraphLayoutEngine {
         // traffic enters the physical stack there, then rides that interface out).
         if let vpnGW = gateways.first(where: { $0.isVPN }),
            let vP = gatewayPositions[vpnGW.id],
-           let dIface = domIface, let to = ifacePositions[dIface] {
+           // The encrypted outer packets egress through the VPN's REAL carrier (resolved
+           // from the route to its server) — not necessarily the top-ranked physical
+           // default. Fall back to the dominant physical interface if unresolved.
+           let dIface = vpnGW.vpnCarrier ?? domIface, let to = ifacePositions[dIface] {
             lines.append(ConnLine(from: vP, to: to, label: "egress",
                 color: .gatewayVPN, hasTraffic: gatewayActive(vpnGW), emphasized: true, dominant: true,
-                ifaceID: dIface))
+                ifaceID: dIface, encapsulated: true))
         }
 
         return lines

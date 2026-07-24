@@ -29,6 +29,46 @@ func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> EgressI
     return EgressInfo(viaInterface: ifname, kind: kind, name: nil)
 }
 
+/// Whether an IPv4 string is a routable public address (not RFC1918 / loopback /
+/// link-local / multicast / reserved / unspecified).
+func isPublicIPv4(_ ip: String) -> Bool {
+    let p = ip.split(separator: ".").compactMap { Int($0) }
+    guard p.count == 4, p.allSatisfy({ (0...255).contains($0) }) else { return false }
+    switch (p[0], p[1]) {
+    case (10, _), (127, _), (0, _):      return false
+    case (172, 16...31):                 return false
+    case (192, 168):                     return false
+    case (169, 254):                     return false
+    case (224...255, _):                 return false   // multicast + reserved
+    default:                             return true
+    }
+}
+
+/// Resolve each VPN gateway's real underlay carrier + server endpoint from the routing
+/// table. A VPN client pins its concentrator with a STATIC HOST route (flags H+S) to a
+/// public IP via a PHYSICAL (non-tunnel) interface, so the encrypted outer packets reach
+/// the server without looping back into the tunnel. That route's interface is the carrier
+/// the encrypted traffic actually egresses through — which is NOT necessarily the
+/// top-service-ranked physical default — and its destination is the server's public IP.
+func resolveVPNPaths(_ gateways: [GatewayNode], routes: [RouteEntry]) -> [GatewayNode] {
+    let serverRoutes = routes.filter {
+        $0.flags.contains("H") && $0.flags.contains("S")
+        && !$0.interfaceName.isEmpty
+        && !$0.interfaceName.hasPrefix("utun") && !$0.interfaceName.hasPrefix("ipsec")
+        && isPublicIPv4($0.destination)
+    }
+    guard let server = serverRoutes.first else { return gateways }
+    // v1: with one active VPN, assign the pinned concentrator to the VPN gateway(s).
+    // Per-tunnel correlation for multiple simultaneous VPNs is a refinement.
+    return gateways.map { gw in
+        guard gw.isVPN else { return gw }
+        var g = gw
+        g.vpnServer  = server.destination
+        g.vpnCarrier = server.interfaceName
+        return g
+    }
+}
+
 /// Build the gateway nodes from the routing table: dedup by IP, flag VPN tunnels, and
 /// rank each gateway's uplinks + the default-gateway precedence by the caller-supplied
 /// `rank` (macOS network service order; a Linux collector passes a route-metric rank).

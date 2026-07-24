@@ -30,7 +30,8 @@ enum HoverTarget: Equatable {
     case port(Int)
     case gateway(String)
     case device(String)
-    case link(String)   // a connection wire, identified by the interface it carries
+    case link(String)    // a connection wire, identified by the interface it carries
+    case tunnel(String)  // an encrypted VPN egress path — the VPN gateway id
 }
 
 /// Reports the rendered size of the tooltip so it can be clamped on-screen.
@@ -201,7 +202,7 @@ struct NetworkGraphView: View {
                     if t != pendingTarget {
                         // Anchor a link tooltip at the entry point (no per-move
                         // state churn while sliding along the same wire).
-                        if case .link = t { linkHoverPoint = p }
+                        switch t { case .link, .tunnel: linkHoverPoint = p; default: break }
                         pendingTarget = t; scheduleHover(t)
                     }
                 case .ended:
@@ -256,6 +257,7 @@ struct NetworkGraphView: View {
         case .port:    return 230
         case .device:  return 232
         case .link:    return 230
+        case .tunnel:  return 250
         }
     }
 
@@ -304,6 +306,10 @@ struct NetworkGraphView: View {
             if let i = interfaces.first(where: { $0.id == id }) {
                 LinkTooltip(iface: i, traffic: trafficStates[id])
             }
+        case .tunnel(let id):
+            if let g = gateways.first(where: { $0.id == id }) {
+                VPNTunnelTooltip(gateway: g)
+            }
         case .none:
             EmptyView()
         }
@@ -337,13 +343,17 @@ struct NetworkGraphView: View {
             return lastWireProbeTarget
         }
         // Pick the closest wire within a forgiving band so a thin curve is grabbable.
-        var best: (id: String, d: CGFloat)?
+        var best: (line: ConnLine, d: CGFloat)?
         for line in buildLines() {
-            guard let id = line.ifaceID else { continue }
+            guard line.ifaceID != nil else { continue }
             let d = distanceToCurve(p, line.from, curveControl(line), line.to)
-            if d <= 16, best == nil || d < best!.d { best = (id, d) }
+            if d <= 16, best == nil || d < best!.d { best = (line, d) }
         }
-        let result: HoverTarget? = best.map { .link($0.id) }
+        // An encapsulated (VPN) wire hovers as its encrypted tunnel, not a plain link.
+        let result: HoverTarget? = best.flatMap { b in
+            (b.line.encapsulated ? gateways.first(where: { $0.isVPN }).map { HoverTarget.tunnel($0.id) } : nil)
+                ?? b.line.ifaceID.map { HoverTarget.link($0) }
+        }
         lastWireProbePoint = p
         lastWireProbeTarget = result
         return result
@@ -373,7 +383,7 @@ struct NetworkGraphView: View {
         case .port(let id):    return hwPortPositions[id]
         case .gateway(let id): return gatewayPositions[id]
         case .device(let id):  return devicePositions[id]
-        case .link:
+        case .link, .tunnel:
             // The committed anchor (matches the shown content), not the live
             // pending point — so it never shows the previous link's info here.
             return shownLinkPoint
@@ -386,7 +396,7 @@ struct NetworkGraphView: View {
         case .port:    return CGSize(width: 84, height: 62)
         case .gateway: return CGSize(width: 100, height: 76)
         case .device:  return CGSize(width: 74, height: 52)
-        case .link:    return CGSize(width: 24, height: 24)
+        case .link, .tunnel: return CGSize(width: 24, height: 24)
         }
     }
 
@@ -511,30 +521,49 @@ struct NetworkGraphView: View {
             let ctrl = curveControl(line)
             // Solid when physical, or a hard link that's currently idle.
             let drawSolid = line.style == .physical || (line.style == .link && !active)
-            Path { p in
-                p.move(to: line.from)
-                p.addQuadCurve(to: line.to, control: ctrl)
+            if line.encapsulated {
+                // Encrypted VPN tunnel: a segmented "pipe" (animated casing ribs) around a
+                // bright inner core, plus a soft neon glow — unmistakably an encapsulated,
+                // encrypted path (vs plain / split-tunnel wires, which stay simple strokes).
+                let tunnel = Path { p in
+                    p.move(to: line.from)
+                    p.addQuadCurve(to: line.to, control: ctrl)
+                }
+                // Soft glow, then a faint static core "wire", then the crawling ribs on
+                // top — short bright marks with generous gaps so the motion is obvious and
+                // reads as separate from the line.
+                tunnel.stroke(line.color.swiftUI.opacity(0.12), lineWidth: 12).blur(radius: 3.5)
+                tunnel.stroke(line.color.swiftUI.opacity(0.45), lineWidth: 1.5)
+                tunnel.stroke(line.color.swiftUI.opacity(0.6),
+                              style: StrokeStyle(lineWidth: 7, lineCap: .round, dash: [5, 12],
+                                                 dashPhase: dashPhase * 1.6))
+                    .animation(.easeInOut(duration: 0.35), value: active)
+            } else {
+                Path { p in
+                    p.move(to: line.from)
+                    p.addQuadCurve(to: line.to, control: ctrl)
+                }
+                .stroke(
+                    line.color.swiftUI.opacity({
+                        let base = drawSolid ? 0.5 : (active ? 0.55 : (line.emphasized ? 0.55 : 0.18))
+                        return line.dominant ? max(base, 0.85) : base
+                    }()),
+                    style: {
+                        let base = drawSolid ? (line.style == .physical ? 1.4 : 1.5)
+                                             : (active ? 1.8 : (line.emphasized ? 1.6 : 0.9))
+                        let w = line.dominant ? base + 1.6 : base
+                        return drawSolid
+                            ? StrokeStyle(lineWidth: w)
+                            : StrokeStyle(lineWidth: w, dash: [5, 5], dashPhase: active ? dashPhase : 0)
+                    }()
+                )
+                // A faded halo around the dominant path — fancy is cool.
+                .shadow(color: line.dominant ? line.color.swiftUI.opacity(0.9) : .clear,
+                        radius: line.dominant ? 6 : 0)
+                .shadow(color: line.dominant ? line.color.swiftUI.opacity(0.5) : .clear,
+                        radius: line.dominant ? 13 : 0)
+                .animation(.easeInOut(duration: 0.35), value: active)
             }
-            .stroke(
-                line.color.swiftUI.opacity({
-                    let base = drawSolid ? 0.5 : (active ? 0.55 : (line.emphasized ? 0.55 : 0.18))
-                    return line.dominant ? max(base, 0.85) : base
-                }()),
-                style: {
-                    let base = drawSolid ? (line.style == .physical ? 1.4 : 1.5)
-                                         : (active ? 1.8 : (line.emphasized ? 1.6 : 0.9))
-                    let w = line.dominant ? base + 1.6 : base
-                    return drawSolid
-                        ? StrokeStyle(lineWidth: w)
-                        : StrokeStyle(lineWidth: w, dash: [5, 5], dashPhase: active ? dashPhase : 0)
-                }()
-            )
-            // A faded halo around the dominant path — fancy is cool.
-            .shadow(color: line.dominant ? line.color.swiftUI.opacity(0.9) : .clear,
-                    radius: line.dominant ? 6 : 0)
-            .shadow(color: line.dominant ? line.color.swiftUI.opacity(0.5) : .clear,
-                    radius: line.dominant ? 13 : 0)
-            .animation(.easeInOut(duration: 0.35), value: active)
 
             // Throughput on this wire, if it carries a single interface's flow and
             // that interface is moving data above the noise floor.

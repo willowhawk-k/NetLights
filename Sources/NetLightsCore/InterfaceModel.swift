@@ -250,6 +250,8 @@ struct GatewayNode: Identifiable, Equatable, Codable {
     var isVPN: Bool = false      // gateway reached over a VPN/tunnel interface
     var networkName: String? = nil   // SSID / search domain (egress gateway), Option A
     var precedence: Int? = nil   // 1 = the winning default route, 2 = next, …
+    var vpnCarrier: String? = nil // (VPN) physical interface the encrypted traffic egresses through
+    var vpnServer: String? = nil  // (VPN) the concentrator's public IP the tunnel connects to
 
     var systemImage: String {
         if isVPN { return isDefault ? "lock.shield.fill" : "lock.shield" }

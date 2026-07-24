@@ -142,6 +142,42 @@ struct LinkTooltip: View {
     }
 }
 
+/// Hover detail for the encrypted VPN egress path: the tunnel, the concentrator it
+/// connects to, and the physical carrier the encrypted outer packets ride out on.
+struct VPNTunnelTooltip: View {
+    let gateway: GatewayNode
+    @Environment(\.privacyMode) private var privacyMode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("VPN encrypted tunnel", systemImage: "lock.shield.fill")
+                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+            Divider()
+            row("Tunnel", gateway.reachableVia.joined(separator: ", "))
+            if let s = gateway.vpnServer  { row("Server",  Privacy.mask(s, on: privacyMode)) }
+            if let c = gateway.vpnCarrier { row("Carrier", c) }
+            row("Gateway", Privacy.mask(gateway.id, on: privacyMode))
+            Text("Traffic on this path is encrypted end-to-end to the VPN server.")
+                .font(.system(size: 9)).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 1)
+        }
+        .frame(width: 250, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.ultraThinMaterial)
+            .shadow(color: .black.opacity(0.3), radius: 8))
+    }
+
+    @ViewBuilder private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text(label + ": ").font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary).frame(width: 66, alignment: .leading)
+            Text(value).font(.system(.caption, design: .monospaced))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct GatewayTooltip: View {
     let gateway: GatewayNode
     let routes: [RouteEntry]
