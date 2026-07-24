@@ -107,7 +107,9 @@ struct ContentView: View {
             // Opt-in external-IP reveal — the app's only active outbound query.
             Button {
                 showExternalIP.toggle()
-                if showExternalIP && monitor.externalExit == nil && !monitor.externalRevealing {
+                // Re-probe on every open (not just the first) so it can never show a stale
+                // exit/underlay verdict after the network changed — e.g. a VPN disconnect.
+                if showExternalIP && !monitor.externalRevealing {
                     monitor.revealExternalIP()
                 }
             } label: {

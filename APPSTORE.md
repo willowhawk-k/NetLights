@@ -185,8 +185,9 @@ In App Store Connect → App Privacy:
 - Bluetooth is used **on-device only** to list already-connected devices (name, type,
   input-device battery) — *not* collected, *not* declared as collected data. NetLights
   never scans, pairs, or connects; it only reads the existing connected-device list.
-- The opt-in **Public IP** button sends a contentless STUN request to reflect back your
-  public IP; it **collects/transmits no personal data**, stores nothing, and is never
+- The opt-in **Public IP** button sends contentless STUN requests (to Google's public
+  STUN servers) to reflect back your public IP; it **collects/transmits no personal
+  data**, stores nothing, and is never
   automatic — so it does not change the **"Data Not Collected"** answer. If App Review
   asks: it's a user-initiated diagnostic showing the public IP the network already
   exposes (see `PRIVACY.md`).

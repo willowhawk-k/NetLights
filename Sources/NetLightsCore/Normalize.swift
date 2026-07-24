@@ -44,6 +44,14 @@ func isPublicIPv4(_ ip: String) -> Bool {
     }
 }
 
+/// A static HOST route (flags H+S) to a public IP — the signature a VPN client uses to
+/// pin its concentrator/portal/gateway on the physical carrier. These carry the encrypted
+/// OUTER packets (VPN infrastructure), NOT user split-tunnel excludes, so the "Direct"
+/// (unencrypted) bucket must never claim them.
+func isVPNInfraPin(_ r: RouteEntry) -> Bool {
+    r.flags.contains("H") && r.flags.contains("S") && isPublicIPv4(r.destination)
+}
+
 /// Resolve each VPN gateway's real underlay carrier + server endpoint from the routing
 /// table. A VPN client pins its concentrator with a STATIC HOST route (flags H+S) to a
 /// public IP via a PHYSICAL (non-tunnel) interface, so the encrypted outer packets reach
@@ -57,7 +65,15 @@ func resolveVPNPaths(_ gateways: [GatewayNode], routes: [RouteEntry]) -> [Gatewa
         && !$0.interfaceName.hasPrefix("utun") && !$0.interfaceName.hasPrefix("ipsec")
         && isPublicIPv4($0.destination)
     }
-    guard let server = serverRoutes.first else { return gateways }
+    // Several static host-pins can ride the carrier (concentrator + portal / DNS / a
+    // failover cluster). From the route table alone we can't tell which is THE
+    // concentrator, so pick deterministically (stable across refreshes) rather than
+    // kernel-order-arbitrary. Whichever is chosen, none of these H+S pins is ever
+    // mislabeled as an unencrypted "Direct" exclude (see isVPNInfraPin).
+    guard let server = serverRoutes.sorted(by: {
+        $0.interfaceName != $1.interfaceName ? $0.interfaceName < $1.interfaceName
+                                             : $0.destination < $1.destination
+    }).first else { return gateways }
     // v1: with one active VPN, assign the pinned concentrator to the VPN gateway(s).
     // Per-tunnel correlation for multiple simultaneous VPNs is a refinement.
     return gateways.map { gw in
@@ -148,7 +164,7 @@ func classifyRoutes(_ routes: [RouteEntry], gateways: [GatewayNode])
             encrypted.append(r)
         } else if let gw = vpnGW, let carrier = gw.vpnCarrier,
                   r.interfaceName == carrier, !r.isDefault,
-                  isPublicIPv4(r.destination), r.destination != gw.vpnServer {
+                  isPublicIPv4(r.destination), !isVPNInfraPin(r) {
             direct.append(r)
         } else {
             local.append(r)

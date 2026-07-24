@@ -18,11 +18,13 @@ is read from your own Mac and displayed on your screen. The app:
 ## External IP lookup (opt-in)
 
 NetLights is otherwise entirely passive. The one exception is the **Public IP** button
-in the toolbar. When — and only when — you click it, the app sends a single STUN request
-(RFC 5389, UDP) to a public STUN server (Google's `stun.l.google.com`) to learn the
-public IP address the internet currently sees for you: both the **exit** address (through
-your VPN, if one is active) and the **underlay** address (your carrier's real IP,
-bypassing the VPN). This is the app's **only** outbound network activity, it happens
+in the toolbar. When — and only when — you click it, the app runs two small STUN lookups
+(RFC 5389, UDP) against Google's public STUN servers (`stun.l.google.com`, falling back to
+`stun1.l.google.com` if the first doesn't answer) to learn the public IP address the
+internet currently sees for you: one over your normal route (the **exit** address —
+through your VPN if one is active) and one bound to your carrier (the **underlay**
+address — your real IP, bypassing the VPN). That's at most a handful of tiny UDP packets
+(plus their DNS lookups). This is the app's **only** outbound network activity, it happens
 **only on your click**, and never automatically.
 
 The request carries **no personal information** — a STUN binding request is contentless;

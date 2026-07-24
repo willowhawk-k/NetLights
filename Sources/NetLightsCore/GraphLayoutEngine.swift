@@ -883,10 +883,12 @@ struct GraphLayoutEngine {
     var vpnExcludeRoutes: [RouteEntry] {
         guard let vpnGW = gateways.first(where: { $0.isVPN && $0.vpnServer != nil }),
               let carrier = vpnGW.vpnCarrier else { return [] }
-        let server = vpnGW.vpnServer
+        // Public routes on the carrier that bypass the tunnel — but NOT the VPN's own
+        // static host-pins (concentrator/portal/DNS), which are encrypted infrastructure,
+        // not user split-tunnel excludes (see isVPNInfraPin).
         return routes.filter {
             $0.interfaceName == carrier && !$0.isDefault
-            && isPublicIPv4($0.destination) && $0.destination != server
+            && isPublicIPv4($0.destination) && !isVPNInfraPin($0)
         }
     }
     var hasVPNExcludes: Bool { !vpnExcludeRoutes.isEmpty }
@@ -1178,7 +1180,11 @@ struct GraphLayoutEngine {
                 // hop is, so the strands stay parallel on every uplink type. (nil-equal to
                 // the interface means there's no distinct chip → that hop is skipped.)
                 let hubP = hostAnchorForInterface(carrier)
-                let gwP = physDefault.flatMap { gatewayPositions[$0.id] }
+                // Anchor to the gateway on the CARRIER's own path — resolveVPNPaths' carrier
+                // isn't necessarily the top-service-order default, so the strand must reach
+                // the gateway that actually routes this uplink (fall back to the default).
+                let carrierGW = gateways.first { !$0.isVPN && $0.reachableVia.contains(carrier) } ?? physDefault
+                let gwP = carrierGW.flatMap { gatewayPositions[$0.id] }
                 func amber(_ a: CGPoint?, _ b: CGPoint?, _ bias: CGFloat) {
                     guard let a, let b, a != b else { return }
                     lines.append(ConnLine(from: a, to: b, label: "", color: .split,
