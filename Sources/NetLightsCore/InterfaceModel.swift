@@ -91,10 +91,15 @@ struct InterfaceInfo: Identifiable, Equatable, Codable {
     }
 
     /// Whether to hide this interface in the "hide inactive" view: the usual unused
-    /// test, OR a structurally-up-but-idle L2 bridge — always "up" but rarely carrying
-    /// anything — when it has no live traffic. `active` = has current rx/tx traffic.
+    /// test; OR a structurally-up-but-idle L2 bridge (always "up", rarely carrying
+    /// anything) with no live traffic; OR a disconnected tunnel that kept a stale
+    /// address after its VPN dropped (not linked-up, no live traffic — an active VPN
+    /// sets IFF_UP+IFF_RUNNING so hasLink is true, so this never hides a live tunnel).
+    /// `active` = has current rx/tx traffic.
     func isHiddenWhenInactive(active: Bool) -> Bool {
-        isUnused || (category == .bridge && !active)
+        isUnused
+        || (category == .bridge && !active)
+        || (category == .tunnel && !hasLink && !active)
     }
 
     /// Short human-readable label shown beneath the interface name in the graph node.
