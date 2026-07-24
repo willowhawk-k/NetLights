@@ -30,6 +30,17 @@ per-process network attribution needs private frameworks (what `nettop` uses) an
 available to a sandboxed app — may be infeasible without elevated access. App icons
 themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
+### VPN far-side target + encapsulation glow
+Paint what a VPN tunnel actually reaches. For each `utun`, resolve its remote endpoint
+(the VPN server's public IP — the route the *encrypted* packets take) and the private
+subnets it grants (the routes pointing at that `utun`), and draw them beyond the Internet
+node. Style the encapsulated segment — app → `utun` → its physical carrier → Internet →
+server — with a distinct "tunnel" glow to convey encapsulation. IMPORTANT: the physical
+carrier is **per-tunnel**, not always `en0` — it follows the preferred route to each
+server's IP (e.g. currently `en15`), and different `utun`s can egress through different
+physical interfaces. Collector data (endpoint + routed subnets + per-tunnel carrier)
+rides the `TopologySnapshot`; the glow is renderer-side.
+
 ---
 
 ## Release history

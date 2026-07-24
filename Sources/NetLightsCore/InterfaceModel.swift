@@ -177,6 +177,12 @@ struct InterfaceInfo: Identifiable, Equatable, Codable {
         return d.hasPrefix("ethernet adapter")
     }
 
+    /// The band this interface renders in. Normally its category's OSI layer — EXCEPT a
+    /// virtual (VM/app) adapter groups with the Virtual band even though it's an ethernet
+    /// L2 interface: it has no hardware port, so it doesn't belong among the physical,
+    /// port-backed links.
+    var effectiveLayer: String { isVirtualAdapter ? "Virtual" : category.layerLabel }
+
     /// For virtual adapters: best-guess application name from MAC OUI.
     var virtualAdapterAppName: String {
         guard let mac = macAddress else { return "App Adapter" }

@@ -29,7 +29,7 @@ private let bandStyles: [String: (color: ColorToken, osi: String)] = [
     "Hardware":  (.bandHardware, "L0"),
     "Physical":  (.bandPhysical, "L1"),
     "Data Link": (.bandDataLink, "L2"),
-    "Virtual":   (.bandVirtual,  "L3+"),
+    "Virtual":   (.bandVirtual,  "L2+"),
 ]
 
 /// Total leaf nodes in a device subtree — used to size the tidy-tree layout.
@@ -43,7 +43,7 @@ private func leafCount(_ d: AttachedDevice, _ childrenOf: [String: [AttachedDevi
 struct IfaceGroup { let label: String; let interfaces: [InterfaceInfo] }
 
 func subgroups(layer: String, ifaces: [InterfaceInfo]) -> [IfaceGroup] {
-    let inLayer = ifaces.filter { $0.category.layerLabel == layer }
+    let inLayer = ifaces.filter { $0.effectiveLayer == layer }
         .sorted { $0.groupKey == $1.groupKey ? $0.id < $1.id : $0.groupKey < $1.groupKey }
     var buckets: [String: (lbl: String, items: [InterfaceInfo])] = [:]
     var order: [String] = []
@@ -58,7 +58,7 @@ func subgroups(layer: String, ifaces: [InterfaceInfo]) -> [IfaceGroup] {
 }
 
 private func groupLabel(_ s: InterfaceInfo) -> String {
-    if s.isVirtualAdapter { return "App Adapters" }
+    if s.isVirtualAdapter { return "Virtual Adapters" }
     switch s.category {
     case .wifi:        return "Wi-Fi"
     case .ethernet:    return "Ethernet"
@@ -246,7 +246,7 @@ struct GraphLayoutEngine {
     /// Physical interfaces NOT anchored to a hardware port — grouped + labelled
     /// on their own lower row, the same way they were before HW-port anchoring.
     var physFreeVisible: [InterfaceInfo] {
-        visible.filter { $0.category.layerLabel == "Physical" && !isAnchoredPhysical($0) }
+        visible.filter { $0.effectiveLayer == "Physical" && !isAnchoredPhysical($0) }
     }
 
     /// Lays anchored tiles in a single row, spread HORIZONTALLY so none overlap:
@@ -338,7 +338,7 @@ struct GraphLayoutEngine {
     /// of truth for the anchored spread AND the slot-width reservation. Geometry-free.
     private var anchoredIfacesByReceptacle: [Int: [String]] {
         var byReceptacle: [Int: [String]] = [:]
-        for iface in visible where iface.category.layerLabel == "Physical" && isAnchoredPhysical(iface) {
+        for iface in visible where iface.effectiveLayer == "Physical" && isAnchoredPhysical(iface) {
             if let port = portForBSD[iface.id] {
                 byReceptacle[port, default: []].append(iface.id)
             } else if iface.id == wifiUplinkInterface {
@@ -452,7 +452,7 @@ struct GraphLayoutEngine {
     /// proportional band fractions and the overall content height / scroll floor.
     /// True when anchored Physical interfaces (and thus their TB-port brackets) exist.
     private var hasAnchoredPhysical: Bool {
-        visible.contains { $0.category.layerLabel == "Physical" && isAnchoredPhysical($0) }
+        visible.contains { $0.effectiveLayer == "Physical" && isAnchoredPhysical($0) }
     }
     /// Strip reserved at the top of the Physical band for the port bracket labels, so
     /// the interface tiles start below them instead of riding up over the brackets
@@ -473,7 +473,7 @@ struct GraphLayoutEngine {
 
         // Data Link holds full interface tiles (bridge0, VLANs — 90 tall), so the band
         // must fit one, not just a label; otherwise the tile overflows into neighbors.
-        let hasDL = visible.contains { $0.category.layerLabel == "Data Link" }
+        let hasDL = visible.contains { $0.effectiveLayer == "Data Link" }
         let dlNeed: CGFloat = hasDL ? 118 : 26
 
         // Virtual holds the tunnel/loopback/system rows; reserve an extra strip at its
@@ -549,7 +549,7 @@ struct GraphLayoutEngine {
 
         // Data Link (L2) — bridges centered under their physical members
         let dlBand = bandRect("Data Link")
-        for iface in visible.filter({ $0.category.layerLabel == "Data Link" }) {
+        for iface in visible.filter({ $0.effectiveLayer == "Data Link" }) {
             let lx: CGFloat
             if iface.category == .bridge, let mac = iface.macAddress {
                 let prefix = String(mac.prefix(8))

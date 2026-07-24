@@ -27,7 +27,7 @@ struct InterfaceTooltip: View {
                 row("Port", display)
             }
             row("Type", iface.category.rawValue)
-            row("Layer", iface.category.layerLabel)
+            row("Layer", iface.effectiveLayer)
 
             if iface.isIPhoneHotspot {
                 row("Device", "iPhone (USB Hotspot)")
