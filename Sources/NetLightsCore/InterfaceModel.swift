@@ -61,6 +61,27 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
     var mtu: Int
     var flags: UInt32
 
+    // Explicit public init (mirrors the memberwise one, so macOS construction is
+    // unchanged) — lets a separate module (the Linux collector) build interfaces.
+    public init(id: String, displayName: String? = nil, category: InterfaceCategory,
+                ipv4Addresses: [String] = [], ipv6Addresses: [String] = [],
+                macAddress: String? = nil, linkSpeedBps: UInt64? = nil,
+                linkState: LinkState = .unknown, rxBytes: UInt64 = 0, txBytes: UInt64 = 0,
+                mtu: Int = 0, flags: UInt32 = 0) {
+        self.id = id
+        self.displayName = displayName
+        self.category = category
+        self.ipv4Addresses = ipv4Addresses
+        self.ipv6Addresses = ipv6Addresses
+        self.macAddress = macAddress
+        self.linkSpeedBps = linkSpeedBps
+        self.linkState = linkState
+        self.rxBytes = rxBytes
+        self.txBytes = txBytes
+        self.mtu = mtu
+        self.flags = flags
+    }
+
     // Computed
     var isUp: Bool { flags & 0x1 != 0 }  // IFF_UP
     var isRunning: Bool { flags & 0x40 != 0 }  // IFF_RUNNING
@@ -249,6 +270,16 @@ public struct RouteEntry: Identifiable, Codable {
     var interfaceName: String
     var isDefault: Bool
     var flags: String
+
+    public init(destination: String, gateway: String, netmask: String? = nil,
+                interfaceName: String, isDefault: Bool, flags: String) {
+        self.destination = destination
+        self.gateway = gateway
+        self.netmask = netmask
+        self.interfaceName = interfaceName
+        self.isDefault = isDefault
+        self.flags = flags
+    }
 }
 
 // MARK: - Gateway Node

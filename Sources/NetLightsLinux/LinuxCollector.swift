@@ -2,19 +2,29 @@
 import Foundation
 import NetLightsCore
 
-/// L0 STUB collector. Proves the pipeline (Core → snapshot → JSON) compiles and runs on
-/// Linux; real acquisition — getifaddrs, /proc/net/route, /sys/class/net statistics,
-/// systemd-resolved DNS, then the USB/Thunderbolt/DRM-EDID/nl80211/BlueZ collectors —
-/// lands in L1 and L3. Returns a near-empty snapshot with just the machine model.
+/// L1 Linux collector: interfaces (/sys/class/net + getifaddrs), routes (/proc/net/route),
+/// and — reusing the SHARED portable transforms — gateways + egress. USB/Thunderbolt,
+/// displays/EDID, Wi-Fi SSID, Bluetooth, power, and DNS land in later slices. All reads
+/// are read-only and need no elevated privileges.
 struct LinuxCollector {
     func snapshot() -> TopologySnapshot {
-        TopologySnapshot(machineModel: Self.machineModel())
+        let interfaces = linuxInterfaces()
+        let (routes, rank) = linuxRoutes()
+        let gateways = resolveVPNPaths(
+            buildGatewayNodes(from: routes, interfaces: interfaces, rank: rank),
+            routes: routes)
+        let egress = computeEgress(routes: routes, interfaces: interfaces)
+        return TopologySnapshot(
+            machineModel: Self.machineModel(),
+            interfaces: interfaces,
+            routes: routes,
+            gateways: gateways,
+            egress: egress)
     }
 
-    /// DMI product name (e.g. "20XW…", "MacBookPro18,3"); "Linux" when unreadable.
+    /// DMI product name (e.g. "MacBookPro18,3", "20XW…"); "Linux" when unreadable.
     private static func machineModel() -> String {
-        let path = "/sys/devices/virtual/dmi/id/product_name"
-        let name = (try? String(contentsOfFile: path, encoding: .utf8))?
+        let name = (try? String(contentsOfFile: "/sys/devices/virtual/dmi/id/product_name", encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return (name?.isEmpty == false) ? name! : "Linux"
     }

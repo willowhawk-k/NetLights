@@ -10,7 +10,7 @@ import Foundation
 /// The machine's egress: the physical (non-tunnel) default route's interface and kind.
 /// The network name (Wi-Fi SSID) is attached by the caller — it comes from a platform
 /// API (CoreWLAN on macOS) — so this transform stays pure.
-func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> EgressInfo? {
+public func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> EgressInfo? {
     // The physical default route (not a tunnel) is the real egress.
     guard let r = routes.first(where: {
         $0.isDefault && !$0.interfaceName.isEmpty
@@ -31,7 +31,7 @@ func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> EgressI
 
 /// Whether an IPv4 string is a routable public address (not RFC1918 / loopback /
 /// link-local / multicast / reserved / unspecified).
-func isPublicIPv4(_ ip: String) -> Bool {
+public func isPublicIPv4(_ ip: String) -> Bool {
     let p = ip.split(separator: ".").compactMap { Int($0) }
     guard p.count == 4, p.allSatisfy({ (0...255).contains($0) }) else { return false }
     switch (p[0], p[1]) {
@@ -48,7 +48,7 @@ func isPublicIPv4(_ ip: String) -> Bool {
 /// pin its concentrator/portal/gateway on the physical carrier. These carry the encrypted
 /// OUTER packets (VPN infrastructure), NOT user split-tunnel excludes, so the "Direct"
 /// (unencrypted) bucket must never claim them.
-func isVPNInfraPin(_ r: RouteEntry) -> Bool {
+public func isVPNInfraPin(_ r: RouteEntry) -> Bool {
     r.flags.contains("H") && r.flags.contains("S") && isPublicIPv4(r.destination)
 }
 
@@ -58,7 +58,7 @@ func isVPNInfraPin(_ r: RouteEntry) -> Bool {
 /// the server without looping back into the tunnel. That route's interface is the carrier
 /// the encrypted traffic actually egresses through — which is NOT necessarily the
 /// top-service-ranked physical default — and its destination is the server's public IP.
-func resolveVPNPaths(_ gateways: [GatewayNode], routes: [RouteEntry]) -> [GatewayNode] {
+public func resolveVPNPaths(_ gateways: [GatewayNode], routes: [RouteEntry]) -> [GatewayNode] {
     let serverRoutes = routes.filter {
         $0.flags.contains("H") && $0.flags.contains("S")
         && !$0.interfaceName.isEmpty
@@ -88,7 +88,7 @@ func resolveVPNPaths(_ gateways: [GatewayNode], routes: [RouteEntry]) -> [Gatewa
 /// Build the gateway nodes from the routing table: dedup by IP, flag VPN tunnels, and
 /// rank each gateway's uplinks + the default-gateway precedence by the caller-supplied
 /// `rank` (macOS network service order; a Linux collector passes a route-metric rank).
-func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceInfo], rank: [String: Int]) -> [GatewayNode] {
+public func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceInfo], rank: [String: Int]) -> [GatewayNode] {
     // Collect all IPs assigned to local interfaces so we don't re-show them as gateways
     let localIPs = Set(interfaces.flatMap { $0.ipv4Addresses })
 
@@ -154,7 +154,7 @@ func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceInfo], r
 /// tunnel (`encrypted`); and everything else — local subnets, connected & system routes
 /// (`local`). With no active VPN, everything lands in `local`. `direct`/`encrypted`
 /// mirror the graph's own VPN path classification, so the two views agree.
-func classifyRoutes(_ routes: [RouteEntry], gateways: [GatewayNode])
+public func classifyRoutes(_ routes: [RouteEntry], gateways: [GatewayNode])
     -> (direct: [RouteEntry], encrypted: [RouteEntry], local: [RouteEntry]) {
     let vpnGW = gateways.first { $0.isVPN && $0.vpnServer != nil }
     let tunnels = Set(gateways.filter { $0.isVPN }.flatMap { $0.reachableVia })
@@ -175,7 +175,7 @@ func classifyRoutes(_ routes: [RouteEntry], gateways: [GatewayNode])
 
 /// Numeric ordering key for a route destination: "default" / 0.0.0.0 first, then by the
 /// IPv4 address as a 32-bit number (10.x < 172.x < 192.x); non-IPv4 last, by string.
-func routeSortKey(_ destination: String) -> (UInt32, String) {
+public func routeSortKey(_ destination: String) -> (UInt32, String) {
     if destination == "default" || destination == "0.0.0.0" { return (0, "") }
     let p = destination.split(separator: ".").compactMap { UInt32($0) }
     if p.count == 4, p.allSatisfy({ $0 <= 255 }) {
