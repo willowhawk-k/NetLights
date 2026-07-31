@@ -108,28 +108,42 @@ struct LinuxServer {
       .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
       .up{background:#3fb950}.down{background:#f85149}.unknown{background:#8b949e}
       .pill{background:#21262d;border-radius:10px;padding:1px 8px;font-size:11px}
+      #graph{overflow:auto;border:1px solid #21262d;border-radius:8px;margin-bottom:22px}
+      @keyframes antcrawl{to{stroke-dashoffset:-20}}
+      #graph path.wire.active{stroke-dasharray:6 5;animation:antcrawl .55s linear infinite}
+      td.rate{color:#3fb950}
     </style></head><body>
       <h1>NetLights <span class="pill">Linux</span></h1>
       <div class="sub" id="hdr">connecting…</div>
-      <div id="graph" style="overflow:auto;border:1px solid #21262d;border-radius:8px;margin-bottom:22px"></div>
+      <div id="graph"></div>
       <h2>Interfaces</h2><table id="ifaces"></table>
       <h2>Routes</h2><table id="routes"></table>
       <h2>Gateways</h2><table id="gws"></table>
       <h2>DNS</h2><table id="dns"></table>
     <script>
     const $=id=>document.getElementById(id);
-    function cell(c,head){const e=document.createElement(head?'th':'td');if(c&&typeof c==='object'){e.innerHTML=c.html;if(c.mono)e.className='mono';}else{e.textContent=c==null?'':c;}return e;}
+    function cell(c,head){const e=document.createElement(head?'th':'td');if(c&&typeof c==='object'){e.innerHTML=c.html;e.className=c.cls||(c.mono?'mono':'');}else{e.textContent=c==null?'':c;}return e;}
     function fill(t,hs,rs){const el=$(t);el.innerHTML='';const h=document.createElement('tr');for(const x of hs)h.appendChild(cell(x,true));el.appendChild(h);for(const r of rs){const tr=document.createElement('tr');for(const x of r)tr.appendChild(cell(x,false));el.appendChild(tr);}}
     function bytes(n){n=Number(n||0);if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB';}
+    function rate(b){b=Number(b||0);if(b<1)return '—';if(b<1000)return Math.round(b)+' B/s';if(b<1e6)return (b/1000).toFixed(1)+' KB/s';return (b/1e6).toFixed(2)+' MB/s';}
+    let prev={};
+    function derive(s){const now=performance.now()/1000;const r={};for(const i of s.interfaces){const p=prev[i.id];let rx=0,tx=0;if(p){const dt=now-p.t;if(dt>0){rx=Math.max(0,(i.rxBytes-p.rx)/dt);tx=Math.max(0,(i.txBytes-p.tx)/dt);}}r[i.id]={rx:rx,tx:tx,active:(rx>2000||tx>2000)};prev[i.id]={rx:i.rxBytes,tx:i.txBytes,t:now};}return r;}
+    function topo(s){return JSON.stringify([s.machineModel,s.interfaces.map(i=>i.id),s.routes.map(x=>[x.destination,x.gateway,x.interfaceName]),s.gateways.map(g=>g.id)]);}
+    async function loadGraph(){try{$('graph').innerHTML=await(await fetch('/graph.svg',{cache:'no-store'})).text();}catch(e){}}
+    let topoSig=null;
     async function tick(){try{
       const s=await(await fetch('/snapshot.json',{cache:'no-store'})).json();
+      const r=derive(s);
+      const ns=topo(s);if(ns!==topoSig){topoSig=ns;await loadGraph();}
       $('hdr').textContent=s.machineModel+'  ·  egress: '+(s.egress?(s.egress.viaInterface+' ('+s.egress.kind+')'):'—')+'  ·  '+s.interfaces.length+' interfaces';
-      $('graph').innerHTML=await(await fetch('/graph.svg',{cache:'no-store'})).text();
-      fill('ifaces',['','Interface','Type','IPv4','MAC','MTU','RX','TX'],s.interfaces.map(i=>[
+      document.querySelectorAll('#graph path.wire').forEach(w=>{const id=w.getAttribute('data-iface');w.classList.toggle('active',!!(id&&r[id]&&r[id].active));});
+      fill('ifaces',['','Interface','Type','IPv4','MAC','MTU','RX/s','TX/s','RX','TX'],s.interfaces.map(i=>[
         {html:'<span class="dot '+(i.linkState||'unknown')+'"></span>'},{html:i.id,mono:1},i.category,
-        {html:(i.ipv4Addresses||[]).join(', '),mono:1},{html:i.macAddress||'—',mono:1},i.mtu,bytes(i.rxBytes),bytes(i.txBytes)]));
-      fill('routes',['Destination','Gateway','Netmask','Interface','Flags'],s.routes.map(r=>[
-        {html:r.destination,mono:1},{html:r.gateway||'—',mono:1},{html:r.netmask||'—',mono:1},{html:r.interfaceName,mono:1},{html:r.flags,mono:1}]));
+        {html:(i.ipv4Addresses||[]).join(', '),mono:1},{html:i.macAddress||'—',mono:1},i.mtu,
+        {html:rate(r[i.id]&&r[i.id].rx),cls:'mono rate'},{html:rate(r[i.id]&&r[i.id].tx),cls:'mono rate'},
+        bytes(i.rxBytes),bytes(i.txBytes)]));
+      fill('routes',['Destination','Gateway','Netmask','Interface','Flags'],s.routes.map(rt=>[
+        {html:rt.destination,mono:1},{html:rt.gateway||'—',mono:1},{html:rt.netmask||'—',mono:1},{html:rt.interfaceName,mono:1},{html:rt.flags,mono:1}]));
       fill('gws',['Gateway','Default','VPN','Via'],s.gateways.map(g=>[
         {html:g.id,mono:1},g.isDefault?'★':'',g.isVPN?'🔒':'',{html:(g.reachableVia||[]).join(', '),mono:1}]));
       fill('dns',['Scope','Resolvers','Search'],(s.dnsConfigs||[]).map(d=>[

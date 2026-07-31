@@ -48,12 +48,15 @@ extension GraphLayoutEngine {
             let d = "M \(num(Double(line.from.x))) \(num(Double(line.from.y))) "
                   + "Q \(num(Double(c.x))) \(num(Double(c.y))) \(num(Double(line.to.x))) \(num(Double(line.to.y)))"
             let col = line.color.css
-            if line.encapsulated {   // VPN tunnel: glow + dashed core (ribs come later)
+            // `class='wire'` + the carried interface let the browser toggle the ant-crawl
+            // animation on wires whose interface has live traffic (rates derived client-side).
+            let wire = "class='wire'" + (line.ifaceID.map { " data-iface='\(xmlEsc($0))'" } ?? "")
+            if line.encapsulated {   // VPN tunnel: soft glow underlay + animatable dashed core
                 o += "<path d='\(d)' fill='none' stroke='\(col)' stroke-width='7' stroke-opacity='0.18'/>"
-                o += "<path d='\(d)' fill='none' stroke='\(col)' stroke-width='2.5' stroke-opacity='0.9' stroke-dasharray='7 5'/>"
+                o += "<path \(wire) d='\(d)' fill='none' stroke='\(col)' stroke-width='2.5' stroke-opacity='0.9' stroke-dasharray='7 5'/>"
             } else {
                 let dash = line.style == .data ? " stroke-dasharray='5 5'" : ""
-                o += "<path d='\(d)' fill='none' stroke='\(col)' stroke-width='\(line.dominant ? "2.4" : "1.4")' stroke-opacity='0.8'\(dash)/>"
+                o += "<path \(wire) d='\(d)' fill='none' stroke='\(col)' stroke-width='\(line.dominant ? "2.4" : "1.4")' stroke-opacity='0.8'\(dash)/>"
             }
         }
 
