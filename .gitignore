@@ -16,6 +16,8 @@ Package.resolved
 .claude/
 *.xcodeproj
 *.xcworkspace
+# swiftly per-directory toolchain pin (set by `swiftly use`); a deliberate CI pin comes later
+.swift-version
 # Exception: keep the Mac App Store Xcode project's manifest in git so it's recoverable
 # if lost (it's the one un-versioned, hand-edited artifact). The SPM / Developer-ID
 # GitHub build never reads it, so tracking it doesn't affect that channel. User-specific

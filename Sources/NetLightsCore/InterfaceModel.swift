@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Interface Type
 
-enum InterfaceCategory: String, CaseIterable, Codable {
+public enum InterfaceCategory: String, CaseIterable, Codable {
     case ethernet   = "Ethernet"
     case wifi       = "Wi-Fi"
     case awdl       = "AWDL"        // AirDrop/AirPlay wireless service
@@ -41,14 +41,14 @@ enum InterfaceCategory: String, CaseIterable, Codable {
 
 // MARK: - Link State
 
-enum LinkState: String, Codable {
+public enum LinkState: String, Codable {
     case up, down, unknown
 }
 
 // MARK: - Interface Info
 
-struct InterfaceInfo: Identifiable, Equatable, Codable {
-    let id: String          // BSD name, e.g. "en0"
+public struct InterfaceInfo: Identifiable, Equatable, Codable {
+    public let id: String   // BSD name, e.g. "en0"
     var displayName: String? // Human name from SystemConfiguration, e.g. "Wi-Fi", "Thunderbolt 1"
     var category: InterfaceCategory
     var ipv4Addresses: [String]
@@ -230,7 +230,7 @@ struct InterfaceInfo: Identifiable, Equatable, Codable {
         }
     }
 
-    static func == (lhs: InterfaceInfo, rhs: InterfaceInfo) -> Bool {
+    public static func == (lhs: InterfaceInfo, rhs: InterfaceInfo) -> Bool {
         lhs.id == rhs.id &&
         lhs.linkState == rhs.linkState &&
         lhs.rxBytes == rhs.rxBytes &&
@@ -241,8 +241,8 @@ struct InterfaceInfo: Identifiable, Equatable, Codable {
 
 // MARK: - Route Entry
 
-struct RouteEntry: Identifiable, Codable {
-    let id = UUID()
+public struct RouteEntry: Identifiable, Codable {
+    public let id = UUID()
     var destination: String
     var gateway: String
     var netmask: String?
@@ -255,8 +255,8 @@ struct RouteEntry: Identifiable, Codable {
 
 /// Represents a next-hop router visible in the routing table.
 /// These are external to the machine — shown in the bottom "Gateways" band.
-struct GatewayNode: Identifiable, Equatable, Codable {
-    let id: String              // gateway IP address
+public struct GatewayNode: Identifiable, Equatable, Codable {
+    public let id: String       // gateway IP address
     var isDefault: Bool         // appears as a default (0.0.0.0) route gateway
     var reachableVia: [String]  // BSD interface names that have a route to this gateway
     var isVPN: Bool = false      // gateway reached over a VPN/tunnel interface
@@ -289,8 +289,8 @@ struct GatewayNode: Identifiable, Equatable, Codable {
 
 /// Represents a physical USB-C / Thunderbolt port slot on the machine chassis,
 /// or a connected USB peripheral (iPhone/iPad, id = 0).
-struct HardwarePort: Identifiable, Codable {
-    let id: Int             // Thunderbolt port number (1-based); 0 = iPhone/iPad
+public struct HardwarePort: Identifiable, Codable {
+    public let id: Int      // Thunderbolt port number (1-based); 0 = iPhone/iPad
     var side: String        // "Left", "Right", "Rear", or "" if unknown
     var position: String    // e.g. "Front", "Middle", "Rear" on that side, or ""
     var childBSDNames: [String]   // en* interfaces that belong to this port
@@ -307,7 +307,7 @@ struct HardwarePort: Identifiable, Codable {
 
 /// Describes how the machine reaches the internet — the last physical hop and,
 /// when known, the network's identity (Wi-Fi SSID, wired search domain, …).
-struct EgressInfo: Equatable, Codable {
+public struct EgressInfo: Equatable, Codable {
     enum Kind: String, Equatable, Codable {
         case wifi, wired, cellular, other
         var label: String {
@@ -344,8 +344,8 @@ struct EgressInfo: Equatable, Codable {
 /// which one actually wins — is the troubleshooting value. Read from SCDynamicStore:
 /// in-process, privilege-free, sandbox-safe (same store the egress/service-order
 /// lookups already use).
-struct DNSConfig: Identifiable, Equatable, Codable {
-    let id: String                 // "global", or the network service id
+public struct DNSConfig: Identifiable, Equatable, Codable {
+    public let id: String          // "global", or the network service id
     var scopeLabel: String         // "Active resolvers", a service name, or an interface
     var interfaceName: String?     // interface the set is bound to (en0, utun3), when known
     var servers: [String]          // resolver addresses, in query order
@@ -364,7 +364,7 @@ struct DNSConfig: Identifiable, Equatable, Codable {
 
 /// SYSTEM-level power state from AppleSmartBattery. macOS exposes no per-port
 /// power direction, so this is intentionally not tied to any USB-C port.
-struct SystemPower: Equatable, Codable {
+public struct SystemPower: Equatable, Codable {
     var onAC: Bool
     var charging: Bool
     var fullyCharged: Bool
@@ -400,7 +400,7 @@ struct SystemPower: Equatable, Codable {
 // MARK: - Attached USB device (non-network peripherals)
 
 /// Classification of a USB device attached to a hardware port, for iconography.
-enum USBDeviceKind: String, Codable {
+public enum USBDeviceKind: String, Codable {
     case audio, storage, hub, keyboard, pointing, gamecontroller, display, camera, battery, network, computer, generic
 
     var systemImage: String {
@@ -514,8 +514,8 @@ enum USBDeviceKind: String, Codable {
 }
 
 /// A non-network USB peripheral attached to a hardware port (shown as a device chip).
-struct AttachedDevice: Identifiable, Equatable, Codable {
-    let id: String        // stable per device (locationID)
+public struct AttachedDevice: Identifiable, Equatable, Codable {
+    public let id: String // stable per device (locationID)
     var name: String
     var receptacle: Int   // physical port id it's plugged into (-1 Wi-Fi, -2 Displays)
     var kind: USBDeviceKind
@@ -579,7 +579,7 @@ struct AttachedDevice: Identifiable, Equatable, Codable {
         return serial ?? "—"
     }
 
-    static func == (l: AttachedDevice, r: AttachedDevice) -> Bool {
+    public static func == (l: AttachedDevice, r: AttachedDevice) -> Bool {
         l.id == r.id && l.name == r.name && l.receptacle == r.receptacle
             && l.interfaceBSD == r.interfaceBSD && l.parentID == r.parentID
             && l.batteryPercent == r.batteryPercent
@@ -678,7 +678,7 @@ func hardwarePortLayout(model: String) -> [Int: (side: String, position: String)
 
 // MARK: - Traffic State (for LED blinking)
 
-struct TrafficState: Codable {
+public struct TrafficState: Codable {
     var rxActive: Bool = false
     var txActive: Bool = false
     var lastRx: UInt64 = 0
@@ -750,15 +750,35 @@ func formatDiskCapacity(_ bytes: UInt64) -> String {
 /// cross a process/socket boundary (a Linux collector → a web renderer), be captured for
 /// tests, or dumped as JSON. Live throughput is NOT stored here: it's derived from each
 /// interface's cumulative `rxBytes`/`txBytes` by a stateful rate deriver, per platform.
-struct TopologySnapshot: Codable {
-    var schemaVersion: Int = 1
-    var machineModel: String            // hw.model (macOS) / DMI product name (Linux); "" if unknown
-    var interfaces: [InterfaceInfo] = []
-    var routes: [RouteEntry] = []
-    var gateways: [GatewayNode] = []
-    var hardwarePorts: [HardwarePort] = []
-    var attachedDevices: [AttachedDevice] = []
-    var egress: EgressInfo? = nil
-    var systemPower: SystemPower? = nil
-    var dnsConfigs: [DNSConfig] = []
+public struct TopologySnapshot: Codable {
+    public var schemaVersion: Int = 1
+    public var machineModel: String     // hw.model (macOS) / DMI product name (Linux); "" if unknown
+    public var interfaces: [InterfaceInfo] = []
+    public var routes: [RouteEntry] = []
+    public var gateways: [GatewayNode] = []
+    public var hardwarePorts: [HardwarePort] = []
+    public var attachedDevices: [AttachedDevice] = []
+    public var egress: EgressInfo? = nil
+    public var systemPower: SystemPower? = nil
+    public var dnsConfigs: [DNSConfig] = []
+
+    // Explicit public init mirrors the (otherwise internal) memberwise init exactly, so
+    // macOS construction is unchanged while a separate module (netlights-linux) can build
+    // a snapshot too.
+    public init(schemaVersion: Int = 1, machineModel: String,
+                interfaces: [InterfaceInfo] = [], routes: [RouteEntry] = [],
+                gateways: [GatewayNode] = [], hardwarePorts: [HardwarePort] = [],
+                attachedDevices: [AttachedDevice] = [], egress: EgressInfo? = nil,
+                systemPower: SystemPower? = nil, dnsConfigs: [DNSConfig] = []) {
+        self.schemaVersion = schemaVersion
+        self.machineModel = machineModel
+        self.interfaces = interfaces
+        self.routes = routes
+        self.gateways = gateways
+        self.hardwarePorts = hardwarePorts
+        self.attachedDevices = attachedDevices
+        self.egress = egress
+        self.systemPower = systemPower
+        self.dnsConfigs = dnsConfigs
+    }
 }
