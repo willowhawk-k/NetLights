@@ -2,19 +2,18 @@
 import Foundation
 import NetLightsCore
 
-// L0 entry point. For now it just gathers a (stub) snapshot and can emit it as JSON —
-// proving the portable Core compiles and runs as a separate module on Linux. The web
-// renderer + `serve` mode arrive in L2. Guarded with `#if os(Linux)` so the macOS Xcode
-// target (which sees all of Sources/) compiles this to nothing.
+// Entry point. Default: run the local web server (open it in a browser). `--dump-json`:
+// print one snapshot and exit. Guarded with `#if os(Linux)` so the macOS Xcode target
+// (which sees all of Sources/) compiles this to nothing.
 @main
 struct NetLightsLinuxMain {
     static func main() {
-        let snapshot = LinuxCollector().snapshot()
+        let args = CommandLine.arguments
 
-        if CommandLine.arguments.contains("--dump-json") {
+        if args.contains("--dump-json") {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            if let data = try? encoder.encode(snapshot),
+            if let data = try? encoder.encode(LinuxCollector().snapshot()),
                let json = String(data: data, encoding: .utf8) {
                 print(json)
             } else {
@@ -23,9 +22,12 @@ struct NetLightsLinuxMain {
             return
         }
 
-        print("netlights-linux \(snapshot.schemaVersion) — machineModel: \(snapshot.machineModel)")
-        print("  interfaces: \(snapshot.interfaces.count)  routes: \(snapshot.routes.count)  gateways: \(snapshot.gateways.count)")
-        print("  (L0 stub — real collectors land in L1, the web renderer in L2. Try --dump-json.)")
+        // Optional `--port N` (default 8765).
+        var port: UInt16 = 8765
+        if let i = args.firstIndex(of: "--port"), i + 1 < args.count, let p = UInt16(args[i + 1]) {
+            port = p
+        }
+        LinuxServer(host: "0.0.0.0", port: port).run()
     }
 }
 #endif

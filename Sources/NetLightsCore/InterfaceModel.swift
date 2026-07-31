@@ -387,6 +387,22 @@ public struct DNSConfig: Identifiable, Equatable, Codable {
     var isGlobal: Bool             // the synthesized "active" set (State:/Network/Global/DNS)
     var userNamedScope: Bool       // scopeLabel came from a user-defined service name (redact in privacy mode)
 
+    public init(id: String, scopeLabel: String, interfaceName: String? = nil,
+                servers: [String] = [], searchDomains: [String] = [], domainName: String? = nil,
+                matchDomains: [String] = [], isPrimary: Bool = false, isGlobal: Bool = false,
+                userNamedScope: Bool = false) {
+        self.id = id
+        self.scopeLabel = scopeLabel
+        self.interfaceName = interfaceName
+        self.servers = servers
+        self.searchDomains = searchDomains
+        self.domainName = domainName
+        self.matchDomains = matchDomains
+        self.isPrimary = isPrimary
+        self.isGlobal = isGlobal
+        self.userNamedScope = userNamedScope
+    }
+
     /// A split-DNS set: it answers only the domains in `matchDomains`, not every query.
     var isSupplemental: Bool { !matchDomains.isEmpty }
 }

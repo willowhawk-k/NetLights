@@ -19,7 +19,8 @@ struct LinuxCollector {
             interfaces: interfaces,
             routes: routes,
             gateways: gateways,
-            egress: egress)
+            egress: egress,
+            dnsConfigs: linuxDNSConfigs())
     }
 
     /// DMI product name (e.g. "MacBookPro18,3", "20XW…"); "Linux" when unreadable.
