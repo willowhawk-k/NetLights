@@ -67,6 +67,9 @@ struct LinuxServer {
             let body = (try? encoder.encode(LinuxCollector().snapshot()))
                 .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
             respond(fd, status: "200 OK", type: "application/json", body: body)
+        case "/graph.svg":
+            let svg = renderGraphSVG(snapshot: LinuxCollector().snapshot())
+            respond(fd, status: "200 OK", type: "image/svg+xml; charset=utf-8", body: svg)
         case "/", "/index.html":
             respond(fd, status: "200 OK", type: "text/html; charset=utf-8", body: Self.indexHTML)
         default:
@@ -108,6 +111,7 @@ struct LinuxServer {
     </style></head><body>
       <h1>NetLights <span class="pill">Linux</span></h1>
       <div class="sub" id="hdr">connecting…</div>
+      <div id="graph" style="overflow:auto;border:1px solid #21262d;border-radius:8px;margin-bottom:22px"></div>
       <h2>Interfaces</h2><table id="ifaces"></table>
       <h2>Routes</h2><table id="routes"></table>
       <h2>Gateways</h2><table id="gws"></table>
@@ -120,6 +124,7 @@ struct LinuxServer {
     async function tick(){try{
       const s=await(await fetch('/snapshot.json',{cache:'no-store'})).json();
       $('hdr').textContent=s.machineModel+'  ·  egress: '+(s.egress?(s.egress.viaInterface+' ('+s.egress.kind+')'):'—')+'  ·  '+s.interfaces.length+' interfaces';
+      $('graph').innerHTML=await(await fetch('/graph.svg',{cache:'no-store'})).text();
       fill('ifaces',['','Interface','Type','IPv4','MAC','MTU','RX','TX'],s.interfaces.map(i=>[
         {html:'<span class="dot '+(i.linkState||'unknown')+'"></span>'},{html:i.id,mono:1},i.category,
         {html:(i.ipv4Addresses||[]).join(', '),mono:1},{html:i.macAddress||'—',mono:1},i.mtu,bytes(i.rxBytes),bytes(i.txBytes)]));
