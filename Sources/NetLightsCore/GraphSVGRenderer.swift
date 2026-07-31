@@ -62,30 +62,18 @@ extension GraphLayoutEngine {
 
         // Nodes.
         for iface in visible {
-            guard let p = ifacePositions[iface.id] else { continue }
-            o += svgNode(p, 96, 40, stroke: iface.hasLink ? "#3fb950" : "#484f58",
-                         title: iface.id, subtitle: iface.ipv4Addresses.first ?? iface.category.rawValue)
+            if let p = ifacePositions[iface.id] { o += ifaceNode(p, iface) }
         }
         for port in hardwarePorts {
-            if let p = hwPortPositions[port.id] {
-                o += svgNode(p, 84, 38, stroke: "#6e7681", title: "TB \(port.id)", subtitle: "")
-            }
+            if let p = hwPortPositions[port.id] { o += svgNode(p, 84, 38, stroke: "#6e7681", title: "TB \(port.id)", subtitle: "") }
         }
         for dev in attachedDevices {
-            if let p = devicePositions[dev.id] {
-                o += svgNode(p, 76, 34, stroke: "#39c5cf", title: dev.name, subtitle: "")
-            }
+            if let p = devicePositions[dev.id] { o += svgNode(p, 76, 34, stroke: "#39c5cf", title: dev.name, subtitle: "") }
         }
         for gw in gateways {
-            if let p = gatewayPositions[gw.id] {
-                o += svgNode(p, 100, 42, stroke: (gw.isVPN ? ColorToken.gatewayVPN : ColorToken.gatewayPrimary).css,
-                             title: gw.titleLabel, subtitle: gw.id)
-            }
+            if let p = gatewayPositions[gw.id] { o += gwNode(p, gw) }
         }
-        if egress != nil, let p = egressPosition {
-            o += svgNode(p, 96, 44, stroke: ColorToken.egress.css, title: "Internet",
-                         subtitle: egress?.viaInterface ?? "")
-        }
+        if egress != nil, let p = egressPosition { o += egressNode(p, via: egress?.viaInterface ?? "") }
         if let sid = vpnServerID, let p = vpnServerPosition {
             o += svgNode(p, 100, 44, stroke: ColorToken.gatewayVPN.css, title: "VPN Server", subtitle: sid)
         }
@@ -108,6 +96,87 @@ private func svgNode(_ p: CGPoint, _ w: Double, _ h: Double, stroke: String, tit
         s += "<text x='\(num(cx))' y='\(num(cy + 11))' fill='#8b949e' font-size='8' text-anchor='middle'>\(xmlEsc(subtitle))</text>"
     }
     return s
+}
+
+// MARK: - Richer node styling (card + category LED + drawn icon)
+
+private func card(_ cx: Double, _ cy: Double, _ w: Double, _ h: Double, _ border: String) -> String {
+    "<rect x='\(num(cx - w / 2))' y='\(num(cy - h / 2))' width='\(num(w))' height='\(num(h))' rx='8' fill='#161b22' stroke='\(border)' stroke-opacity='0.65'/>"
+}
+
+private func label(_ cx: Double, _ y: Double, _ text: String, _ size: Double, _ color: String) -> String {
+    "<text x='\(num(cx))' y='\(num(y))' fill='\(color)' font-size='\(num(size))' text-anchor='middle'>\(xmlEsc(text))</text>"
+}
+
+private func ifaceNode(_ p: CGPoint, _ iface: InterfaceInfo) -> String {
+    let cx = Double(p.x), cy = Double(p.y), w = 100.0, h = 54.0
+    let color = categoryColor(iface.category)
+    var s = card(cx, cy, w, h, color)
+    s += categoryIcon(iface.category, cx, cy - h / 2 + 14, color)
+    let led = iface.hasLink ? "#3fb950" : (iface.linkState == .down ? "#f85149" : "#6e7681")
+    s += "<circle cx='\(num(cx + w / 2 - 9))' cy='\(num(cy - h / 2 + 9))' r='3.5' fill='\(led)'/>"
+    s += label(cx, cy + 6, iface.id, 11, "#e6edf3")
+    s += label(cx, cy + 18, iface.ipv4Addresses.first ?? iface.category.rawValue, 8, "#8b949e")
+    return s
+}
+
+private func gwNode(_ p: CGPoint, _ gw: GatewayNode) -> String {
+    let cx = Double(p.x), cy = Double(p.y), w = 104.0, h = 50.0
+    let color = (gw.isVPN ? ColorToken.gatewayVPN : ColorToken.gatewayPrimary).css
+    var s = card(cx, cy, w, h, color)
+    let iy = cy - h / 2 + 12
+    s += "<path d='M \(num(cx)) \(num(iy - 5)) L \(num(cx + 5)) \(num(iy)) L \(num(cx)) \(num(iy + 5)) L \(num(cx - 5)) \(num(iy)) Z' "
+       + "fill='\(gw.isDefault ? color : "none")' stroke='\(color)' stroke-width='1.3'/>"
+    s += label(cx, cy + 5, gw.titleLabel, 11, "#e6edf3")
+    s += label(cx, cy + 17, gw.id, 8, "#8b949e")
+    return s
+}
+
+private func egressNode(_ p: CGPoint, via: String) -> String {
+    let cx = Double(p.x), cy = Double(p.y), w = 100.0, h = 52.0
+    let color = ColorToken.egress.css
+    var s = card(cx, cy, w, h, color)
+    let iy = cy - h / 2 + 13
+    let st = "stroke='\(color)' stroke-width='1.2' fill='none'"
+    s += "<g transform='translate(\(num(cx)),\(num(iy)))'><circle r='6' \(st)/><ellipse rx='2.6' ry='6' \(st)/>"
+       + "<path d='M -6 0 h 12 M -5 -3 h 10 M -5 3 h 10' \(st)/></g>"
+    s += label(cx, cy + 6, "Internet", 11, "#e6edf3")
+    s += label(cx, cy + 18, via, 8, "#8b949e")
+    return s
+}
+
+private func categoryColor(_ c: InterfaceCategory) -> String {
+    switch c {
+    case .wifi:        return "#58a6ff"
+    case .ethernet:    return "#3fb950"
+    case .thunderbolt: return "#a371f7"
+    case .tunnel:      return "#d29922"
+    case .bridge:      return "#db61a2"
+    case .vlan:        return "#a371f7"
+    case .cellular:    return "#f0883e"
+    case .loopback:    return "#6e7681"
+    default:           return "#8b949e"
+    }
+}
+
+/// A small (~12px) line-drawn icon for the category, centered at (x, y).
+private func categoryIcon(_ c: InterfaceCategory, _ x: Double, _ y: Double, _ col: String) -> String {
+    let s = "stroke='\(col)' stroke-width='1.3' fill='none' stroke-linecap='round'"
+    let g = "<g transform='translate(\(num(x)),\(num(y)))'>"
+    switch c {
+    case .wifi:
+        return g + "<path d='M -6 1 A 8 8 0 0 1 6 1' \(s)/><path d='M -3.5 3.5 A 4.5 4.5 0 0 1 3.5 3.5' \(s)/><circle cx='0' cy='5.5' r='1.2' fill='\(col)'/></g>"
+    case .ethernet, .thunderbolt:
+        return g + "<rect x='-5' y='-3.5' width='10' height='7' rx='1.5' \(s)/><path d='M -3 3.5 v 2 M 0 3.5 v 2 M 3 3.5 v 2' \(s)/></g>"
+    case .loopback:
+        return g + "<path d='M 4 -1 A 4.5 4.5 0 1 1 2.8 -3.6' \(s)/><path d='M 2.6 -5.4 l 1.4 1.9 l -2.1 0.2 z' fill='\(col)' stroke='none'/></g>"
+    case .tunnel, .cellular:
+        return g + "<rect x='-4' y='0' width='8' height='6' rx='1' \(s)/><path d='M -2.5 0 v -1.5 A 2.5 2.5 0 0 1 2.5 -1.5 V 0' \(s)/></g>"
+    case .bridge:
+        return g + "<rect x='-6' y='-1.5' width='4' height='5.5' rx='1' \(s)/><rect x='2' y='-1.5' width='4' height='5.5' rx='1' \(s)/><path d='M -2 1 h 4' \(s)/></g>"
+    default:
+        return g + "<circle cx='0' cy='0' r='3' \(s)/></g>"
+    }
 }
 
 /// Compact number (drops a trailing .0) for tidy SVG coordinates.
