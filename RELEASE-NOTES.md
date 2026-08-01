@@ -13,6 +13,22 @@ Future enhancements are listed first; the release history follows, newest at the
 
 Backlog — not committed work, just where we're headed. Each carries a feasibility note.
 
+### Command-line modes: terminal UI + headless web server (all OSes)
+Make NetLights useful beyond the desktop GUI — over SSH, on servers, in scripts — with one
+unified CLI on macOS, Linux, and Windows. `netlights tui` runs a **`top`-style terminal UI**:
+a full-screen live view (~1 s refresh) with tabs switched by key (**g**/**r**/**i**/**d**/**n**
+or 1–5, **q** to quit) showing interfaces / routes / devices / DNS as text tables (an ASCII
+rendition of the layered graph is a stretch goal). `netlights serve [--port N] [--bind addr]`
+runs the **headless web server** (today's Linux web UI) on *any* OS — run it on a remote box
+and point a browser at it; port and bind address are configurable (default bind: all
+interfaces, or `--bind egress` for the primary NIC's egress IP). The default (no args) stays
+the native GUI. **Feasibility:** the web server + SVG renderer already exist on Linux and are
+mostly portable (BSD sockets work on Darwin too), so extending `serve` to macOS/Windows is
+modest; the TUI is the main new build (a portable text renderer in Core + a small per-OS
+raw-terminal input shim). **Caveat:** the macOS **App Store** sandbox blocks listening sockets
+(no `network.server` entitlement) → `serve` ships only on the Developer-ID/GitHub macOS build;
+`tui` works everywhere (no socket).
+
 ### HDMI port + display capabilities
 Detect whether the dedicated HDMI port has a display attached, identify it, and — stretch —
 whether it supports features like eARC. Display *detection* via CoreGraphics is feasible;
