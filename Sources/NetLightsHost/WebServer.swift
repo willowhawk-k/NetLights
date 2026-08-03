@@ -111,17 +111,26 @@ public struct WebServer {
         }
         guard listen(listenFD, 16) == 0 else { perror("listen"); return 1 }
 
-        let url = "http://\(bind == .all ? "127.0.0.1" : display):\(port)"
-        print("NetLights — serving on \(url)  (Ctrl-C to stop)")
+        // Report what we ACTUALLY bound to. Printing a loopback URL while listening on
+        // 0.0.0.0 reads as "it ignored my --bind" — especially over SSH, where the user
+        // can't see the socket.
         if bind.isRoutable {
+            let what = bind == .all ? "\(display):\(port) (all interfaces)" : "\(display):\(port)"
+            print("NetLights — listening on \(what)  (Ctrl-C to stop)")
+            // Deliberately NOT resolving the LAN address for a friendlier URL: that needs a
+            // snapshot, and on macOS a full gather runs system_profiler — which would stall
+            // the banner for seconds before the user is told anything at all.
+            print("   on this machine: http://127.0.0.1:\(port)")
             print("""
 
-                  ⚠  Listening on \(display) — reachable from your network.
-                     This publishes your interfaces, IP and MAC addresses, routes, DNS
-                     servers and device names, with NO authentication. Use the default
-                     (--bind loopback) or an SSH tunnel on any shared network.
+                  ⚠  Reachable from your network. This publishes your interfaces, IP and
+                     MAC addresses, routes, DNS servers and device names, with NO
+                     authentication. Use the default (--bind loopback) or an SSH tunnel
+                     on any shared network.
 
                   """)
+        } else {
+            print("NetLights — serving on http://\(display):\(port)  (Ctrl-C to stop)")
         }
         // stdout is block-buffered when it isn't a terminal, so `netlights serve | tee log`
         // would otherwise show nothing until the buffer filled — i.e. never.

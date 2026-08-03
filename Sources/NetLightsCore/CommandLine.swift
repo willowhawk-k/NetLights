@@ -126,13 +126,45 @@ private let recognized: Set<String> = [
     "-h", "--help", "-V", "--version", "--dump-json",
 ]
 
+/// Plausible near-misses for the subcommands. None of these can come from LaunchServices or
+/// Xcode (which only inject `-psn_…`-style tokens), so it is always safe to reject them with
+/// a suggestion rather than silently doing something else.
+private func nearMiss(_ token: String) -> String? {
+    switch token.lowercased() {
+    case "--tui", "-tui", "--top", "top":            return "tui"
+    case "--serve", "-serve", "--server", "server",
+         "--web", "web", "--http":                   return "serve"
+    case "--gui", "-gui", "--app":                   return "gui (just run it with no arguments)"
+    case "--json", "--dumpjson", "--dump_json":      return "--dump-json"
+    default: return nil
+    }
+}
+
 /// Parse `argv` (including argv[0]). `defaultMode` is what a bare invocation means on this
 /// platform — macOS passes `.gui`, the headless Linux build passes `.serve(...)`.
 public func parseNetLightsCommandLine(_ argv: [String],
                                       default defaultMode: NetLightsMode) -> CLIParse {
     let args = Array(argv.dropFirst())
-    guard let head = args.first, recognized.contains(head) else {
-        return .ok(defaultMode)   // no args, or something we don't own — hand it back
+    guard let head = args.first else { return .ok(defaultMode) }   // bare invocation
+
+    if !recognized.contains(head) {
+        // A near-miss is always worth correcting, on every platform: silently doing
+        // something else is how `--serve --bind all` ends up quietly listening on
+        // loopback with the bind ignored.
+        if let suggestion = nearMiss(head) {
+            return .fail(message: "unknown argument '\(head)' — did you mean '\(suggestion)'?",
+                         code: 2)
+        }
+        // The permissive fallthrough exists ONLY to protect the macOS GUI: a
+        // double-clicked .app receives LaunchServices/Xcode arguments (`-psn_…`,
+        // `-NSDocumentRevisionsDebugMode`) and the release script's own flags, none of
+        // which may be treated as a usage error. Where there is no GUI to fall through
+        // to, an unrecognized argument IS an error — otherwise every typo silently runs
+        // the default mode with default options.
+        guard defaultMode == .gui else {
+            return .fail(message: "unknown argument '\(head)' (try: netlights --help)", code: 2)
+        }
+        return .ok(defaultMode)
     }
     let rest = Array(args.dropFirst())
 
