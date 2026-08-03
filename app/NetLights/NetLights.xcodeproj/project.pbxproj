@@ -35,7 +35,7 @@
 			path = NetLights;
 			sourceTree = "<group>";
 		};
-		CC00000000000000000001 /* Sources */ = {
+		CC00000000000000000001 /* ../../Sources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ../../Sources;
 			sourceTree = "<group>";
@@ -58,7 +58,7 @@
 			children = (
 				967ABDD42FEE2B5F006115F2 /* NetLights */,
 				967ABDD32FEE2B5F006115F2 /* Products */,
-				CC00000000000000000001 /* Sources */,
+				CC00000000000000000001 /* ../../Sources */,
 				967ABE0E2FEE2BC4006115F2 /* NetLights-Bridging-Header.h */,
 				967ABE112FEE2E40006115F2 /* Version.xcconfig */,
 			);
@@ -89,7 +89,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				967ABDD42FEE2B5F006115F2 /* NetLights */,
-				CC00000000000000000001 /* Sources */,
+				CC00000000000000000001 /* ../../Sources */,
 			);
 			name = NetLights;
 			packageProductDependencies = (
@@ -302,8 +302,8 @@
 				INFOPLIST_FILE = NetLights/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NetLights;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "NetLights uses Bluetooth only to list your already-connected Bluetooth devices (name, type, and battery where reported) in the graph. It never scans for, pairs with, or connects to anything.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "NetLights uses your location only to read the current Wi-Fi network name (SSID), which macOS protects behind location access. No location coordinates are read, stored, or shared.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -311,10 +311,10 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.willowhawk.NetLights;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
 				PRODUCT_NAME = NetLights;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -352,8 +352,8 @@
 				INFOPLIST_FILE = NetLights/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = NetLights;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "NetLights uses Bluetooth only to list your already-connected Bluetooth devices (name, type, and battery where reported) in the graph. It never scans for, pairs with, or connects to anything.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "NetLights uses your location only to read the current Wi-Fi network name (SSID), which macOS protects behind location access. No location coordinates are read, stored, or shared.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -361,10 +361,10 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.willowhawk.NetLights;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
 				PRODUCT_NAME = NetLights;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "APPSTORE $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = NO;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
