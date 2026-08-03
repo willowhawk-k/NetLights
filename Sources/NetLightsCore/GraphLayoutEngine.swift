@@ -832,11 +832,15 @@ struct GraphLayoutEngine {
             func place(_ d: AttachedDevice, _ depth: Int, _ solo: Bool) -> CGFloat {
                 let y = topY + CGFloat(min(depth, 24)) * deviceRowGap
                 let kids = depth < 24 ? (f.childrenOf[d.id] ?? []) : []   // forest order (type, then name)
-                // Zigzag a SINGLE-FILE run (a lone root / only child) left/right per row
-                // so it reads as a curve instead of a rigid vertical pile. Multi-child
-                // rows already spread, so leave those centered. Applied to the STORED
-                // position only (the returned x keeps the tidy-tree centering exact) and
-                // clamped, so a subtree never leaves its lane.
+                // Zigzag a genuine SINGLE-FILE chain (a lone root whose every level has
+                // exactly one child) left/right per row so it reads as a curve instead of
+                // a rigid vertical pile. `solo` is propagated down (see below) so it stays
+                // true ONLY for such a chain — an only-child that sits beside a sibling
+                // subtree must NOT shift, or it collides with the sibling's leaves (a
+                // single-child USB hub next to a multi-child one). Multi-child rows already
+                // spread, so leave those centered. Applied to the STORED position only (the
+                // returned x keeps the tidy-tree centering exact) and clamped, so a subtree
+                // never leaves its lane.
                 let dx = solo ? (depth % 2 == 0 ? deviceRowZig : -deviceRowZig) : 0
                 if kids.isEmpty {
                     let x = cursor + slot / 2
@@ -844,7 +848,7 @@ struct GraphLayoutEngine {
                     result[d.id] = CGPoint(x: clampX(x + dx), y: y)
                     return x
                 }
-                let xs = kids.map { place($0, depth + 1, kids.count == 1) }
+                let xs = kids.map { place($0, depth + 1, solo && kids.count == 1) }
                 let x = (xs.first! + xs.last!) / 2
                 result[d.id] = CGPoint(x: clampX(x + dx), y: y)
                 return x
