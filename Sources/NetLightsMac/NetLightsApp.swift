@@ -1,7 +1,9 @@
 import SwiftUI
 import AppKit
 
-@main
+// `@main` lives on NetLightsCLI (NetLightsCLI.swift), which inspects the command line and
+// calls `NetLightsApp.main()` for the GUI path — the default, and what every Finder /
+// LaunchServices launch does. Only one type per module may carry `@main`.
 struct NetLightsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     // Owned here (not in ContentView) so the Help menu can observe live SSID state.

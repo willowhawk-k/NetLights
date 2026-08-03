@@ -29,9 +29,15 @@ if buildLinux {
         name: "NetLights",
         targets: [
             .target(name: "NetLightsCore", path: "Sources/NetLightsCore"),
+            // Host-platform services: the libc-touching layer (termios terminal driver +
+            // the BSD-socket web server). Split out so NetLightsCore stays Foundation-only
+            // — the portability guardrail. Compiles on Darwin, Glibc and Musl alike.
+            .target(name: "NetLightsHost",
+                    dependencies: ["NetLightsCore"],
+                    path: "Sources/NetLightsHost"),
             .executableTarget(
                 name: "netlights-linux",
-                dependencies: ["NetLightsCore"],
+                dependencies: ["NetLightsCore", "NetLightsHost"],
                 path: "Sources/NetLightsLinux",
                 swiftSettings: [.unsafeFlags(["-parse-as-library"])]
             ),

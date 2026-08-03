@@ -121,7 +121,33 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     /// in `refresh()`, this gathers everything synchronously — including the expensive
     /// port query — so the returned snapshot is self-contained (used by `--dump-json` and
     /// as the cross-platform contract). Reads no `@Published` state and assigns none.
-    func snapshot() -> TopologySnapshot {
+    func snapshot() -> TopologySnapshot { snapshot(includingPorts: true) }
+
+    /// True when LaunchServices started us (Dock, Finder, `open`) rather than a shell.
+    /// LS-launched processes get `XPC_SERVICE_NAME=application.<bundle-id>.<n>.<m>`;
+    /// shell-launched ones get `0`.
+    ///
+    /// This matters for more than cosmetics: **TCC attributes a privacy request to the
+    /// RESPONSIBLE process**, which for a shell launch is the terminal, not the .app. So
+    /// even though the bundle declares `NSBluetoothAlwaysUsageDescription` (and
+    /// `BluetoothProbe.available` sees it), touching IOBluetooth from a terminal-launched
+    /// process is killed outright by TCC with
+    /// `__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__`. `NSScreen` is a softer version of the
+    /// same problem — it needs a WindowServer connection that an SSH session hasn't got.
+    static var launchedByLaunchServices: Bool {
+        (ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] ?? "0") != "0"
+    }
+
+    /// `includingPorts: false` skips the expensive tier — the IOKit port walk,
+    /// `system_profiler`, and the Bluetooth XPC round-trip — returning interfaces, routes,
+    /// gateways, egress and DNS only. The GUI already tiers this way (a 0.75s poll does the
+    /// cheap work; ports refresh every ~4th tick), and the TUI needs the same: at 1 Hz the
+    /// full gather would spawn `system_profiler` once a second.
+    /// `allowUIProbes: false` additionally skips the two probes that require a GUI session —
+    /// `NSScreen` display names and IOBluetooth — which a terminal-launched process must
+    /// never touch (see `launchedByLaunchServices`). USB/Thunderbolt still come through:
+    /// those read the IOKit registry, which carries no TCC gate.
+    func snapshot(includingPorts: Bool, allowUIProbes: Bool = true) -> TopologySnapshot {
         let interfaces = Self.gatherInterfaces()
         let routes     = Self.gatherRoutes()
         let rank       = Self.serviceOrder()
@@ -132,8 +158,18 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
             $0.isDefault && !$0.isVPN && $0.reachableVia.contains(e.viaInterface)
         }) { gateways[gi].networkName = e.name }
 
-        let status = Self.queryPortStatus(displayNames: IOKitProbe.displayNames(),
-                                          bluetooth: BluetoothProbe.connectedDevices())
+        guard includingPorts else {
+            return TopologySnapshot(
+                machineModel: macModel,
+                interfaces: interfaces, routes: routes, gateways: gateways,
+                hardwarePorts: [], attachedDevices: [],
+                egress: egress, systemPower: nil,
+                dnsConfigs: Self.gatherDNS())
+        }
+
+        let status = Self.queryPortStatus(
+            displayNames: allowUIProbes ? IOKitProbe.displayNames() : [:],
+            bluetooth:    allowUIProbes ? BluetoothProbe.connectedDevices() : [])
         let ports  = Self.buildHardwarePorts(from: interfaces, macModel: macModel, portStatus: status)
 
         return TopologySnapshot(
