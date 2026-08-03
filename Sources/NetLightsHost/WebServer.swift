@@ -66,11 +66,37 @@ public struct WebServer {
         }
     }
 
-    /// Hosts we'll answer. Anything else is a rebinding attempt (or a proxy we don't serve).
+    /// Named hosts we'll answer to. IP-literal Hosts are handled separately (see
+    /// `isAcceptableHost`) because enumerating every address this machine might be reached
+    /// at is impossible when bound to 0.0.0.0.
     private func allowedHosts(_ display: String) -> Set<String> {
         var hosts: Set<String> = ["localhost", "127.0.0.1", "[::1]", "::1", display]
         for h in Array(hosts) { hosts.insert("\(h):\(port)") }
         return hosts
+    }
+
+    /// A Host header that is a bare IP literal **cannot** be a DNS-rebinding attack:
+    /// rebinding works by pointing a *hostname* at the target address, so with no name in
+    /// play there is nothing to rebind. Rejecting IP literals therefore buys no safety and
+    /// breaks the legitimate case — browsing `http://192.168.64.3:8765` from another
+    /// machine after `--bind all`, where the allowlist only ever knew the literal
+    /// "0.0.0.0" that no browser actually sends.
+    ///
+    /// Unknown *hostnames* are still refused, which is the case that matters.
+    private func isIPLiteralHost(_ host: String) -> Bool {
+        var h = host
+        if h.hasPrefix("[") {                                  // [::1] or [::1]:8765
+            guard let close = h.firstIndex(of: "]") else { return false }
+            return h[h.index(after: h.startIndex)..<close].contains(":")
+        }
+        if h.filter({ $0 == ":" }).count == 1, let colon = h.lastIndex(of: ":") {
+            h = String(h[h.startIndex..<colon])                // strip :port
+        }
+        return isIPv4Literal(h)
+    }
+
+    private func isAcceptableHost(_ host: String, allowed: Set<String>) -> Bool {
+        host.isEmpty || allowed.contains(host) || isIPLiteralHost(host)
     }
 
     public func run() -> Int32 {
@@ -156,9 +182,14 @@ public struct WebServer {
         // read this server from the user's browser. Requiring a known Host stops that.
         let host = lines.first(where: { $0.lowercased().hasPrefix("host:") })
             .map { $0.dropFirst(5).trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
-        guard host.isEmpty || allowedHosts.contains(host) else {
-            respond(fd, status: "403 Forbidden", type: "text/plain",
-                    body: "unrecognized Host header")
+        guard isAcceptableHost(host, allowed: allowedHosts) else {
+            respond(fd, status: "403 Forbidden", type: "text/plain", body: """
+                unrecognized Host header: \(host)
+
+                NetLights only answers to localhost, the address it is bound to, or a
+                bare IP address — a guard against DNS rebinding. If you reached this
+                by a hostname, use the machine's IP address instead.
+                """)
             return
         }
 
