@@ -11,15 +11,20 @@ plan we execute through; each phase ends with a verify gate + a commit.
   regress it.
 
 ## Goal
-Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
-**Ubuntu/Debian** (primary) + **Mint, Fedora/RHEL/CentOS, Arch**, installable via
-**apt / dnf / AUR / AppImage** *and* native build. Windows later, same core.
+Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), compatible
+across the target field matrix — **Ubuntu, Debian, RHEL/Rocky, Oracle Linux, SUSE SLES**
+(the enterprise families actually in the field) — and by extension their kin (Mint,
+Fedora / CentOS Stream / AlmaLinux, openSUSE, Arch). Installable via
+**apt / dnf-yum / zypper / AUR / AppImage** *and* native build. Windows later, same core.
 
 ## Locked decisions
 1. **One fully-static binary** via Swift's **Static Linux SDK (musl)** —
    `swift build -c release --swift-sdk <arch>-swift-linux-musl`. No glibc / Swift-runtime
-   / shared-lib deps → runs across all target distros. This is the portability lever;
-   every package format wraps this same artifact.
+   / shared-lib deps → runs across **every** target distro regardless of its glibc vintage.
+   This is the whole compatibility story: the enterprise LTS distros ship *old* glibc
+   (RHEL 8 ≈ 2.28, SLES 15 ≈ 2.31, Debian 11 ≈ 2.31) that would otherwise force a
+   lowest-common-baseline build — the musl-static binary sidesteps glibc entirely, so one
+   artifact runs on all of them. Every package format wraps this same artifact.
 2. **Web renderer** — `netlights-linux` runs a small local HTTP server; the graph is SVG
    generated from the shared `GraphLayoutEngine`, the browser is the view. Reuses the
    engine, no GTK/Qt, future-proofs Windows.
@@ -30,7 +35,45 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
    (months of sponsorship/burden). **Flatpak/Flathub** optional, post-2.0, for reach.
 5. **Test loop:** **arm64 in UTM** on macOS (native virtualization) is primary;
    **x86_64 built + `--dump-json` smoke-tested in CI**. Operationally identical — same
-   source/syscalls, both little-endian.
+   source/syscalls, both little-endian. Cover one VM per ecosystem, using the **free
+   rebuilds** where the enterprise originals need a subscription — **Rocky / Oracle Linux**
+   for RHEL, **openSUSE Leap** for SLES, plus **Ubuntu + Debian**.
+
+## Distro compatibility matrix
+
+The named field targets and how each is served. **The musl-static binary makes broad
+compatibility nearly free** — it runs identically on all of them; the only genuine
+per-family work is the *package wrapper* and *repo metadata*, not the code.
+
+| Family | Pkg manager | Format | Free test stand-in |
+|---|---|---|---|
+| Ubuntu | apt / dpkg | `.deb` | Ubuntu (native) |
+| Debian | apt / dpkg | `.deb` (oldest glibc baseline) | Debian stable |
+| RHEL / Rocky | dnf-yum / rpm | `.rpm` | Rocky Linux (RHEL-identical) |
+| Oracle Linux | dnf-yum / rpm | `.rpm` (same RHEL-family rpm) | Oracle Linux (free download) |
+| SUSE SLES | **zypper** / rpm | `.rpm` | **openSUSE Leap** (shares the SLES codebase) |
+
+Consequences that *shrink* the work:
+- **Two package files cover all five families:** one `.deb` (Ubuntu + Debian) and one
+  **zero-dependency** `.rpm` (RHEL + Rocky + Oracle **and** SLES). Because the binary is
+  static and declares no runtime deps, SUSE's different dependency *names* never bite — the
+  same rpm installs via `dnf`, `yum`, or `zypper`.
+- **One repository serves every RPM distro:** `dnf`/`yum` and `zypper` all consume the
+  standard **rpm-md** (`createrepo_c`) format, so a single signed rpm-md repo covers
+  RHEL / Rocky / Oracle **and** SLES; a single APT repo covers Ubuntu + Debian.
+- **Collectors are distro-agnostic.** Everything is read straight from the kernel —
+  `getifaddrs`, `/proc/net/*`, `/sys/class/net`, netlink, `/sys/.../dmi`, `/etc/resolv.conf`
+  — none of which depends on the distro's package manager, init, or network stack
+  (NetworkManager / systemd-networkd / wicked). No per-distro collector code; the DNS reader
+  already falls back from systemd-resolved to `resolv.conf` for versions without resolved.
+
+**Where compatibility is NOT free — the native webview (Part 2).** A native GTK/WebKitGTK
+window can't be fully static: it dynamically links the distro's GTK + WebKitGTK, whose
+package names and sonames diverge per family (e.g. `libwebkit2gtk-4.1` on Debian/Ubuntu vs
+`webkit2gtk4.1` / `webkit2gtk3` on RHEL+EPEL vs the `…-4_1-0` naming on SUSE — exact names
+to confirm per release). So the **web-served / static build stays the universal compatibility
+baseline**; the native-webview build is a per-family, dependency-declaring package shipped
+only for the mainstream desktops, never the thing broad-distro reach depends on.
 
 ## Guardrails (checked every phase)
 - **macOS parity:** `swift build` + the App Store `xcodebuild` + an Xcode Archive stay
@@ -115,13 +158,17 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
   → Bluetooth absent in the static build, or speak D-Bus over its raw socket).
 - **Bundle:** binary + web assets → `netlights-<version>-<arch>.tar.gz`; an **AppImage**;
   `.desktop` + icon.
-- **Packages via nfpm:** `.deb` + `.rpm` (zero-dep, from the static binary) from one YAML.
-- **Repos:** self-hosted **GPG-signed APT + YUM** repos on GitHub Pages + a one-line
-  `curl … | sh` repo-add installer. **AUR** `PKGBUILD` for Arch.
+- **Packages via nfpm:** one `.deb` (Ubuntu/Debian) + one zero-dep `.rpm` (RHEL / Rocky /
+  Oracle **and** SLES) from a single YAML — the static binary means no per-family dep lists.
+- **Repos:** self-hosted **GPG-signed APT + rpm-md** repos on GitHub Pages (the one rpm-md
+  repo is consumed by `dnf`, `yum`, **and** `zypper`) + one-line `curl … | sh` repo-add
+  installers per manager. **AUR** `PKGBUILD` for Arch.
 - **CI (GitHub Actions):** matrix x86_64 + aarch64 → build → `--dump-json` smoke-test →
   produce every artifact → attach to the GitHub release.
-- **Verify:** `apt install` (Ubuntu), `dnf install` (Fedora), `yay -S` (Arch), AppImage on
-  something exotic — each launches the graph. Optional Flatpak/Flathub afterward.
+- **Verify install-and-launch across the matrix:** `apt install` (Ubuntu **and** Debian),
+  `dnf install` (Rocky + Oracle Linux), `zypper install` (openSUSE Leap as the SLES proxy),
+  `yay -S` (Arch), and the AppImage on something exotic — each launches the graph. Optional
+  Flatpak/Flathub afterward.
 - **Milestone:** installable everywhere; 2.0 candidate.
 
 ### L5 — 2.0 release
@@ -139,6 +186,10 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
 - **Foundation gaps on Linux** (CGGeometry, URLSession, formatting) → surface at **L0**, shim.
 - **netlink (Wi-Fi) + D-Bus (Bluetooth)** are fiddly → **degrade-absent**, never block a release.
 - **static + libdbus** friction → Bluetooth optional in the static build.
+- **Native-webview (Part 2) dep fragmentation** — GTK/WebKitGTK package names + sonames
+  differ per family → keep the **static web-served build as the universal baseline**; ship
+  native-webview only as per-family packages for mainstream desktops, never the reach-critical
+  path.
 - **SVG/engine drift** from the macOS graph → the "render a captured Linux snapshot on
   macOS" test keeps them identical.
 
@@ -147,8 +198,8 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
   schema-check + a browser smoke test.
 - **Cross-platform:** `--dump-json` schema diff macOS↔Linux; render a captured Linux
   snapshot through the macOS engine.
-- **Packaging:** install-and-launch on Ubuntu / Fedora / Arch / AppImage in throwaway VMs
-  or containers.
+- **Packaging:** install-and-launch on Ubuntu, Debian, Rocky, Oracle Linux, openSUSE Leap
+  (SLES proxy), Arch, and the AppImage — in throwaway VMs or containers, one per ecosystem.
 
 ## Suggested milestones
 - **MVP (L0–L2):** live web graph, installable as `.deb` + static tarball — ~1.5–2 weeks.
