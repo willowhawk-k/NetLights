@@ -50,6 +50,14 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
+### 1.8.1 — 2026-08-03
+- **Accurate multi-gig link speeds.** A 2.5 Gigabit link now reads **2.5 Gbps** rather than
+  being truncated to "2 Gbps"; link-speed labels show a decimal only when the standard rate
+  needs one (2.5 / 5 Gbps) and stay whole otherwise (1 Gbps, 100 Mbps, 10 Gbps).
+- **No more overlapping device chips.** When one USB hub on a port has a single device and a
+  neighbouring hub has several, the lone device no longer drifts sideways into its neighbour —
+  the gentle curve applied to single-file device chains is now confined to genuine lone chains.
+
 ### 1.8.0 — 2026-07-24
 - **See your VPN, end to end.** When a VPN is active, NetLights now traces the whole
   encrypted path as a distinct glowing tunnel — from the tunnel interface, through the
