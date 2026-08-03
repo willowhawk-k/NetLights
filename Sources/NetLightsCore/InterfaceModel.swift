@@ -91,11 +91,7 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
 
     var formattedSpeed: String? {
         guard let bps = linkSpeedBps, bps > 0 else { return nil }
-        switch bps {
-        case ..<1_000_000:       return "\(bps / 1000) Kbps"
-        case ..<1_000_000_000:   return "\(bps / 1_000_000) Mbps"
-        default:                 return "\(bps / 1_000_000_000) Gbps"
-        }
+        return formattedBitrate(bps)
     }
 
     var primaryIP: String? { ipv4Addresses.first }
@@ -606,11 +602,7 @@ public struct AttachedDevice: Identifiable, Equatable, Codable {
         if kind == .storage { return capacityLabel ?? "—" }
         if let d = detail { return d }
         guard let b = linkSpeedBps, b > 0 else { return "—" }
-        switch b {
-        case ..<1_000_000:     return "\(b / 1000) Kbps"
-        case ..<1_000_000_000: return "\(b / 1_000_000) Mbps"
-        default:               return String(format: "%.0f Gbps", Double(b) / 1_000_000_000)
-        }
+        return formattedBitrate(b)
     }
 
     var classLabel: String {
@@ -746,6 +738,23 @@ let trafficNoiseFloor: Double = 1024
 // convention, matching the negotiated link speed. Input is the byte-counter rate;
 // we convert ×8 and use decimal (1000) magnitudes, as link/data rates are decimal.
 // (Cumulative volume — Received/Sent — stays in bytes; see formatByteCount.)
+
+/// A negotiated link rate from bits-per-second, in networking units. Whole where the
+/// rate is whole (1 Gbps, 100 Mbps, 10 Gbps); one decimal only where a standard rate
+/// needs it (2.5 Gbps, or a fractional Wi-Fi rate). Avoids the integer-division
+/// truncation that used to render 2.5 Gbps (2_500_000_000 bps) as "2 Gbps".
+func formattedBitrate(_ bps: UInt64) -> String {
+    func trim(_ value: Double, _ unit: String) -> String {
+        let s = value == value.rounded() ? String(format: "%.0f", value)
+                                         : String(format: "%.1f", value)
+        return "\(s) \(unit)"
+    }
+    switch bps {
+    case ..<1_000_000:       return "\(bps / 1000) Kbps"
+    case ..<1_000_000_000:   return trim(Double(bps) / 1_000_000, "Mbps")
+    default:                 return trim(Double(bps) / 1_000_000_000, "Gbps")
+    }
+}
 
 /// Full throughput label in bits/sec, e.g. "98.4 Mbps". nil below the noise floor.
 func formatRate(_ bytesPerSec: Double) -> String? {
