@@ -281,10 +281,39 @@ scripts/build-app.sh          # Packages dist/NetLights.app + zip
 extend `hardwarePortLayout(model:)` in `InterfaceModel.swift` with your
 `hw.model` identifier (find it via `sysctl hw.model`).
 
-### Command-line flags
+### Command line
 
-NetLights is a normal GUI app, but the binary also accepts a couple of
-developer/diagnostic flags (each does its job and exits without showing a window):
+Running NetLights with no arguments opens the app as usual. It also has a small
+command-line interface — the **same on macOS and Linux** — for terminals and servers:
+
+| Command | What it does | Availability |
+|---------|--------------|--------------|
+| `netlights` | Opens the graphical app (the default). | macOS |
+| `netlights tui` | A live, full-screen terminal dashboard, `top`-style. Switch views with **g**raph / **r**outes / **i**nterfaces / **d**evices / d**n**s (or `1`–`5`); **h** hides inactive, **p** privacy mode, **s** route sort, `SPACE` pauses, **q** quits. | everywhere |
+| `netlights serve` | Runs the built-in web server and prints its URL — the same graph in a browser, plus `/snapshot.json`. `--port N` (default 8765), `--bind loopback\|all\|egress\|ADDR`. | GitHub build + Linux |
+| `netlights --dump-json` | Prints one `TopologySnapshot` as JSON and exits. | everywhere |
+
+```bash
+netlights tui                      # live dashboard in your terminal
+netlights tui --once --view routes # one frame, no terminal needed (pipes, cron, CI)
+netlights serve --port 9000        # browse at http://127.0.0.1:9000
+ssh box 'netlights tui'            # works fine over SSH
+```
+
+> **`serve` listens on `127.0.0.1` only, by default.** It has no authentication and
+> publishes your interfaces, addresses, routes and DNS servers, so exposing it to the
+> network (`--bind all`) is an explicit choice that prints a warning. See
+> [PRIVACY.md](PRIVACY.md). The **Mac App Store** build cannot listen at all (the sandbox
+> has no incoming-connections entitlement), so `serve` ships only in the Developer-ID
+> build; `tui` opens no sockets and works in both.
+
+On macOS the binary lives inside the app bundle, so add it to your `PATH` once:
+
+```bash
+sudo ln -sf /Applications/NetLights.app/Contents/MacOS/NetLights /usr/local/bin/netlights
+```
+
+Two developer/diagnostic flags also exist (each exits without showing a window):
 
 | Flag | What it does |
 |------|--------------|

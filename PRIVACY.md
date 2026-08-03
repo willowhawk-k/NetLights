@@ -9,8 +9,8 @@ is read from your own Mac and displayed on your screen. The app:
 
 - **Does not collect, store, or transmit any personal data.**
 - **Has no analytics, tracking, telemetry, ads, or accounts.**
-- **Makes no network connections on its own** — with one opt-in exception you trigger
-  explicitly: the **Public IP** button (see below).
+- **Makes no network connections on its own** — with two exceptions you trigger
+  explicitly: the **Public IP** button, and the `serve` command-line mode (both below).
 - Reads system network/hardware state **on-device only** (interfaces, routes,
   USB/Thunderbolt devices, displays, battery, Bluetooth devices) via standard macOS
   APIs, purely to draw the live graph. This information never leaves your Mac.
@@ -32,6 +32,29 @@ the server simply reflects back the public IP it observes from the packet itself
 is the same address every website you visit already sees. The result is shown on your
 screen and is **not stored, logged, or sent anywhere else**. If you never press the
 button, NetLights makes no outbound connections at all.
+
+## Local web UI — `netlights serve` (GitHub build only)
+
+The command-line `serve` mode runs a small **local** web server so you can view the same
+graph in a browser — useful over SSH, or on a machine with no desktop. It is never started
+by the GUI app; it exists only when you run `netlights serve` yourself.
+
+- **It listens on `127.0.0.1` (this machine only) by default.** Nothing on your network can
+  reach it. Binding a routable address is an explicit choice (`--bind all`, `--bind egress`,
+  or a literal address) and prints a warning naming what is being exposed.
+- **There is no authentication.** What it serves is a full inventory of your machine's
+  networking — interface names, IP and MAC addresses, the route table, gateways, DNS
+  servers, and attached-device names. Keep the loopback default, or use an SSH tunnel, on
+  any shared network.
+- It rejects requests carrying an unrecognized `Host` header, so a malicious web page in
+  your browser cannot reach it via DNS rebinding.
+- It makes **no outbound connections** and sends nothing anywhere — it only answers requests
+  you make to it. Nothing is stored or logged.
+- **The Mac App Store build cannot do this at all**: it is sandboxed without the
+  "incoming network connections" entitlement, so `serve` is not included in that build.
+  It is available only in the Developer-ID build from GitHub.
+
+The `tui` command-line mode opens no sockets whatsoever — it only draws to your terminal.
 
 ## Location
 

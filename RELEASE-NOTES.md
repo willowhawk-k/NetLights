@@ -13,22 +13,6 @@ Future enhancements are listed first; the release history follows, newest at the
 
 Backlog — not committed work, just where we're headed. Each carries a feasibility note.
 
-### Command-line modes: terminal UI + headless web server (all OSes)
-Make NetLights useful beyond the desktop GUI — over SSH, on servers, in scripts — with one
-unified CLI on macOS, Linux, and Windows. `netlights tui` runs a **`top`-style terminal UI**:
-a full-screen live view (~1 s refresh) with tabs switched by key (**g**/**r**/**i**/**d**/**n**
-or 1–5, **q** to quit) showing interfaces / routes / devices / DNS as text tables (an ASCII
-rendition of the layered graph is a stretch goal). `netlights serve [--port N] [--bind addr]`
-runs the **headless web server** (today's Linux web UI) on *any* OS — run it on a remote box
-and point a browser at it; port and bind address are configurable (default bind: all
-interfaces, or `--bind egress` for the primary NIC's egress IP). The default (no args) stays
-the native GUI. **Feasibility:** the web server + SVG renderer already exist on Linux and are
-mostly portable (BSD sockets work on Darwin too), so extending `serve` to macOS/Windows is
-modest; the TUI is the main new build (a portable text renderer in Core + a small per-OS
-raw-terminal input shim). **Caveat:** the macOS **App Store** sandbox blocks listening sockets
-(no `network.server` entitlement) → `serve` ships only on the Developer-ID/GitHub macOS build;
-`tui` works everywhere (no socket).
-
 ### HDMI port + display capabilities
 Detect whether the dedicated HDMI port has a display attached, identify it, and — stretch —
 whether it supports features like eARC. Display *detection* via CoreGraphics is feasible;
@@ -49,6 +33,35 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 ---
 
 ## Release history
+
+### Unreleased
+
+- **NetLights on the command line — the same on every OS.** Running it with no arguments
+  still opens the app; now the binary is also a proper CLI. **`netlights tui`** is a live,
+  full-screen terminal dashboard in the spirit of `top` — switch views with **g**raph /
+  **r**outes / **i**nterfaces / **d**evices / d**n**s (or `1`–`5`), **h** to hide inactive,
+  **p** for privacy mode, **s** to re-sort routes, `SPACE` to pause, **q** to quit. It works
+  over SSH, adapts to your terminal's width and colour support, and `tui --once` prints a
+  single frame for pipes, cron jobs and CI.
+- **`netlights serve` runs the web UI anywhere.** The browser view that shipped on Linux now
+  works on macOS too — the same live graph plus `/snapshot.json`, with a configurable
+  `--port` and `--bind`. **It listens on `127.0.0.1` by default**: it has no authentication
+  and publishes your interfaces, addresses, routes and DNS servers, so reaching it from the
+  network is an explicit `--bind all` that prints a warning. It also refuses requests with an
+  unrecognized `Host`, so a hostile web page can't read it out of your browser.
+  (The Mac App Store build is sandboxed without the incoming-connections entitlement, so
+  `serve` ships only in the Developer-ID/GitHub build; `tui` opens no sockets and works in both.)
+- **Fixed: the browser reported throughput eight times too slow.** The web UI derived rates in
+  bytes/sec while the app and its link-speed labels use bits/sec. Rate derivation now lives in
+  one shared place, so the terminal, the app and the browser agree on every number.
+- **Fixed: `--bind` never worked on Linux.** The server hardcoded "all interfaces" and ignored
+  the address it was given — meaning it was reachable from the whole LAN regardless. It now
+  honours the setting, and defaults to loopback.
+- **Fixed: a crash when launched from a terminal.** macOS attributes a privacy request to the
+  *responsible* process, so reading Bluetooth from a shell-launched NetLights was killed
+  outright by the system even though the app declares the required usage string. The
+  command-line modes now skip the Bluetooth and display-name probes; USB and Thunderbolt
+  devices are unaffected.
 
 ### 1.8.1 — 2026-08-03
 - **Accurate multi-gig link speeds.** A 2.5 Gigabit link now reads **2.5 Gbps** rather than
