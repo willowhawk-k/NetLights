@@ -59,9 +59,20 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
   honours the setting, and defaults to loopback.
 - **Fixed: a crash when launched from a terminal.** macOS attributes a privacy request to the
   *responsible* process, so reading Bluetooth from a shell-launched NetLights was killed
-  outright by the system even though the app declares the required usage string. The
-  command-line modes now skip the Bluetooth and display-name probes; USB and Thunderbolt
-  devices are unaffected.
+  outright by the system even though the app declares the required usage string. Every
+  command-line path — including `--dump-json` — now skips the Bluetooth and display-name
+  probes unless the app was genuinely launched as an app; USB and Thunderbolt devices are
+  unaffected. Typing `netlights` with no arguments hands off to LaunchServices, so the
+  window opens as a normal app with the full device list.
+- **Fixed: the terminal dashboard's status line was never visible.** Each frame emitted one
+  line terminator too many, scrolling the header — version, machine model, egress interface,
+  link counts, power state, clock — off the top before the frame finished drawing.
+- **Hardened the terminal dashboard and the web server.** Device names, Wi-Fi network names
+  and DNS search domains are supplied by other parties and can contain terminal escape
+  sequences, so they are now neutered before being drawn (and escaped before reaching the
+  browser). `serve` gained connection timeouts, so a client that connects and says nothing
+  can no longer wedge it, and it caches snapshots instead of re-running a full hardware scan
+  on every request.
 
 ### 1.8.1 — 2026-08-03
 - **Accurate multi-gig link speeds.** A 2.5 Gigabit link now reads **2.5 Gbps** rather than

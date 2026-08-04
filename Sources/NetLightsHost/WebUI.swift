@@ -50,7 +50,11 @@ extension WebServer {
         <script>
         const $=id=>document.getElementById(id);
         document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{const t=b.dataset.tab;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.tab-content').forEach(c=>c.hidden=(c.dataset.tab!==t));});
-        function cell(c,head){const e=document.createElement(head?'th':'td');if(c&&typeof c==='object'){e.innerHTML=c.html;e.className=c.cls||(c.mono?'mono':'');}else{e.textContent=c==null?'':c;}return e;}
+        function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
+        // Snapshot strings are attacker-influenced (USB product strings, SSIDs, DHCP search
+        // domains), so anything destined for innerHTML is escaped. `raw` is opt-in and used
+        // only for markup we generate ourselves, never for snapshot data.
+        function cell(c,head){const e=document.createElement(head?'th':'td');if(c&&typeof c==='object'){if(c.raw){e.innerHTML=c.html;}else{e.textContent=c.html==null?'':String(c.html);}e.className=c.cls||(c.mono?'mono':'');}else{e.textContent=c==null?'':c;}return e;}
         function table(hs,rs){const el=document.createElement('table');const h=document.createElement('tr');for(const x of hs)h.appendChild(cell(x,true));el.appendChild(h);for(const r of rs){const tr=document.createElement('tr');for(const x of r)tr.appendChild(cell(x,false));el.appendChild(tr);}return el;}
         function fill(t,hs,rs){const el=$(t);el.innerHTML='';const h=document.createElement('tr');for(const x of hs)h.appendChild(cell(x,true));el.appendChild(h);for(const r of rs){const tr=document.createElement('tr');for(const x of r)tr.appendChild(cell(x,false));el.appendChild(tr);}}
         function bytes(n){n=Number(n||0);if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB';}
@@ -73,7 +77,7 @@ extension WebServer {
           $('hdr').textContent=(s.machineModel||'')+'  ·  egress: '+(s.egress?(s.egress.viaInterface+' ('+s.egress.kind+')'):'—')+'  ·  '+up+'/'+s.interfaces.length+' up';
           document.querySelectorAll('#graph path.wire').forEach(w=>{const id=w.getAttribute('data-iface');w.classList.toggle('active',!!(id&&r[id]&&r[id].active));});
           fill('ifaces',['','Interface','Type','IPv4','MAC','MTU','RX/s','TX/s','RX','TX'],s.interfaces.map(i=>[
-            {html:'<span class="dot '+(i.linkState||'unknown')+'"></span>'},{html:i.id,mono:1},i.category,
+            {html:'<span class="dot '+(esc(i.linkState)||'unknown')+'"></span>',raw:1},{html:i.id,mono:1},i.category,
             {html:(i.ipv4Addresses||[]).join(', '),mono:1},{html:i.macAddress||'—',mono:1},i.mtu,
             {html:rate(r[i.id]&&r[i.id].rx),cls:'mono rate'},{html:rate(r[i.id]&&r[i.id].tx),cls:'mono rate'},
             bytes(i.rxBytes),bytes(i.txBytes)]));

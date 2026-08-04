@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.8-orange)
+![version](https://img.shields.io/badge/version-1.9-orange)
 
 NetLights arranges every network interface on your Mac into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
@@ -254,27 +254,32 @@ configuration.
 
 ## Contributing
 
-PRs and forks welcome! The project is a single SwiftPM executable target.
+PRs and forks welcome! The code is split so the portable parts can be shared with the
+Linux build:
 
 ```
-Sources/NetLights/
-├── NetLightsApp.swift        # @main App, menu commands, dock icon, lifecycle
-├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices / DNS
-├── NetworkMonitor.swift      # All system data gathering (sysctl/IOKit/CoreWLAN/CoreGraphics, in-process)
-├── IOKitProbe.swift          # Low-level IOKit/CoreGraphics probes (USB tree, TB, displays, power)
-├── BluetoothProbe.swift      # IOBluetooth connected-device list (TCC-gated, optional)
-├── InterfaceModel.swift      # Data models + per-Mac port layout table
-├── NetworkGraphView.swift    # The layered graph: band sizing, tidy-tree layout, lines
-├── InterfaceNodeView.swift   # Interface node + tooltip
-├── HardwarePortNodeView.swift# Hardware port / iPhone node
-├── DeviceNodeView.swift      # USB / display device chip
-├── WifiEntityView / VideoEntityView / BluetoothEntityView / BatteryEntityView  # Hardware-row entities
-├── GatewayNodeView.swift     # Gateway node + tooltip
-├── Tooltips.swift            # Central hover tooltips (port / device / gateway / link)
-├── AppIconView.swift         # SwiftUI app icon (also rasterized for the dock)
-├── AboutView.swift / HelpView.swift
-└── AssetExport.swift         # Build-time .icns / QR generation
-scripts/build-app.sh          # Packages dist/NetLights.app + zip
+Sources/
+├── NetLightsCore/            # portable, Foundation-only — no platform imports
+│   ├── InterfaceModel.swift      # data models, TopologySnapshot, per-Mac port layout table
+│   ├── Normalize.swift           # pure transforms: gateways, egress, route classification
+│   ├── GraphLayoutEngine.swift   # renderer-agnostic geometry (bands, tidy tree, wires)
+│   ├── GraphSVGRenderer.swift    # the graph as SVG (used by `serve`)
+│   ├── TUIRender.swift           # the terminal dashboard, as a pure snapshot -> ANSI function
+│   ├── TrafficRates.swift        # shared rate deriver, so app/TUI/web report the same numbers
+│   └── CommandLine.swift         # the CLI grammar, identical on every platform
+├── NetLightsHost/            # libc layer: termios terminal driver + BSD-socket web server
+├── NetLightsMac/             # the macOS app
+│   ├── NetLightsCLI.swift        # @main: dispatches GUI vs tui/serve/--dump-json
+│   ├── NetLightsApp.swift        # SwiftUI App, menu commands, dock icon, lifecycle
+│   ├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices / DNS
+│   ├── NetworkMonitor.swift      # system data gathering (sysctl/IOKit/CoreWLAN/SC)
+│   ├── IOKitProbe.swift          # IOKit/CoreGraphics probes (USB tree, TB, displays, power)
+│   ├── BluetoothProbe.swift      # IOBluetooth connected-device list (TCC-gated, optional)
+│   ├── NetworkGraphView.swift    # the layered graph in SwiftUI
+│   └── *NodeView / *EntityView / Tooltips / AboutView / HelpView / AssetExport
+└── NetLightsLinux/           # the Linux collectors + entry point
+scripts/build-app.sh          # packages dist/NetLights.app + zip
+scripts/verify-linux-cli.sh   # CLI verification suite, run on a Linux box
 ```
 
 **Adding your Mac's port layout:** if your model shows generic port positions,
@@ -307,11 +312,33 @@ ssh box 'netlights tui'            # works fine over SSH
 > has no incoming-connections entitlement), so `serve` ships only in the Developer-ID
 > build; `tui` opens no sockets and works in both.
 
-On macOS the binary lives inside the app bundle, so add it to your `PATH` once:
+#### Installing the command
+
+The easiest route is Homebrew — one tap, then either package:
 
 ```bash
-sudo ln -sf /Applications/NetLights.app/Contents/MacOS/NetLights /usr/local/bin/netlights
+brew tap willowhawk-k/tap
+brew install --cask netlights     # the app + the `netlights` command
 ```
+
+If you already have NetLights from the **Mac App Store** and only want the command line,
+install the shim instead (the App Store build can't `serve`, but `tui` and `--dump-json`
+work):
+
+```bash
+brew install netlights-cli
+```
+
+Install one or the other — both provide a `netlights` executable. Without Homebrew, point
+your `PATH` at the shim inside the bundle:
+
+```bash
+sudo ln -sf "/Applications/NetLights.app/Contents/Resources/netlights" /usr/local/bin/netlights
+```
+
+Link the shim in `Contents/Resources`, not the executable in `Contents/MacOS` — a symlink
+straight to the executable stops it resolving its own bundle, so it reports the wrong
+version and won't open the app window.
 
 Two developer/diagnostic flags also exist (each exits without showing a window):
 

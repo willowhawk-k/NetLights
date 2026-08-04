@@ -16,8 +16,9 @@ class NetlightsCli < Formula
 
   depends_on :macos
 
-  conflicts_with cask:    "netlights",
-                 because: "both install a `netlights` executable"
+  # NOTE: Homebrew's Formula DSL has no formula-vs-CASK conflict. `conflicts_with cask:`
+  # is silently accepted and does nothing, so it was removed rather than left as a false
+  # guarantee — the caveats below carry the warning instead.
 
   def install
     bin.install "scripts/netlights-shim.sh" => "netlights"
@@ -25,6 +26,9 @@ class NetlightsCli < Formula
 
   def caveats
     <<~EOS
+      Do NOT install this alongside the `netlights` cask — both provide a `netlights`
+      command and Homebrew cannot detect the clash automatically. Pick one.
+
       `netlights` will run whichever NetLights.app it finds in /Applications or
       ~/Applications — including the Mac App Store build.
 

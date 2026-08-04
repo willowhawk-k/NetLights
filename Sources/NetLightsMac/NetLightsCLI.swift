@@ -1,5 +1,12 @@
 import Foundation
 import AppKit
+// Required, not decorative: `NetLightsApp.main()` below is a member of the SwiftUI `App`
+// protocol extension, and the App Store Xcode target builds with
+// SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY, which demands that the CALLING file
+// import the module declaring the member. SwiftPM does not enable that feature, so
+// `swift build` compiles without this import and the break is invisible until an
+// xcodebuild/Archive — which is the only path that ships to the App Store.
+import SwiftUI
 
 // The macOS entry point. It exists so ONE binary can be both a double-clickable .app and a
 // command-line tool: this runs before SwiftUI/AppKit boots, decides which it is, and hands
@@ -27,12 +34,13 @@ enum NetLightsCLI {
                 relaunchViaLaunchServicesIfNeeded()   // exits if it hands off
                 NetLightsApp.main()          // SwiftUI's entry point; never returns
 
-            case .dumpJSON:
-                // Deliberately NOT handled here. AppDelegate already implements it once
-                // AppKit is up, which is what gives it display names and Bluetooth devices
-                // (both need a WindowServer connection). Handling it early would silently
-                // drop those fields from the cross-platform contract, so let it through.
-                NetLightsApp.main()
+            case .dumpJSON(let pretty):
+                // Handled HERE, before AppKit starts. It used to fall through to
+                // AppDelegate, which called snapshot() with allowUIProbes defaulting to
+                // true — so `netlights --dump-json` from a terminal reached IOBluetooth
+                // while attributed to the shell and was killed by TCC. That is a hard
+                // crash, not a denial, and it produced no JSON at all.
+                dumpJSON(pretty: pretty)
 
             case .help:
                 print(netLightsHelpText)
@@ -73,6 +81,15 @@ enum NetLightsCLI {
         // (the collector's guards keep that degraded-but-alive).
         guard bundleURL.pathExtension == "app" else { return }
 
+        // The release script drives the BUNDLED binary with its own flags
+        // (`--export-iconset <dir>`, `--probe-dump`) and reads their stdout. Handing those
+        // off would launch a detached GUI instance, drop the arguments, and exit 0 with no
+        // output — a silent packaging failure that build-app.sh would not notice because
+        // its call ends in `|| true`. Those flags must run in-process.
+        let passthrough: Set<String> = ["--export-iconset", "--probe-dump"]
+        guard !CommandLine.arguments.dropFirst().contains(where: { passthrough.contains($0) })
+        else { return }
+
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         configuration.createsNewApplicationInstance = false
@@ -85,9 +102,32 @@ enum NetLightsCLI {
             handedOff = (app != nil)
             done.signal()
         }
+        // On timeout `handedOff` is still false, so we fall through and run in-process
+        // rather than exiting on a hand-off that may never have happened.
         _ = done.wait(timeout: .now() + 10)
         if handedOff { exit(0) }
         // Hand-off failed — fall through and run in-process rather than doing nothing.
+    }
+
+    // MARK: - --dump-json
+
+    /// The cross-platform snapshot contract. Runs before AppKit and never touches the
+    /// privacy-gated probes unless we were genuinely launched as an app, so it produces
+    /// JSON from a terminal instead of being killed by TCC.
+    @MainActor
+    private static func dumpJSON(pretty: Bool) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = pretty ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+        let snapshot = NetworkMonitor().snapshot(
+            includingPorts: true,
+            allowUIProbes: NetworkMonitor.launchedByLaunchServices)
+        guard let data = try? encoder.encode(snapshot),
+              let json = String(data: data, encoding: .utf8) else {
+            FileHandle.standardError.write(Data("netlights: failed to encode snapshot\n".utf8))
+            exit(1)
+        }
+        print(json)
+        exit(0)
     }
 
     // MARK: - tui

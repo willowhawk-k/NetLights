@@ -11,6 +11,27 @@
 # bundle loses all of that and crashes the moment the collector touches Bluetooth.
 set -u
 
+# If this shim was installed INSIDE an app bundle (Contents/Resources/netlights, which is
+# what the Homebrew cask symlinks to), exec that bundle's binary. Resolving our own path
+# matters: a bare symlink straight to Contents/MacOS/NetLights does NOT let the executable
+# resolve Bundle.main back to the .app, so it reports version "dev" and never hands the GUI
+# off to LaunchServices. Going through the bundle path fixes both.
+self="$0"
+while [ -L "$self" ]; do
+    target=$(readlink "$self")
+    case "$target" in
+        /*) self="$target" ;;
+        *)  self="$(dirname "$self")/$target" ;;
+    esac
+done
+selfdir="$(cd "$(dirname "$self")" && pwd)"
+case "$selfdir" in
+    */Contents/Resources)
+        own="$(dirname "$selfdir")/MacOS/NetLights"
+        [ -x "$own" ] && exec "$own" "$@"
+        ;;
+esac
+
 for app in \
     "/Applications/NetLights.app" \
     "$HOME/Applications/NetLights.app" \

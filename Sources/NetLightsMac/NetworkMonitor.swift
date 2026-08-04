@@ -121,7 +121,11 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     /// in `refresh()`, this gathers everything synchronously — including the expensive
     /// port query — so the returned snapshot is self-contained (used by `--dump-json` and
     /// as the cross-platform contract). Reads no `@Published` state and assigns none.
-    func snapshot() -> TopologySnapshot { snapshot(includingPorts: true) }
+    /// `TopologyCollector` conformance. The UI-probe decision is made HERE rather than
+    /// left to a default, because getting it wrong is a hard TCC crash, not missing data.
+    func snapshot() -> TopologySnapshot {
+        snapshot(includingPorts: true, allowUIProbes: Self.launchedByLaunchServices)
+    }
 
     /// True when LaunchServices started us (Dock, Finder, `open`) rather than a shell.
     /// LS-launched processes get `XPC_SERVICE_NAME=application.<bundle-id>.<n>.<m>`;
@@ -135,7 +139,21 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     /// `__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__`. `NSScreen` is a softer version of the
     /// same problem — it needs a WindowServer connection that an SSH session hasn't got.
     static var launchedByLaunchServices: Bool {
-        (ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] ?? "0") != "0"
+        // LaunchServices sets XPC_SERVICE_NAME to `application.<bundle-id>.<n>.<m>`, and a
+        // plain shell gets "0". But that variable is INHERITED: a terminal hosted inside an
+        // LS-launched app (VS Code, Cursor, any Electron IDE) passes ITS value down to the
+        // shell and on to us — so a bare `!= "0"` test reports "launched as an app" for a
+        // command the user typed, re-enabling the very TCC crash this guard prevents.
+        //
+        // Require the value to name THIS bundle, so an inherited one from Code.app or
+        // iTerm.app doesn't match. Then require no controlling terminal: an app launched by
+        // LaunchServices has stdin on /dev/null, whereas anything typed at a prompt has a
+        // tty. Either check alone is spoofable by inheritance; together they are not.
+        let service = ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] ?? "0"
+        guard service != "0" else { return false }
+        if let bundleID = Bundle.main.bundleIdentifier,
+           !service.contains(bundleID) { return false }
+        return isatty(STDIN_FILENO) == 0
     }
 
     /// `includingPorts: false` skips the expensive tier — the IOKit port walk,
@@ -147,7 +165,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     /// `NSScreen` display names and IOBluetooth — which a terminal-launched process must
     /// never touch (see `launchedByLaunchServices`). USB/Thunderbolt still come through:
     /// those read the IOKit registry, which carries no TCC gate.
-    func snapshot(includingPorts: Bool, allowUIProbes: Bool = true) -> TopologySnapshot {
+    func snapshot(includingPorts: Bool, allowUIProbes: Bool) -> TopologySnapshot {
         let interfaces = Self.gatherInterfaces()
         let routes     = Self.gatherRoutes()
         let rank       = Self.serviceOrder()

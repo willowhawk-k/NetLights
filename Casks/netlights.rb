@@ -13,10 +13,11 @@ cask "netlights" do
   depends_on macos: :ventura
 
   app "NetLights.app"
-  # Puts `netlights` on PATH by symlinking the in-bundle executable. A symlink (not a
-  # copy) is required: the binary resolves Bundle.main to its enclosing .app, which is
-  # where the Info.plist usage strings and the code signature live.
-  binary "#{appdir}/NetLights.app/Contents/MacOS/NetLights", target: "netlights"
+  # Point at the shim in Contents/Resources, NOT straight at Contents/MacOS/NetLights.
+  # Verified: a symlink to the executable itself does not let it resolve Bundle.main back
+  # to the .app — `netlights --version` reports "dev (0)" and the LaunchServices hand-off
+  # never fires. The shim execs its own bundle's binary by absolute path, so both work.
+  binary "#{appdir}/NetLights.app/Contents/Resources/netlights", target: "netlights"
 
   # The Mac App Store build installs to the same path, /Applications/NetLights.app, so the
   # two cannot coexist. Homebrew must not delete an app it didn't install — and a Store app

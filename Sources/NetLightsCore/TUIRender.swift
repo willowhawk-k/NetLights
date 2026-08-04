@@ -36,9 +36,33 @@ public func displayWidth(_ s: String) -> Int {
     return w
 }
 
+/// Replace control characters with a visible placeholder before anything reaches the
+/// terminal. Snapshot strings are ATTACKER-INFLUENCED: a USB product string, a Wi-Fi SSID
+/// and a DHCP-supplied search domain are all chosen by someone else, and any of them can
+/// carry ESC. Unfiltered, a device name containing `ESC[2J ESC[1;1H` repaints the
+/// operator's screen with content of its choosing — it can blank the display, fake rows, or
+/// hide an interface. Applied in `clip`, which every rendered cell goes through.
+func sanitizeForTerminal(_ s: String) -> String {
+    guard s.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F
+                                             || (0x80...0x9F).contains($0.value) })
+    else { return s }                      // fast path: the overwhelming majority
+    var out = String.UnicodeScalarView()
+    for u in s.unicodeScalars {
+        if u.value < 0x20 || u.value == 0x7F || (0x80...0x9F).contains(u.value) {
+            out.append("\u{FFFD}")         // C0, DEL and C1 — includes ESC (0x1B)
+        } else {
+            out.append(u)
+        }
+    }
+    return String(out)
+}
+
 /// Truncate to `width` cells, marking elision. Width-aware on both ends.
-func clip(_ s: String, _ width: Int, unicode: Bool) -> String {
+func clip(_ raw: String, _ width: Int, unicode: Bool) -> String {
     guard width > 0 else { return "" }
+    // Single choke point for escape-sequence neutering: every column in every view is
+    // rendered through cell() -> clip().
+    let s = sanitizeForTerminal(raw)
     if displayWidth(s) <= width { return s }
     let ell = unicode ? "…" : "."
     let budget = width - displayWidth(ell)

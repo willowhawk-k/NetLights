@@ -29,12 +29,18 @@ struct NetLightsLinuxMain {
             case .version:
                 print("NetLights \(netLightsVersion) · Linux")
 
-            case .gui, .dumpJSON:
+            case .gui:
+                // No window on Linux yet; a JSON dump is the most useful fallback.
+                fallthrough
+
+            case .dumpJSON:
                 // No window on Linux yet, so `.gui` can't arrive via the default above —
                 // but if that default ever changes, a JSON dump is a more useful fallback
                 // than doing nothing.
+                var pretty = true
+                if case .dumpJSON(let p) = mode { pretty = p }   // honour --compact
                 let encoder = JSONEncoder()
-                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                encoder.outputFormatting = pretty ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
                 if let data = try? encoder.encode(collector.snapshot()),
                    let json = String(data: data, encoding: .utf8) {
                     print(json)
@@ -57,8 +63,18 @@ struct NetLightsLinuxMain {
                 }
 
             case .serve(let options):
-                let server = WebServer(bind: options.bind, port: options.port,
-                                       pollMS: options.pollMS) { collector.snapshot() }
+                let host = options.bind == .all ? "127.0.0.1" : options.bind.label
+                let port = options.port
+                let server = WebServer(
+                    bind: options.bind, port: options.port, pollMS: options.pollMS,
+                    // --open was accepted and documented but silently ignored here.
+                    onReady: options.openBrowser ? {
+                        let p = Process()
+                        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                        p.arguments = ["xdg-open", "http://\(host):\(port)"]
+                        try? p.run()
+                    } : nil
+                ) { collector.snapshot() }
                 exit(server.run())
             }
         }
