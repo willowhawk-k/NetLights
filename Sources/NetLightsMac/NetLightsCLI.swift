@@ -24,6 +24,7 @@ enum NetLightsCLI {
         case .ok(let mode):
             switch mode {
             case .gui:
+                relaunchViaLaunchServicesIfNeeded()   // exits if it hands off
                 NetLightsApp.main()          // SwiftUI's entry point; never returns
 
             case .dumpJSON:
@@ -48,6 +49,45 @@ enum NetLightsCLI {
                 runWebServer(options)
             }
         }
+    }
+
+    // MARK: - GUI hand-off
+
+    /// Typing `netlights` in a terminal should open the app exactly as double-clicking it
+    /// does — but a process started by a shell stays *attributed to the shell*. macOS then
+    /// refuses privacy-gated APIs on the terminal's behalf, and refusal here is fatal:
+    /// touching IOBluetooth in that state is killed outright with
+    /// `__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__`, even though the bundle declares the
+    /// usage string. (Seen in the wild: the shipped 1.8.1 app crashes this way whenever it
+    /// is launched from a shell.)
+    ///
+    /// So don't run the GUI in-process at all: ask LaunchServices to open the bundle, which
+    /// starts a normally-attributed instance with full display and Bluetooth data, and exit.
+    /// No relaunch loop is possible — the new process is LaunchServices-launched and takes
+    /// the ordinary path.
+    @MainActor
+    private static func relaunchViaLaunchServicesIfNeeded() {
+        guard !NetworkMonitor.launchedByLaunchServices else { return }
+        let bundleURL = Bundle.main.bundleURL
+        // `swift run` produces a bare executable with no .app to hand off to; run in-process
+        // (the collector's guards keep that degraded-but-alive).
+        guard bundleURL.pathExtension == "app" else { return }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = false
+
+        // The completion arrives on a background queue and the run loop hasn't started, so
+        // waiting here is safe.
+        let done = DispatchSemaphore(value: 0)
+        var handedOff = false
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { app, _ in
+            handedOff = (app != nil)
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 10)
+        if handedOff { exit(0) }
+        // Hand-off failed — fall through and run in-process rather than doing nothing.
     }
 
     // MARK: - tui
