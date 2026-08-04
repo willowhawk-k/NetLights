@@ -259,7 +259,12 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
 // MARK: - Route Entry
 
 public struct RouteEntry: Identifiable, Codable {
-    public let id = UUID()
+    /// Derived, not stored. A stored `let id = UUID()` is encoded but can never be decoded
+    /// (Swift warns about exactly this), so every run emitted a different random value and
+    /// `--dump-json` was non-deterministic — two dumps of an unchanged machine differed by
+    /// hundreds of lines, which defeats diffing a snapshot or comparing macOS against Linux.
+    /// A computed property isn't encoded at all, and identity is stable across a round trip.
+    public var id: String { "\(destination)|\(gateway)|\(interfaceName)" }
     var destination: String
     var gateway: String
     var netmask: String?
@@ -807,7 +812,9 @@ func formatDiskCapacity(_ bytes: UInt64) -> String {
 /// tests, or dumped as JSON. Live throughput is NOT stored here: it's derived from each
 /// interface's cumulative `rxBytes`/`txBytes` by a stateful rate deriver, per platform.
 public struct TopologySnapshot: Codable {
-    public var schemaVersion: Int = 1
+    // 2: RouteEntry.id became a derived key and is no longer encoded (it was a random UUID
+    //    that could not round-trip). 1: initial cross-platform contract.
+    public var schemaVersion: Int = 2
     public var machineModel: String     // hw.model (macOS) / DMI product name (Linux); "" if unknown
     public var interfaces: [InterfaceInfo] = []
     public var routes: [RouteEntry] = []
@@ -821,7 +828,7 @@ public struct TopologySnapshot: Codable {
     // Explicit public init mirrors the (otherwise internal) memberwise init exactly, so
     // macOS construction is unchanged while a separate module (the Linux CLI) can build
     // a snapshot too.
-    public init(schemaVersion: Int = 1, machineModel: String,
+    public init(schemaVersion: Int = 2, machineModel: String,
                 interfaces: [InterfaceInfo] = [], routes: [RouteEntry] = [],
                 gateways: [GatewayNode] = [], hardwarePorts: [HardwarePort] = [],
                 attachedDevices: [AttachedDevice] = [], egress: EgressInfo? = nil,

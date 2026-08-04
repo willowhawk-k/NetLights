@@ -272,7 +272,7 @@ public struct WebServer {
         let header = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\n"
             + "Content-Length: \(bytes.count)\r\nConnection: close\r\nCache-Control: no-store\r\n"
             + "X-Content-Type-Options: nosniff\r\n\r\n"
-        _ = Array(header.utf8).withUnsafeBytes { writeAll(fd, $0) }
+        Array(header.utf8).withUnsafeBytes { writeAll(fd, $0) }
         bytes.withUnsafeBytes { writeAll(fd, $0) }
     }
 

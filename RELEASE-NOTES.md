@@ -34,6 +34,16 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
+### 1.9.1 — 2026-08-04
+
+- **Snapshots are now reproducible.** `netlights --dump-json` gave different output on every
+  run of an unchanged machine: each route carried a random identifier that was written out but
+  could never be read back. Route identity is now derived from the route itself, so two dumps
+  of the same machine match — which is what makes them worth diffing, and what lets a macOS and
+  a Linux snapshot be compared. (`schemaVersion` is now **2**: routes no longer carry that
+  field. Nothing read it.)
+- Housekeeping: the project builds warning-free again.
+
 ### 1.9.0 — 2026-08-04
 
 - **NetLights on the command line — the same on every OS.** Running it with no arguments

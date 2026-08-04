@@ -146,7 +146,10 @@ enum ExternalIPProbe {
 }
 
 /// Guards a `CheckedContinuation` so exactly one of {answer, failure, timeout} resumes it.
-private final class ResumeBox<T> {
+// Guards a CheckedContinuation behind an NSLock, so it is genuinely safe to hand across
+// concurrency domains — `@unchecked` states that the safety is provided by the lock rather
+// than by the type system, which is exactly the case here.
+private final class ResumeBox<T>: @unchecked Sendable {
     private var cont: CheckedContinuation<T, Never>?
     private let lock = NSLock()
     init(_ c: CheckedContinuation<T, Never>) { cont = c }

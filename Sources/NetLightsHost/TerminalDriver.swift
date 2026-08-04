@@ -141,7 +141,7 @@ private func clockLabel() -> String {
 
 /// One `write(2)` per frame — no partial-frame tearing, and far cheaper than print().
 private func writeAll(_ s: String) {
-    var bytes = Array(s.utf8)
+    let bytes = Array(s.utf8)
     var sent = 0
     bytes.withUnsafeBytes { buf in
         guard let base = buf.baseAddress else { return }
@@ -151,7 +151,6 @@ private func writeAll(_ s: String) {
             sent += n
         }
     }
-    _ = bytes.count
 }
 
 /// Pick a colour tier once at startup. NO_COLOR is honoured (no-color.org), and a
