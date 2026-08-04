@@ -25,7 +25,7 @@ Fedora / CentOS Stream / AlmaLinux, openSUSE, Arch). Installable via
    (RHEL 8 ≈ 2.28, SLES 15 ≈ 2.31, Debian 11 ≈ 2.31) that would otherwise force a
    lowest-common-baseline build — the musl-static binary sidesteps glibc entirely, so one
    artifact runs on all of them. Every package format wraps this same artifact.
-2. **Web renderer** — `netlights-linux` runs a small local HTTP server; the graph is SVG
+2. **Web renderer** — `netlights` runs a small local HTTP server; the graph is SVG
    generated from the shared `GraphLayoutEngine`, the browser is the view. Reuses the
    engine, no GTK/Qt, future-proofs Windows.
 3. **Full-parity collectors**, but the fiddly ones (**Bluetooth/BlueZ, Wi-Fi/nl80211**)
@@ -87,7 +87,7 @@ only for the mainstream desktops, never the thing broad-distro reach depends on.
 ```
 #if os(macOS)   → executable "NetLights"       on Sources        (Core+Mac = one module, unchanged)
 #else           → library    "NetLightsCore"                     (its own module)
-                + executable "netlights-linux" on Sources/NetLightsLinux
+                + executable "netlights" on Sources/NetLightsLinux
 ```
 - Make the Core API **`public`** (needed once Linux imports it as a real module).
 - Keep the macOS product named **`NetLights`** (build-app.sh depends on it).
@@ -105,7 +105,7 @@ only for the mainstream desktops, never the thing broad-distro reach depends on.
 - **Verify Foundation provides `CGPoint`/`CGFloat` on Linux** (the known gotcha — the
   `#if canImport(CoreGraphics)` guard should fall through to Foundation's CGGeometry).
   Fix any Foundation API gaps that surface (URLSession, date/formatting, etc.).
-- **Verify:** `swift build -c release` on Ubuntu (arm64/UTM) builds `netlights-linux`;
+- **Verify:** `swift build -c release` on Ubuntu (arm64/UTM) builds `netlights`;
   `--dump-json` emits schema-valid JSON; macOS still green; Core still pure.
 - **Milestone:** Swift + the portable Core proven on Linux, end to end.
 
@@ -124,13 +124,13 @@ only for the mainstream desktops, never the thing broad-distro reach depends on.
 - **Milestone:** a real, data-complete snapshot on Linux.
 
 ### L2 — Web renderer  *(the UI)*
-- `netlights-linux serve`: minimal local HTTP server — `/` static HTML/JS shell,
+- `netlights serve`: minimal local HTTP server — `/` static HTML/JS shell,
   `/snapshot.json` the live snapshot, the graph as **SVG generated from `GraphGeometry`**
   (shared engine; `ColorToken` → CSS/SVG palette). Page polls ~0.75s, redraws; the
   Interfaces/Routes/DNS/Devices tables as HTML; Privacy toggle client-side.
 - Write the **SVG emitter** over the engine geometry (bands, node rects, connection
   curves, brackets, labels) — the renderer analog of `NetworkGraphView`.
-- A `.desktop` launcher + the default `netlights-linux` invocation = serve + open browser.
+- A `.desktop` launcher + the default `netlights` invocation = serve + open browser.
 - **Decision at L2:** HTTP server = SwiftNIO (robust, heavier) vs a hand-rolled minimal
   server (fewer deps, friendlier to static linking). Lean minimal unless NIO earns its keep.
 - **Verify:** open in a browser on the VM; graph + tables match the machine; live traffic
@@ -194,7 +194,7 @@ only for the mainstream desktops, never the thing broad-distro reach depends on.
   macOS" test keeps them identical.
 
 ## Verification harness (adds to the macOS one)
-- **Linux:** `swift build -c release` (Ubuntu arm64/UTM) + `netlights-linux --dump-json`
+- **Linux:** `swift build -c release` (Ubuntu arm64/UTM) + `netlights --dump-json`
   schema-check + a browser smoke test.
 - **Cross-platform:** `--dump-json` schema diff macOS↔Linux; render a captured Linux
   snapshot through the macOS engine.

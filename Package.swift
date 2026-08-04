@@ -36,7 +36,7 @@ if buildLinux {
                     dependencies: ["NetLightsCore"],
                     path: "Sources/NetLightsHost"),
             .executableTarget(
-                name: "netlights-linux",
+                name: "netlights",
                 dependencies: ["NetLightsCore", "NetLightsHost"],
                 path: "Sources/NetLightsLinux",
                 swiftSettings: [.unsafeFlags(["-parse-as-library"])]

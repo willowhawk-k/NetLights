@@ -34,7 +34,7 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
-### Unreleased
+### 1.9.0 — 2026-08-04
 
 - **NetLights on the command line — the same on every OS.** Running it with no arguments
   still opens the app; now the binary is also a proper CLI. **`netlights tui`** is a live,

@@ -225,15 +225,25 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
         if (portQueryCounter == 1 || portQueryCounter % 4 == 0) && !portQueryInFlight {
             portQueryInFlight = true
             let model = macModel
+            // Both probes below need a real GUI session. If this process was started from
+            // a shell (the `netlights` symlink opening the GUI, say) TCC attributes the
+            // request to the TERMINAL, which has no usage description, and kills us —
+            // `__TCC_CRASHING_DUE_TO_PRIVACY_VIOLATION__` — while NSScreen has no
+            // WindowServer to talk to. NetLightsCLI hands the GUI off to LaunchServices
+            // precisely so this doesn't happen; this guard is the belt to that's braces,
+            // because the failure mode is a hard crash rather than missing data.
+            let uiProbes = Self.launchedByLaunchServices
             // NSScreen names must be read on the main actor; capture them here and
             // hand them to the off-main IOKit/CoreGraphics port query.
-            let displayNames = IOKitProbe.displayNames()
+            let displayNames = uiProbes ? IOKitProbe.displayNames() : [:]
             // IOBluetooth's classic API wants the main run loop and goes through
             // bluetoothd over XPC, so refresh the connected-device list on a slower
             // cadence (every 4th port query, ~21s) and reuse the cache in between —
             // connection state changes rarely, and this keeps IPC off the hot path.
             btRefreshTick += 1
-            if btRefreshTick % 4 == 1 { btDevicesCache = BluetoothProbe.connectedDevices() }
+            if uiProbes, btRefreshTick % 4 == 1 {
+                btDevicesCache = BluetoothProbe.connectedDevices()
+            }
             let bluetooth = btDevicesCache
             Task.detached(priority: .utility) {
                 let status = NetworkMonitor.queryPortStatus(displayNames: displayNames, bluetooth: bluetooth)
