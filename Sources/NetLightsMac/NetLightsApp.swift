@@ -120,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--dump-json") {
             let enc = JSONEncoder()
             enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+            // NetLightsCLI handles --dump-json before AppKit starts; this remains only for
+            // a LaunchServices launch carrying the flag. snapshot() now decides UI probes
+            // by attribution, so it cannot reach IOBluetooth from a shell.
             if let data = try? enc.encode(NetworkMonitor().snapshot()),
                let json = String(data: data, encoding: .utf8) {
                 print(json)

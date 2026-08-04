@@ -25,6 +25,16 @@ import NetLightsCore
 private let savedTermios = UnsafeMutablePointer<termios>.allocate(capacity: 1)
 private var savedValid = false
 
+/// Swift globals are initialised LAZILY (swift_once + malloc). A signal handler that is the
+/// first thing to touch one would run that machinery in async-signal context — the classic
+/// way a Ctrl-C leaves a terminal wedged. `primeSignalState()` forces every global the
+/// handler needs into existence BEFORE any handler is installed.
+private func primeSignalState() {
+    _ = savedTermios
+    _ = exitBuffer
+    _ = exitSequence.count
+}
+
 /// Leave the alt screen, re-show the cursor, re-enable auto-wrap. Written as raw bytes so
 /// the signal handler can emit it with a bare `write(2)`.
 private let exitSequence = Array("\u{1B}[?25h\u{1B}[?7h\u{1B}[?1049l".utf8)
@@ -46,6 +56,7 @@ private func restoreTerminal() {
 /// alone isn't enough: SIGTERM/SIGHUP can kill us before the loop notices, which is exactly
 /// how a crashed TUI leaves someone's terminal in raw mode.
 private func installSignalHandlers() {
+    primeSignalState()   // never let a handler be the first to touch a lazy global
     for sig in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] {
         signal(sig) { s in
             restoreTerminal()
@@ -53,12 +64,17 @@ private func installSignalHandlers() {
             raise(s)
         }
     }
-    // Ctrl-Z: leave raw mode + alt screen before suspending, or the shell comes back
-    // to a terminal that no longer echoes.
+    // Ctrl-Z: leave raw mode + alt screen before suspending, or the shell comes back to a
+    // terminal that no longer echoes...
     signal(SIGTSTP) { s in
         restoreTerminal()
         signal(s, SIG_DFL)
         raise(s)
+    }
+    // ...and re-enter both on resume, or `fg` leaves the TUI running blind: cooked mode, on
+    // the normal screen, keys echoing into a display that never repaints.
+    signal(SIGCONT) { _ in
+        _ = reenterRawModeAfterResume()
     }
     atexit { restoreTerminal() }
 }
@@ -80,6 +96,24 @@ private func enterRawMode() -> Bool {
         }
     }
     return tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == 0
+}
+
+/// Re-establish raw mode and the alt screen after SIGCONT (`fg`). Uses only
+/// async-signal-safe calls, and the saved termios is already primed.
+private func reenterRawModeAfterResume() -> Bool {
+    guard savedValid else { return false }
+    var raw = savedTermios.pointee
+    raw.c_lflag &= ~(tcflag_t(ICANON) | tcflag_t(ECHO))
+    withUnsafeMutablePointer(to: &raw.c_cc) {
+        $0.withMemoryRebound(to: cc_t.self, capacity: Int(NCCS)) { cc in
+            cc[Int(VMIN)] = 0
+            cc[Int(VTIME)] = 1
+        }
+    }
+    _ = tcsetattr(STDIN_FILENO, TCSANOW, &raw)
+    let enter = Array("\u{1B}[?1049h\u{1B}[?25l\u{1B}[?7l".utf8)
+    _ = enter.withUnsafeBytes { write(STDOUT_FILENO, $0.baseAddress, $0.count) }
+    return true
 }
 
 /// Current terminal size, falling back to COLUMNS/LINES then 80x24 (a pipe or an odd CI pty).
@@ -107,7 +141,7 @@ private func clockLabel() -> String {
 
 /// One `write(2)` per frame — no partial-frame tearing, and far cheaper than print().
 private func writeAll(_ s: String) {
-    var bytes = Array(s.utf8)
+    let bytes = Array(s.utf8)
     var sent = 0
     bytes.withUnsafeBytes { buf in
         guard let base = buf.baseAddress else { return }
@@ -117,7 +151,6 @@ private func writeAll(_ s: String) {
             sent += n
         }
     }
-    _ = bytes.count
 }
 
 /// Pick a colour tier once at startup. NO_COLOR is honoured (no-color.org), and a
@@ -161,7 +194,10 @@ public func runTUI(options: TUIOptions,
         var rates = TrafficRateDeriver()
         let snapshot = collect()
         rates.update(snapshot.interfaces, now: monotonicNow())
-        let size = terminalSize()
+        // In a pipe there is no window size; the 24-row fallback silently TRUNCATED the
+        // view. --once is a report, not a screen, so give it room and let the caller page.
+        var size = terminalSize()
+        if isatty(STDOUT_FILENO) != 1 { size.rows = 10_000 }
         let frame = TUIFrame(columns: size.cols, rows: size.rows,
                              colorMode: colorMode, unicode: unicode,
                              clockLabel: clockLabel(), versionLabel: versionLabel)
@@ -216,8 +252,14 @@ public func runTUI(options: TUIOptions,
             // Home, then each line self-erases to EOL, then clear anything below. This is
             // top(1)'s approach — no ESC[2J, so no flicker, and no cell-diffing engine
             // needed at ~20KB/frame.
+            // No line terminator after the FINAL row: writing one scrolls the whole frame
+            // up by a line, which silently ate the status header on every single frame.
             var out = "\u{1B}[H"
-            for line in lines.prefix(size.rows) { out += line + "\u{1B}[K\r\n" }
+            let rows = Array(lines.prefix(size.rows))
+            for (n, line) in rows.enumerated() {
+                out += line + "\u{1B}[K"
+                if n < rows.count - 1 { out += "\r\n" }
+            }
             out += "\u{1B}[J"
             writeAll(out)
             dirty = false

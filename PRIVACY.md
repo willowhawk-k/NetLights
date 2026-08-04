@@ -1,6 +1,6 @@
 # NetLights Privacy Policy
 
-_Last updated: July 2026_
+_Last updated: August 2026_
 
 **NetLights collects no data. None. It never has.**
 
@@ -42,9 +42,11 @@ by the GUI app; it exists only when you run `netlights serve` yourself.
 - **It listens on `127.0.0.1` (this machine only) by default.** Nothing on your network can
   reach it. Binding a routable address is an explicit choice (`--bind all`, `--bind egress`,
   or a literal address) and prints a warning naming what is being exposed.
-- **There is no authentication.** What it serves is a full inventory of your machine's
-  networking — interface names, IP and MAC addresses, the route table, gateways, DNS
-  servers, and attached-device names. Keep the loopback default, or use an SSH tunnel, on
+- **There is no authentication.** What it serves is a full inventory of your machine —
+  interface names, IP and MAC addresses, the route table, gateways, DNS servers and search
+  domains, the machine model, battery/power state, and every attached USB, Thunderbolt,
+  display and Bluetooth device including names, vendor/product identifiers and **serial
+  numbers** where the OS reports them. Keep the loopback default, or use an SSH tunnel, on
   any shared network.
 - It rejects requests carrying an unrecognized `Host` header, so a malicious web page in
   your browser cannot reach it via DNS rebinding.

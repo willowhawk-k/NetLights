@@ -35,13 +35,25 @@ RES="$CONTENTS/Resources"
 echo "▸ Building release binary…"
 swift build -c release
 
-BIN=".build/release/$APP_NAME"
+# Ask SwiftPM where it actually put the binary. `.build/release` is a SYMLINK that points
+# at whichever configuration built last — so after a Linux cross-build it aims at an ELF
+# binary, and packaging it would produce a broken .app that still signs and notarizes.
+BINDIR="$(swift build -c release --show-bin-path)"
+BIN="$BINDIR/$APP_NAME"
 [ -f "$BIN" ] || { echo "✗ binary not found at $BIN"; exit 1; }
+file "$BIN" | grep -q "Mach-O" || { echo "✗ $BIN is not a Mach-O binary — wrong build?"; exit 1; }
 
 echo "▸ Assembling $APP …"
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RES"
 cp "$BIN" "$MACOS/$APP_NAME"
+
+# The CLI shim ships INSIDE the bundle so Homebrew's cask can symlink to it. A symlink
+# straight to Contents/MacOS/NetLights does not let the executable resolve Bundle.main back
+# to the .app: version reporting falls back to "dev" and the LaunchServices hand-off never
+# fires. Going through this shim (which execs its own bundle's binary) fixes both.
+cp scripts/netlights-shim.sh "$RES/netlights"
+chmod +x "$RES/netlights"
 
 echo "▸ Generating app icon (.icns)…"
 ICONSET="$DIST/$APP_NAME.iconset"

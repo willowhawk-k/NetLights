@@ -1,8 +1,8 @@
 cask "netlights" do
   # Bump version + sha256 together on every release. `shasum -a 256 dist/NetLights-<v>.zip`
   # after scripts/build-app.sh, or read it off the GitHub release asset.
-  version "1.8.1"
-  sha256 "70fa392c1ee2555248a462fa2ccdcf076d89a4c56a3e14113a75a201d1dab19b"
+  version "1.9.0"
+  sha256 "7ae1d01c5ce3b1aef762e6238b817ab67d4151a74473cbdbb4adf1706a288a69"
 
   url "https://github.com/willowhawk-k/NetLights/releases/download/v#{version}/NetLights-#{version}.zip",
       verified: "github.com/willowhawk-k/NetLights/"
@@ -13,10 +13,11 @@ cask "netlights" do
   depends_on macos: :ventura
 
   app "NetLights.app"
-  # Puts `netlights` on PATH by symlinking the in-bundle executable. A symlink (not a
-  # copy) is required: the binary resolves Bundle.main to its enclosing .app, which is
-  # where the Info.plist usage strings and the code signature live.
-  binary "#{appdir}/NetLights.app/Contents/MacOS/NetLights", target: "netlights"
+  # Point at the shim in Contents/Resources, NOT straight at Contents/MacOS/NetLights.
+  # Verified: a symlink to the executable itself does not let it resolve Bundle.main back
+  # to the .app — `netlights --version` reports "dev (0)" and the LaunchServices hand-off
+  # never fires. The shim execs its own bundle's binary by absolute path, so both work.
+  binary "#{appdir}/NetLights.app/Contents/Resources/netlights", target: "netlights"
 
   # The Mac App Store build installs to the same path, /Applications/NetLights.app, so the
   # two cannot coexist. Homebrew must not delete an app it didn't install — and a Store app

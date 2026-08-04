@@ -35,13 +35,37 @@ public struct WebServer {
     public let pollMS: Int
     /// Called per request — the caller owns how expensive a snapshot is.
     public let collect: () -> TopologySnapshot
+    /// Called once, AFTER the socket is bound and listening. `--open` uses this so the
+    /// browser is never pointed at a port that failed to bind.
+    public let onReady: (() -> Void)?
 
     public init(bind: BindTarget, port: UInt16, pollMS: Int = 1000,
+                onReady: (() -> Void)? = nil,
                 collect: @escaping () -> TopologySnapshot) {
         self.bind = bind
         self.port = port
         self.pollMS = pollMS
+        self.onReady = onReady
         self.collect = collect
+    }
+
+    /// Snapshot cache. Every HTTP request used to run a FULL uncached gather — on macOS
+    /// that means system_profiler per request, which the GUI and TUI both deliberately
+    /// throttle. The browser polls once a second and asks for /snapshot.json and
+    /// /graph.svg, so this was two full gathers per second.
+    private final class Cache: @unchecked Sendable {
+        var snapshot: TopologySnapshot?
+        var takenAt: Double = -.infinity
+    }
+    private static let cache = Cache()
+
+    private func cachedSnapshot(maxAgeSeconds: Double) -> TopologySnapshot {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let s = Self.cache.snapshot, now - Self.cache.takenAt < maxAgeSeconds { return s }
+        let s = collect()
+        Self.cache.snapshot = s
+        Self.cache.takenAt = now
+        return s
     }
 
     /// Resolve the bind choice to a network-order IPv4. `.egress` asks the live snapshot
@@ -70,9 +94,21 @@ public struct WebServer {
     /// `isAcceptableHost`) because enumerating every address this machine might be reached
     /// at is impossible when bound to 0.0.0.0.
     private func allowedHosts(_ display: String) -> Set<String> {
-        var hosts: Set<String> = ["localhost", "127.0.0.1", "[::1]", "::1", display]
-        for h in Array(hosts) { hosts.insert("\(h):\(port)") }
-        return hosts
+        ["localhost", "127.0.0.1", "[::1]", "::1", display]
+    }
+
+    /// Strip an optional `:port`. The port is deliberately NOT matched: the SSH tunnel this
+    /// project recommends (`ssh -L 9000:localhost:8765`) arrives as `Host: localhost:9000`,
+    /// which a port-exact allowlist rejects — breaking the very workflow the warning text
+    /// tells people to use.
+    private func hostWithoutPort(_ host: String) -> String {
+        if host.hasPrefix("["), let close = host.firstIndex(of: "]") {
+            return String(host[host.startIndex...close])       // [::1]:8765 -> [::1]
+        }
+        if host.filter({ $0 == ":" }).count == 1, let c = host.lastIndex(of: ":") {
+            return String(host[host.startIndex..<c])
+        }
+        return host
     }
 
     /// A Host header that is a bare IP literal **cannot** be a DNS-rebinding attack:
@@ -96,7 +132,9 @@ public struct WebServer {
     }
 
     private func isAcceptableHost(_ host: String, allowed: Set<String>) -> Bool {
-        host.isEmpty || allowed.contains(host) || isIPLiteralHost(host)
+        if host.isEmpty { return true }
+        let bare = hostWithoutPort(host)
+        return allowed.contains(host) || allowed.contains(bare) || isIPLiteralHost(host)
     }
 
     public func run() -> Int32 {
@@ -136,6 +174,7 @@ public struct WebServer {
             return 1
         }
         guard listen(listenFD, 16) == 0 else { perror("listen"); return 1 }
+        onReady?()          // bound and listening — only now is a browser URL meaningful
 
         // Report what we ACTUALLY bound to. Printing a loopback URL while listening on
         // 0.0.0.0 reads as "it ignored my --bind" — especially over SSH, where the user
@@ -165,16 +204,33 @@ public struct WebServer {
         while true {
             let clientFD = accept(listenFD, nil, nil)
             if clientFD < 0 { continue }
+            // The accept loop is single-threaded and blocking, so ANY client that connects
+            // and never speaks would otherwise wedge the whole server for good — `nc host
+            // 8765` and walk away, and the browser hangs forever. A receive/send deadline
+            // bounds that to a few seconds. (Also fires for a half-open connection dropped
+            // by a sleeping laptop, which is the accidental version of the same thing.)
+            var tv = timeval(tv_sec: 5, tv_usec: 0)
+            setsockopt(clientFD, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+            setsockopt(clientFD, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
             handle(clientFD, allowedHosts: hosts)
             close(clientFD)
         }
     }
 
     private func handle(_ fd: Int32, allowedHosts: Set<String>) {
-        var buf = [UInt8](repeating: 0, count: 8192)
-        let n = read(fd, &buf, buf.count)
-        guard n > 0 else { return }
-        let request = String(decoding: buf[0..<Int(n)], as: UTF8.self)
+        // Read until the end of the header block. One read() is not enough: a request split
+        // across packets (routine for a browser on a slow link) parsed as a truncated line,
+        // yielding a bogus path or a missing Host. Capped so a peer can't stream forever.
+        var raw = [UInt8]()
+        var buf = [UInt8](repeating: 0, count: 4096)
+        while raw.count < 32_768 {
+            let n = read(fd, &buf, buf.count)
+            if n <= 0 { break }
+            raw.append(contentsOf: buf[0..<Int(n)])
+            if let s = String(bytes: raw, encoding: .utf8), s.contains("\r\n\r\n") { break }
+        }
+        guard !raw.isEmpty else { return }
+        let request = String(decoding: raw, as: UTF8.self)
         let lines = request.split(separator: "\r\n", omittingEmptySubsequences: false)
         let path = lines.first?.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
 
@@ -197,12 +253,12 @@ public struct WebServer {
         case "/snapshot.json":
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let body = (try? encoder.encode(collect()))
+            let body = (try? encoder.encode(cachedSnapshot(maxAgeSeconds: Double(pollMS) / 2000)))
                 .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
             respond(fd, status: "200 OK", type: "application/json", body: body)
         case "/graph.svg":
             respond(fd, status: "200 OK", type: "image/svg+xml; charset=utf-8",
-                    body: renderGraphSVG(snapshot: collect()))
+                    body: renderGraphSVG(snapshot: cachedSnapshot(maxAgeSeconds: Double(pollMS) / 2000)))
         case "/", "/index.html":
             respond(fd, status: "200 OK", type: "text/html; charset=utf-8",
                     body: Self.indexHTML(pollMS: pollMS))
@@ -216,7 +272,7 @@ public struct WebServer {
         let header = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\n"
             + "Content-Length: \(bytes.count)\r\nConnection: close\r\nCache-Control: no-store\r\n"
             + "X-Content-Type-Options: nosniff\r\n\r\n"
-        _ = Array(header.utf8).withUnsafeBytes { writeAll(fd, $0) }
+        Array(header.utf8).withUnsafeBytes { writeAll(fd, $0) }
         bytes.withUnsafeBytes { writeAll(fd, $0) }
     }
 
