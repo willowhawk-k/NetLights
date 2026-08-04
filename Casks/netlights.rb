@@ -1,7 +1,7 @@
 cask "netlights" do
   # Bump version + sha256 together on every release. `shasum -a 256 dist/NetLights-<v>.zip`
   # after scripts/build-app.sh, or read it off the GitHub release asset.
-  version "1.8.1"
+  version "1.9.0"
   sha256 "70fa392c1ee2555248a462fa2ccdcf076d89a4c56a3e14113a75a201d1dab19b"
 
   url "https://github.com/willowhawk-k/NetLights/releases/download/v#{version}/NetLights-#{version}.zip",
