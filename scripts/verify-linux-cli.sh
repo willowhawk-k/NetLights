@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Verify the NetLights Linux CLI on a real machine. Run it ON the Linux VM:
-#   chmod +x verify-linux-cli.sh && ./verify-linux-cli.sh ./netlights-linux
+#   chmod +x verify-linux-cli.sh && ./verify-linux-cli.sh ./netlights
 #
 # Don't run this on macOS: section 7 binds 0.0.0.0, which raises the macOS Application
 # Firewall prompt and blocks the process until someone clicks it, so the script just hangs.
@@ -9,7 +9,7 @@
 # check — that the live TUI paints and that your terminal is restored afterwards —
 # are printed as manual steps at the end.
 set -u
-BIN="${1:-./netlights-linux}"
+BIN="${1:-./netlights}"
 pass=0; fail=0
 ok()   { echo "  PASS  $1"; pass=$((pass+1)); }
 bad()  { echo "  FAIL  $1"; fail=$((fail+1)); }
@@ -147,15 +147,15 @@ echo "== $pass passed, $fail failed =="
 cat <<'EOM'
 
 MANUAL (needs a real terminal — please eyeball these):
-  1. ./netlights-linux tui
+  1. ./netlights tui
        - does it paint, and refresh about once a second?
        - press g r i d n and 1-5: do the views switch?
        - press h (hide inactive), p (privacy — addresses masked), SPACE (pause)
        - RESIZE the window: does the layout follow?
        - press q: does your shell come back NORMAL (echo works, no stray colours)?
-  2. ./netlights-linux tui  then Ctrl-C  -> terminal must also be restored.
-  3. ./netlights-linux tui  then Ctrl-Z  -> shell restored; `fg` resumes cleanly.
+  2. ./netlights tui  then Ctrl-C  -> terminal must also be restored.
+  3. ./netlights tui  then Ctrl-Z  -> shell restored; `fg` resumes cleanly.
   4. Over SSH from the Mac: ssh <vm> then run tui there (the real use case).
-  5. LANG=C ./netlights-linux tui --once   -> ASCII fallback, no mojibake.
+  5. LANG=C ./netlights tui --once   -> ASCII fallback, no mojibake.
 EOM
 [ $fail -eq 0 ] || exit 1

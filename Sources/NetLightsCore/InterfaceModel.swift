@@ -819,7 +819,7 @@ public struct TopologySnapshot: Codable {
     public var dnsConfigs: [DNSConfig] = []
 
     // Explicit public init mirrors the (otherwise internal) memberwise init exactly, so
-    // macOS construction is unchanged while a separate module (netlights-linux) can build
+    // macOS construction is unchanged while a separate module (the Linux CLI) can build
     // a snapshot too.
     public init(schemaVersion: Int = 1, machineModel: String,
                 interfaces: [InterfaceInfo] = [], routes: [RouteEntry] = [],
