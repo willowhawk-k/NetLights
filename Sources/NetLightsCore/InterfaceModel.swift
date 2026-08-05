@@ -279,21 +279,29 @@ public struct RouteEntry: Identifiable, Codable {
     var interfaceName: String
     var isDefault: Bool
     var flags: String
+    /// Linux route metric (lower wins). nil on macOS, which has no metric at all and ranks
+    /// by network-service order instead — see `TopologySnapshot.serviceRank`. The two are
+    /// mutually exclusive by platform, so the Routes tables show whichever is present under
+    /// a single "Priority" column. Optional, so JSONEncoder omits it and a macOS dump is
+    /// byte-identical to before.
+    var metric: Int? = nil
 
     // `id` is intentionally absent: it is process-local identity, not part of the
     // cross-platform contract, and encoding it is what made snapshots non-reproducible.
     private enum CodingKeys: String, CodingKey {
-        case destination, gateway, netmask, interfaceName, isDefault, flags
+        case destination, gateway, netmask, interfaceName, isDefault, flags, metric
     }
 
     public init(destination: String, gateway: String, netmask: String? = nil,
-                interfaceName: String, isDefault: Bool, flags: String) {
+                interfaceName: String, isDefault: Bool, flags: String,
+                metric: Int? = nil) {
         self.destination = destination
         self.gateway = gateway
         self.netmask = netmask
         self.interfaceName = interfaceName
         self.isDefault = isDefault
         self.flags = flags
+        self.metric = metric
     }
 }
 
@@ -370,6 +378,11 @@ public func deviceShortName(_ name: String) -> String {
 /// and medium for the iPhone/iPad entry. Pure, so the TUI and the SVG renderer can use it
 /// without constructing a layout engine (which is where it used to live).
 public func hardwarePortLabel(_ p: HardwarePort) -> String {
+    // A platform-supplied title wins: "TB Port 1" is a lie on a PC with no Thunderbolt.
+    if let t = p.title, !t.isEmpty {
+        let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
+        return loc.isEmpty ? t : "\(t)  (\(loc))"
+    }
     if p.isPhone {
         let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
         return loc.isEmpty ? "\(p.deviceName) · \(p.connectionMedium)"
@@ -409,6 +422,11 @@ public struct HardwarePort: Identifiable, Codable {
     var hasPower: Bool = false    // USB-C power (charger) attached to this port
     var deviceChildren: [String] = []  // BSD names of real USB devices on this port (vs TB-bridge pseudo-members)
     var connectionMedium: String = "USB-C"  // for iPhone: "USB-C" / "Wi-Fi" / "Bluetooth"
+    /// Overrides the default "TB Port N" label. macOS leaves it nil (its ports really are
+    /// Thunderbolt receptacles from a per-model layout table); Linux sets "USB Bus N",
+    /// because a generic PC has no Thunderbolt and no receptacle-position data.
+    /// Optional, so synthesized Codable uses encodeIfPresent — a macOS dump gains no key.
+    var title: String? = nil
 }
 
 // MARK: - Egress (uplink to the outside world)

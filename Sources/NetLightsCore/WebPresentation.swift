@@ -137,7 +137,10 @@ private func interfacesSection(_ s: TopologySnapshot, _ ifaces: [InterfaceInfo],
 // MARK: - Routes
 
 private func routeSections(_ s: TopologySnapshot, _ privacy: Bool) -> [UISection] {
-    let columns = ["Destination", "Gateway", "Netmask", "Interface", "Flags", "Svc order"]
+    // "Priority" covers both platforms: Linux ranks by route metric, macOS has no metric at
+    // all and ranks by network-service order. Lower wins either way, and the two can't both
+    // be present, so one column carries whichever the platform has.
+    let columns = ["Destination", "Gateway", "Netmask", "Interface", "Flags", "Priority"]
     // Classified in SWIFT, on the UNMASKED data, with the shared classifier. Doing it in JS
     // over masked destinations would have refiled every 192.168/172.16 LAN route as
     // "unencrypted split-tunnel" the moment privacy was switched on, because "192.x.x.x" no
@@ -152,7 +155,8 @@ private func routeSections(_ s: TopologySnapshot, _ privacy: Bool) -> [UISection
                     r.netmask ?? "—",     // a netmask describes the prefix, not the host
                     r.interfaceName,
                     r.flags,
-                    s.serviceRank[r.interfaceName].map { "\($0 + 1)" } ?? "—",
+                    r.metric.map(String.init)
+                        ?? s.serviceRank[r.interfaceName].map { "\($0 + 1)" } ?? "—",
                 ], depth: nil, state: nil, active: nil, iface: nil)
             }
     }
