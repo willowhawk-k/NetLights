@@ -162,6 +162,24 @@ public func parseProcBusInputDevices(_ text: String) -> [String: Set<Int>] {
     return out
 }
 
+/// The host-controller short name from a root hub's `product` string.
+///
+/// Root hubs are named after the controller that owns them — "xHCI Host Controller",
+/// "EHCI Host Controller", "OHCI PCI host controller" — which is the most direct answer
+/// available to "what kind of port is this really?". Worth surfacing: on a VM every device
+/// hangs off an emulated controller on the virtual PCI bus, and the answer should say so
+/// rather than leave the user guessing at the bus number.
+public func usbControllerShortName(_ product: String?) -> String? {
+    guard let p = usbTrimmed(product) else { return nil }
+    for token in p.split(separator: " ") {
+        // Match case-insensitively but return the token VERBATIM: the kernel writes "xHCI"
+        // with a lowercase x, and uppercasing it to "XHCI" just looks wrong.
+        guard token.uppercased().hasSuffix("HCI"), token.count <= 5 else { continue }
+        return String(token)
+    }
+    return nil
+}
+
 // MARK: - Building the model
 
 /// Not Sendable: AttachedDevice/HardwarePort aren't, and marking this Sendable is an error
@@ -288,10 +306,18 @@ public func buildUSBTopology(nodes: [USBSysfsNode],
     }
 
     // 5. One port per bus that actually has devices. An empty bus would render as a bare
-    //    chip with nothing under it.
+    //    chip with nothing under it. The root hub names its controller, which is what makes
+    //    the chip honest: "USB Bus 1 (xHCI)" says emulated-or-real USB host controller, not
+    //    "TB 1", which would claim Thunderbolt hardware that may not exist.
+    var controllerOf: [Int: String] = [:]
+    for node in nodes {
+        guard case .rootHub(let bus) = classifyUSBSysfsName(node.name),
+              let c = usbControllerShortName(node.attributes["product"]) else { continue }
+        controllerOf[bus] = c
+    }
     let buses = Set(devices.map(\.receptacle)).sorted()
     let ports = buses.map { bus in
-        HardwarePort(id: bus, side: "", position: "",
+        HardwarePort(id: bus, side: controllerOf[bus] ?? "", position: "",
                      // Deliberately empty: the engine draws port→interface wires from
                      // childBSDNames AND device→interface wires from interfaceBSD, so
                      // listing a USB NIC in both draws the same wire twice.
