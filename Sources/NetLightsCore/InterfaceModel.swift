@@ -259,18 +259,32 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
 // MARK: - Route Entry
 
 public struct RouteEntry: Identifiable, Codable {
-    /// Derived, not stored. A stored `let id = UUID()` is encoded but can never be decoded
-    /// (Swift warns about exactly this), so every run emitted a different random value and
-    /// `--dump-json` was non-deterministic — two dumps of an unchanged machine differed by
-    /// hundreds of lines, which defeats diffing a snapshot or comparing macOS against Linux.
-    /// A computed property isn't encoded at all, and identity is stable across a round trip.
-    public var id: String { "\(destination)|\(gateway)|\(interfaceName)" }
+    /// Unique per instance, and deliberately EXCLUDED from `CodingKeys` below.
+    ///
+    /// Two earlier attempts were both wrong. A plain `let id = UUID()` with synthesized
+    /// Codable is *encoded but never decodable*, so `--dump-json` emitted fresh random
+    /// values every run and two dumps of an unchanged machine differed by hundreds of
+    /// lines. Deriving it from destination+gateway+interface fixed that but broke
+    /// uniqueness: a routing table legitimately holds several routes identical in all
+    /// three — two default routes differing only by metric on Linux, or a pair of host
+    /// routes to a VPN concentrator on macOS — and duplicate `Identifiable` ids make
+    /// SwiftUI's `ForEach` drop or misrender rows.
+    ///
+    /// Keeping the UUID but omitting it from the coding keys satisfies both: identity is
+    /// always unique, and the serialized contract stays byte-stable.
+    public let id = UUID()
     var destination: String
     var gateway: String
     var netmask: String?
     var interfaceName: String
     var isDefault: Bool
     var flags: String
+
+    // `id` is intentionally absent: it is process-local identity, not part of the
+    // cross-platform contract, and encoding it is what made snapshots non-reproducible.
+    private enum CodingKeys: String, CodingKey {
+        case destination, gateway, netmask, interfaceName, isDefault, flags
+    }
 
     public init(destination: String, gateway: String, netmask: String? = nil,
                 interfaceName: String, isDefault: Bool, flags: String) {
