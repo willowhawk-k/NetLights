@@ -404,7 +404,11 @@ public func devicePortLabel(_ d: AttachedDevice, _ ports: [HardwarePort]) -> Str
     case -4: return "Bluetooth"
     default: break
     }
-    guard let p = ports.first(where: { $0.id == d.receptacle }), !p.side.isEmpty else {
+    let port = ports.first(where: { $0.id == d.receptacle })
+    // A platform-supplied title ("USB Bus 1") is more informative than "Port 1", and unlike
+    // the side/position table it is never a guess. Kept short — this is a table column.
+    if let t = port?.title, !t.isEmpty { return t }
+    guard let p = port, !p.side.isEmpty else {
         return d.receptacle >= 0 ? "Port \(d.receptacle)" : "—"
     }
     return p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"

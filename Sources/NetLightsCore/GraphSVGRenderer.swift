@@ -217,7 +217,11 @@ private func portNode(_ p: CGPoint, _ port: HardwarePort) -> String {
     let cx = Double(p.x), cy = Double(p.y)
     // A tethered iPhone/iPad is a hardware port too; rendering it as "TB 0" erased its
     // identity. Titles now come from the same helper the SwiftUI brackets use.
-    let title = port.isPhone ? port.deviceName : "TB \(port.id)"
+    // A platform-supplied title wins. This used to hardcode "TB \(port.id)", so a Linux box
+    // with no Thunderbolt at all rendered its USB buses as "TB 1" — while the TUI and this
+    // node's own hover text, which both go through hardwarePortLabel, correctly said
+    // "USB Bus 1". Same reason the label exists: don't claim hardware that isn't there.
+    let title = port.title ?? (port.isPhone ? port.deviceName : "TB \(port.id)")
     let location = port.position.isEmpty ? port.side : "\(port.side) · \(port.position)"
     let subtitle = port.isPhone ? port.connectionMedium : location
     var s = "<g><title>\(xmlEsc(hardwarePortLabel(port)))</title>"
