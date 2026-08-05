@@ -182,7 +182,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
                 interfaces: interfaces, routes: routes, gateways: gateways,
                 hardwarePorts: [], attachedDevices: [],
                 egress: egress, systemPower: nil,
-                dnsConfigs: Self.gatherDNS())
+                dnsConfigs: Self.gatherDNS(), serviceRank: rank)
         }
 
         let status = Self.queryPortStatus(
@@ -195,7 +195,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
             interfaces: interfaces, routes: routes, gateways: gateways,
             hardwarePorts: ports, attachedDevices: status.attachedDevices,
             egress: egress, systemPower: status.systemPower,
-            dnsConfigs: Self.gatherDNS())
+            dnsConfigs: Self.gatherDNS(), serviceRank: rank)
     }
 
     func refresh() {

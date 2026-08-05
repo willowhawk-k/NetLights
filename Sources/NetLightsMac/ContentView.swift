@@ -413,14 +413,6 @@ struct ContentView: View {
         return (rows, depth)
     }
 
-    /// "Left · Front" location label for a device's receptacle (— for displays / unknown).
-    private func devicePortLabel(_ d: AttachedDevice) -> String {
-        if d.receptacle == -2 { return "Video out" }
-        guard let p = monitor.hardwarePorts.first(where: { $0.id == d.receptacle }), !p.side.isEmpty else {
-            return d.receptacle >= 0 ? "Port \(d.receptacle)" : "—"
-        }
-        return p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
-    }
 
     private var devicesTable: some View {
         let tree = deviceTree
@@ -476,7 +468,9 @@ struct ContentView: View {
                     }
                     .width(min: 90, ideal: 110)
 
-                    TableColumn("Port") { d in Text(devicePortLabel(d)) }
+                    // Shared with the TUI and the web UI (InterfaceModel.swift) so all three
+                    // name a receptacle identically.
+                    TableColumn("Port") { d in Text(devicePortLabel(d, monitor.hardwarePorts)) }
                         .width(min: 80, ideal: 110)
                 }
             }

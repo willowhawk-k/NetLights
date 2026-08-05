@@ -335,6 +335,68 @@ public struct GatewayNode: Identifiable, Equatable, Codable {
 
 /// Represents a physical USB-C / Thunderbolt port slot on the machine chassis,
 /// or a connected USB peripheral (iPhone/iPad, id = 0).
+/// The drawn size of each node box. Shared by the SwiftUI renderer and the SVG renderer so
+/// `serve` produces the same picture the app does — they used to disagree on every single
+/// node (the SVG drew device chips 76×34 against the app's 74×52, ports 84×38 against
+/// 84×62, interfaces 100×54 against 100×90), which is what left the served bands looking
+/// sparse and the wires meeting boxes at the wrong place.
+public struct NodeBox: Sendable {
+    public let w: Double
+    public let h: Double
+    public init(w: Double, h: Double) { self.w = w; self.h = h }
+}
+
+public enum GraphNodeSize {
+    public static let device     = NodeBox(w: 74, h: 52)
+    public static let port       = NodeBox(w: 84, h: 62)
+    public static let entity     = NodeBox(w: 84, h: 62)   // Wi-Fi / Displays / Bluetooth / Battery
+    public static let iface      = NodeBox(w: 100, h: 90)
+    public static let gateway    = NodeBox(w: 100, h: 76)
+    public static let gatewayNamed = NodeBox(w: 100, h: 90) // gateway carrying a network name
+    public static let egress     = NodeBox(w: 100, h: 70)
+    public static let vpnServer  = NodeBox(w: 100, h: 76)
+    public static let vpnExclude = NodeBox(w: 100, h: 76)
+}
+
+/// The chip label for a peripheral: long product strings are truncated so they fit the
+/// 74pt box. Shared with `DeviceNodeView` — the SVG renderer drew the FULL name at
+/// font-size 11 with no clip, so "CORSAIR K65 PLUS WIRELESS Keyboard" needed 224px in a
+/// 76px box and ran straight through the chip beside it.
+public func deviceShortName(_ name: String) -> String {
+    name.count > 12 ? String(name.prefix(11)) + "…" : name
+}
+
+/// Human label for a hardware receptacle — "TB Port 2  (Left · Rear)", or the device name
+/// and medium for the iPhone/iPad entry. Pure, so the TUI and the SVG renderer can use it
+/// without constructing a layout engine (which is where it used to live).
+public func hardwarePortLabel(_ p: HardwarePort) -> String {
+    if p.isPhone {
+        let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
+        return loc.isEmpty ? "\(p.deviceName) · \(p.connectionMedium)"
+                           : "\(p.deviceName) · \(p.connectionMedium) (\(loc))"
+    }
+    guard !p.side.isEmpty else { return "TB Port \(p.id)" }
+    let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
+    return "TB Port \(p.id)  (\(loc))"
+}
+
+/// "Left · Front" location label for the receptacle a device is plugged into. Shared by the
+/// SwiftUI Devices table, the TUI and the web UI so all three name a port identically — and
+/// it covers every sentinel receptacle, not just displays.
+public func devicePortLabel(_ d: AttachedDevice, _ ports: [HardwarePort]) -> String {
+    switch d.receptacle {
+    case -1: return "Wi-Fi"
+    case -2: return "Video out"
+    case -3: return "Power"
+    case -4: return "Bluetooth"
+    default: break
+    }
+    guard let p = ports.first(where: { $0.id == d.receptacle }), !p.side.isEmpty else {
+        return d.receptacle >= 0 ? "Port \(d.receptacle)" : "—"
+    }
+    return p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
+}
+
 public struct HardwarePort: Identifiable, Codable {
     public let id: Int      // Thunderbolt port number (1-based); 0 = iPhone/iPad
     var side: String        // "Left", "Right", "Rear", or "" if unknown
@@ -826,9 +888,12 @@ func formatDiskCapacity(_ bytes: UInt64) -> String {
 /// tests, or dumped as JSON. Live throughput is NOT stored here: it's derived from each
 /// interface's cumulative `rxBytes`/`txBytes` by a stateful rate deriver, per platform.
 public struct TopologySnapshot: Codable {
+    // 3: added `serviceRank` (interface → macOS network-service order), so a consumer that
+    //    isn't the SwiftUI app — the TUI, the web UI — can show which default route wins.
+    //    Additive and optional, so a schema-2 reader is unaffected.
     // 2: RouteEntry.id became a derived key and is no longer encoded (it was a random UUID
     //    that could not round-trip). 1: initial cross-platform contract.
-    public var schemaVersion: Int = 2
+    public var schemaVersion: Int = 3
     public var machineModel: String     // hw.model (macOS) / DMI product name (Linux); "" if unknown
     public var interfaces: [InterfaceInfo] = []
     public var routes: [RouteEntry] = []
@@ -838,15 +903,20 @@ public struct TopologySnapshot: Codable {
     public var egress: EgressInfo? = nil
     public var systemPower: SystemPower? = nil
     public var dnsConfigs: [DNSConfig] = []
+    /// Interface → macOS network-service rank (0 = highest priority). macOS has no numeric
+    /// route metric; the service order is what decides which default route wins, so this is
+    /// the macOS analog of Linux's route metric. Empty on Linux.
+    public var serviceRank: [String: Int] = [:]
 
     // Explicit public init mirrors the (otherwise internal) memberwise init exactly, so
     // macOS construction is unchanged while a separate module (the Linux CLI) can build
     // a snapshot too.
-    public init(schemaVersion: Int = 2, machineModel: String,
+    public init(schemaVersion: Int = 3, machineModel: String,
                 interfaces: [InterfaceInfo] = [], routes: [RouteEntry] = [],
                 gateways: [GatewayNode] = [], hardwarePorts: [HardwarePort] = [],
                 attachedDevices: [AttachedDevice] = [], egress: EgressInfo? = nil,
-                systemPower: SystemPower? = nil, dnsConfigs: [DNSConfig] = []) {
+                systemPower: SystemPower? = nil, dnsConfigs: [DNSConfig] = [],
+                serviceRank: [String: Int] = [:]) {
         self.schemaVersion = schemaVersion
         self.machineModel = machineModel
         self.interfaces = interfaces
@@ -857,5 +927,6 @@ public struct TopologySnapshot: Codable {
         self.egress = egress
         self.systemPower = systemPower
         self.dnsConfigs = dnsConfigs
+        self.serviceRank = serviceRank
     }
 }

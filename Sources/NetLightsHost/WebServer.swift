@@ -59,6 +59,36 @@ public struct WebServer {
     }
     private static let cache = Cache()
 
+    /// Rates are derived SERVER-side now. The browser used to do it from successive polls,
+    /// which meant the SVG was always rendered with an empty traffic map — so the graph
+    /// never carried traffic emphasis, and (once hide-inactive existed) the engine would
+    /// have considered every interface idle and hidden far too much.
+    private final class Rates: @unchecked Sendable {
+        var deriver = TrafficRateDeriver()
+    }
+    private static let rateBox = Rates()
+    private static var rates: TrafficRateDeriver {
+        get { rateBox.deriver }
+        set { rateBox.deriver = newValue }
+    }
+
+    /// The snapshot as the web UI should see it: masked and/or filtered per the query.
+    private func viewSnapshot(maxAge: Double, privacy: Bool, hide: Bool) -> TopologySnapshot {
+        let snap = cachedSnapshot(maxAgeSeconds: maxAge)
+        Self.rates.update(snap.interfaces)
+        return redactedSnapshot(snap, rates: Self.rates, privacy: privacy, hideInactive: hide)
+    }
+
+    /// The pre-formatted table payload — see WebPresentation.swift for why it exists.
+    private func uiJSON(maxAge: Double, privacy: Bool, hide: Bool) -> String {
+        let snap = cachedSnapshot(maxAgeSeconds: maxAge)
+        Self.rates.update(snap.interfaces)
+        let payload = buildUIPayload(snap, rates: Self.rates, privacy: privacy, hideInactive: hide)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(payload)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    }
+
     private func cachedSnapshot(maxAgeSeconds: Double) -> TopologySnapshot {
         let now = ProcessInfo.processInfo.systemUptime
         if let s = Self.cache.snapshot, now - Self.cache.takenAt < maxAgeSeconds { return s }
@@ -232,7 +262,11 @@ public struct WebServer {
         guard !raw.isEmpty else { return }
         let request = String(decoding: raw, as: UTF8.self)
         let lines = request.split(separator: "\r\n", omittingEmptySubsequences: false)
-        let path = lines.first?.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+        let target = lines.first?.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+        // Split the query off before dispatch. The switch below matches exact literals, so
+        // with the raw target ANY url carrying a query — /graph.svg?w=1600, or even a plain
+        // cache-buster — fell through to 404.
+        let (path, query) = splitQuery(target)
 
         // DNS-rebinding guard: a hostile page can point its own hostname at 127.0.0.1 and
         // read this server from the user's browser. Requiring a known Host stops that.
@@ -249,22 +283,76 @@ public struct WebServer {
             return
         }
 
+        // Privacy and hide-inactive are resolved SERVER-side. For hide-inactive that's
+        // forced — the graph is server-rendered SVG, so the browser can't filter it. For
+        // privacy it's also the right call: `serve` has no authentication, so masking before
+        // the bytes leave the process means a screen-share or a shoulder-surfer on the LAN
+        // never sees the real addresses, rather than trusting the page not to render them.
+        let privacy = query["privacy"] == "1"
+        let hide = query["hide"] == "1"
+        let maxAge = Double(pollMS) / 2000
+
         switch path {
         case "/snapshot.json":
+            // Stays the raw TopologySnapshot — it's the documented `--dump-json` contract, so
+            // no presentation fields and no schemaVersion churn. Only masking/filtering
+            // apply, and only when asked for.
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
-            let body = (try? encoder.encode(cachedSnapshot(maxAgeSeconds: Double(pollMS) / 2000)))
+            let snap = viewSnapshot(maxAge: maxAge, privacy: privacy, hide: hide)
+            let body = (try? encoder.encode(snap))
                 .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
             respond(fd, status: "200 OK", type: "application/json", body: body)
+        case "/ui.json":
+            // The presentation payload: every cell already formatted by the SAME Swift
+            // helpers the app and the TUI use. The browser used to reimplement four
+            // formatters and the route classifier in JS, and all four had drifted.
+            respond(fd, status: "200 OK", type: "application/json",
+                    body: uiJSON(maxAge: maxAge, privacy: privacy, hide: hide))
         case "/graph.svg":
+            // w/h are the browser viewport, the equivalent of the app's GeometryReader.
+            let w = clampDim(query["w"], fallback: 1200, lo: 640, hi: 6000)
+            let h = clampDim(query["h"], fallback: 760, lo: 480, hi: 6000)
+            let snap = cachedSnapshot(maxAgeSeconds: maxAge)
+            Self.rates.update(snap.interfaces)
             respond(fd, status: "200 OK", type: "image/svg+xml; charset=utf-8",
-                    body: renderGraphSVG(snapshot: cachedSnapshot(maxAgeSeconds: Double(pollMS) / 2000)))
+                    body: renderGraphSVG(snapshot: snap, width: w, height: h,
+                                         privacy: privacy, hideUnused: hide,
+                                         trafficStates: Self.rates.allStates))
         case "/", "/index.html":
             respond(fd, status: "200 OK", type: "text/html; charset=utf-8",
                     body: Self.indexHTML(pollMS: pollMS))
         default:
             respond(fd, status: "404 Not Found", type: "text/plain", body: "not found")
         }
+    }
+
+    /// Split "/graph.svg?w=1600&h=900" into its path and decoded parameters.
+    private func splitQuery(_ target: String) -> (String, [String: String]) {
+        guard let q = target.firstIndex(of: "?") else { return (target, [:]) }
+        let path = String(target[target.startIndex..<q])
+        var params: [String: String] = [:]
+        for pair in target[target.index(after: q)...].split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let k = kv.first, !k.isEmpty else { continue }
+            let v = kv.count > 1 ? String(kv[1]) : ""
+            params[percentDecode(String(k))] = percentDecode(v)
+        }
+        return (path, params)
+    }
+
+    /// Minimal percent-decoding. `addingPercentEncoding`'s inverse is available on Foundation
+    /// everywhere we build, but "+" as space is a form-encoding convention it doesn't handle.
+    private func percentDecode(_ s: String) -> String {
+        let plussed = s.replacingOccurrences(of: "+", with: " ")
+        return plussed.removingPercentEncoding ?? plussed
+    }
+
+    /// Parse a viewport dimension, clamped so a hostile or fat-fingered value can't ask the
+    /// layout engine for a 2-million-pixel canvas.
+    private func clampDim(_ s: String?, fallback: Double, lo: Double, hi: Double) -> Double {
+        guard let s, let v = Double(s), v.isFinite else { return fallback }
+        return min(max(v, lo), hi)
     }
 
     private func respond(_ fd: Int32, status: String, type: String, body: String) {
