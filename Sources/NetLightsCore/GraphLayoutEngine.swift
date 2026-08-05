@@ -1011,7 +1011,12 @@ struct GraphLayoutEngine {
         let len = max(hypot(dx, dy), 1)
         let nx = -dy / len, ny = dx / len   // unit normal
         // Stable sign from endpoints (not the per-render UUID) so it doesn't flicker.
-        let salt = Int(line.from.x * 3 + line.from.y * 7 + line.to.x * 11 + line.to.y * 17)
+        // Split across statements deliberately: as one expression the type-checker times
+        // out when Core is compiled as its own module (the Linux configuration), which
+        // fails the build on a line that is trivially cheap at runtime.
+        let saltX: CGFloat = line.from.x * 3 + line.to.x * 11
+        let saltY: CGFloat = line.from.y * 7 + line.to.y * 17
+        let salt = Int(saltX + saltY)
         let sign: CGFloat = (salt & 1 == 0) ? 1 : -1
         let bow = sign * min(26, len * 0.12) + line.laneBias
         return CGPoint(x: mx + nx * bow, y: my + ny * bow)

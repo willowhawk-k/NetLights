@@ -33,12 +33,13 @@ instead — there is no window on Linux yet).
 | Routes & gateway precedence | ✅ works | `/proc/net/route`, `/proc/net/ipv6_route` |
 | DNS resolvers (past the stub) | ✅ works | see [DNS](#dns) below |
 | Machine model | ✅ works | `/sys/devices/virtual/dmi/id/product_name` |
-| USB device tree | ⏳ not yet | `/sys/bus/usb/devices` |
+| Route metric (Priority column) | ✅ works | `/proc/net/route` field 6 |
+| USB device tree (hubs, nesting, adapters) | ✅ works | `/sys/bus/usb/devices` |
+| Displays + EDID | ✅ works | `/sys/class/drm/*/edid` — see below |
+| Battery / power | ✅ works | `/sys/class/power_supply/*` |
+| Wi-Fi SSID / link rate | ✅ works | `iw` or `nmcli` — degrades if absent |
 | Thunderbolt | ⏳ not yet | `/sys/bus/thunderbolt/devices` |
-| Displays + EDID | ⏳ not yet | `/sys/class/drm/*/edid` |
-| Wi-Fi SSID / link | ⏳ not yet | nl80211 (netlink) |
 | Bluetooth devices | ⏳ not yet | BlueZ over D-Bus |
-| Battery / power | ⏳ not yet | `/sys/class/power_supply/*` |
 | Native desktop window | ⏳ not yet | WebKitGTK |
 
 Everything is **read-only** and needs no elevated privileges, same as macOS. Collectors
@@ -72,19 +73,37 @@ it explains why everything else on the machine says `127.0.0.53`.
 None of this needs D-Bus, so it works in the fully static musl build. On a
 non-systemd distro `resolvectl` is simply absent and the file sources carry it.
 
+## Displays — richer than macOS
+
+A sandboxed macOS app gets a monitor's vendor id, resolution and refresh, but never its
+model name. Linux hands over the raw EDID, so NetLights shows the **actual product name**
+(`CU34G2XP`, not "AOC Display"), and reads the high-refresh modes out of the CTA-861
+extension block rather than believing the conservative timing in the base block.
+
+One caveat worth knowing: the label is the best mode the display **declares**, not the mode
+it is currently **running**. macOS reports the running mode. On a monitor whose top rate is
+reached through adaptive-sync rather than a declared timing, the two can differ — the
+developer's own 180 Hz panel declares 100 Hz as its fastest detailed timing. Reading the
+live mode needs a libdrm ioctl, which the static build deliberately avoids.
+
 ## Known differences from macOS
 
-- **Route metric vs service order** — Linux ranks routes by metric; macOS has no metric
-  and ranks by network-service order. Gateway precedence (`GW #1`, `#2`, …) is derived
-  from whichever the platform provides. A *Priority* column exposing the raw Linux
-  metric is a planned enhancement.
+- **Route metric vs service order** — Linux ranks routes by metric; macOS has no metric and
+  ranks by network-service order. Both now appear in a single **Priority** column, since a
+  platform only ever has one of them. Lower wins either way.
 - **Duplicate-looking routes** — the kernel legitimately lists several entries for one
-  interface (e.g. a subnet route plus a source-address route); they aren't a bug in the
-  collector.
-- **No Location gate on the SSID** — once Wi-Fi lands, Linux won't need the permission
-  prompt macOS requires.
-- **EDID is richer** — Linux can read display maker/model/native resolution straight from
-  sysfs, which the sandboxed Mac build cannot.
+  interface. With the Priority column visible this is usually self-explanatory: two default
+  routes over one interface differing only by metric (say 100 from one DHCP config and 1024
+  from another) are no longer indistinguishable.
+- **Ports are USB buses, not receptacles** — macOS has a hand-curated per-model table giving
+  each Thunderbolt port a side and position. A generic PC exposes no such data to an
+  unprivileged process, so the Hardware band groups devices by **USB bus** ("USB Bus 1")
+  rather than pretending to know which physical hole they're in. Note an xHCI controller
+  registers its USB2 and USB3 root hubs as separate buses, so the same socket can appear as
+  a different bus depending on what you plug into it.
+- **No Location gate on the SSID** — Linux needs no permission prompt for the network name,
+  but it does need `iw` (or NetworkManager) present; a minimal server install may have
+  neither, in which case the SSID is simply absent.
 
 ## Distributions
 

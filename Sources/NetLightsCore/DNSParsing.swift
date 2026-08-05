@@ -5,6 +5,44 @@ import Foundation
 // against captured real-world output, instead of only being exercisable on a Linux box.
 // The collector supplies the file contents; this file has no I/O.
 
+/// Parse `iw dev <if> link`. Pure, so it can be tested off-Linux against captured output —
+/// the same reason the resolvectl parser lives here.
+///
+/// Format (iw 5.x), with the interesting lines indented under the BSSID:
+///
+///     Connected to 3c:37:86:1f:2a:b0 (on wlp3s0)
+///             SSID: Example Network
+///             freq: 5180
+///             signal: -47 dBm
+///             tx bitrate: 866.7 MBit/s VHT-MCS 9 80MHz short GI VHT-NSS 2
+///
+/// "Not connected." is the unassociated case and yields all-nil.
+public func parseIwLink(_ text: String) -> (ssid: String?, bitrateBps: UInt64?, signalDBm: Int?) {
+    var ssid: String?, bitrate: UInt64?, signal: Int?
+    for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("SSID:") {
+            // An SSID may legitimately contain spaces and colons, so take everything after
+            // the FIRST colon rather than splitting on whitespace.
+            let v = line.dropFirst("SSID:".count).trimmingCharacters(in: .whitespaces)
+            if !v.isEmpty { ssid = v }
+        } else if line.hasPrefix("tx bitrate:") {
+            let v = line.dropFirst("tx bitrate:".count).trimmingCharacters(in: .whitespaces)
+            // "866.7 MBit/s VHT-MCS 9 …" — the number and its unit are the first two tokens.
+            let parts = v.split(separator: " ")
+            if parts.count >= 2, let mbit = Double(parts[0]), mbit > 0 {
+                let unit = parts[1].lowercased()
+                let multiplier: Double = unit.hasPrefix("gbit") ? 1_000_000_000 : 1_000_000
+                bitrate = UInt64((mbit * multiplier).rounded())
+            }
+        } else if line.hasPrefix("signal:") {
+            let v = line.dropFirst("signal:".count).trimmingCharacters(in: .whitespaces)
+            if let n = v.split(separator: " ").first, let dbm = Int(n) { signal = dbm }
+        }
+    }
+    return (ssid, bitrate, signal)
+}
+
 /// One resolver scope discovered from the system.
 public struct ResolverScope: Equatable, Sendable {
     public var label: String            // "enp0s1", "Global", "systemd-resolved stub"

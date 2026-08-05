@@ -269,10 +269,15 @@ struct ContentView: View {
                 }
                 .width(min: 70, ideal: 90)
 
-                TableColumn("Svc order") { r in
+                TableColumn("Priority") { r in
                     // macOS has no numeric route metric; the network service order is
-                    // what decides which default wins. Lower = higher priority.
-                    if let rank = monitor.serviceRank[r.interfaceName] {
+                    // what decides which default wins. Lower = higher priority. Linux does
+                    // have a metric, and fills RouteEntry.metric instead — one column
+                    // carries whichever the platform provides.
+                    if let metric = r.metric {
+                        Text("\(metric)").font(.system(.body, design: .monospaced))
+                            .foregroundColor(r.isDefault ? .primary : .secondary)
+                    } else if let rank = monitor.serviceRank[r.interfaceName] {
                         Text("\(rank + 1)").font(.system(.body, design: .monospaced))
                             .foregroundColor(r.isDefault ? .primary : .secondary)
                     } else {

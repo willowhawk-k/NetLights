@@ -494,7 +494,7 @@ private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
 private func routesView(_ s: TopologySnapshot, _ st: TUIState,
                         _ f: TUIFrame, _ w: Int) -> [String] {
     let head = "  " + cell("DESTINATION", 20) + cell("GATEWAY", 17)
-        + cell("NETMASK", 17) + cell("IFACE", 9) + cell("FLAGS", 8)
+        + cell("NETMASK", 17) + cell("IFACE", 9) + cell("FLAGS", 8) + cell("PRIO", 6)
     var rows: [String] = []
 
     func emit(_ list: [RouteEntry]) {
@@ -507,6 +507,10 @@ private func routesView(_ s: TopologySnapshot, _ st: TUIState,
             // leaves it legible too. Masking it turned 255.255.255.0 into "255.x.x.x".
             line += cell(r.netmask ?? "—", 17)
             line += cell(r.interfaceName, 9) + cell(r.flags, 8)
+            // Linux route metric, else the macOS network-service rank. Lower wins on both;
+            // they are mutually exclusive by platform, so one column serves both.
+            line += cell(r.metric.map(String.init)
+                         ?? s.serviceRank[r.interfaceName].map { "\($0 + 1)" } ?? "—", 6)
             rows.append(line)
         }
     }

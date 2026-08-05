@@ -154,6 +154,39 @@ public func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceI
 /// tunnel (`encrypted`); and everything else — local subnets, connected & system routes
 /// (`local`). With no active VPN, everything lands in `local`. `direct`/`encrypted`
 /// mirror the graph's own VPN path classification, so the two views agree.
+/// The BSD name of the egress interface when the uplink is Wi-Fi, else nil.
+///
+/// Exists because on Linux `NetLightsCore` is a real module and `EgressInfo.viaInterface` /
+/// `InterfaceInfo.category` are internal to it — the collector can't read them. macOS never
+/// hits this, since there Core and the app compile as one module, which is exactly why the
+/// cross-build is a required gate and not a formality.
+public func wifiEgressInterface(_ egress: EgressInfo?, interfaces: [InterfaceInfo]) -> String? {
+    guard let e = egress else { return nil }
+    guard interfaces.first(where: { $0.id == e.viaInterface })?.category == .wifi else { return nil }
+    return e.viaInterface
+}
+
+/// Fold an SSID and a negotiated rate learned from a platform-specific source (CoreWLAN on
+/// macOS, nl80211 via `iw` on Linux) into the snapshot: the interface gets the link rate,
+/// the egress gets the network name, and the default gateway riding that interface gets it
+/// too so the graph's gateway chip is labelled. Both inputs are independently optional.
+public func applyWirelessLink(iface: String, ssid: String?, bitrateBps: UInt64?,
+                              interfaces: inout [InterfaceInfo],
+                              egress: inout EgressInfo?,
+                              gateways: inout [GatewayNode]) {
+    if let bps = bitrateBps, bps > 0,
+       let i = interfaces.firstIndex(where: { $0.id == iface }) {
+        interfaces[i].linkSpeedBps = bps
+    }
+    guard let ssid, !ssid.isEmpty else { return }
+    egress?.name = ssid
+    if let gi = gateways.firstIndex(where: {
+        $0.isDefault && !$0.isVPN && $0.reachableVia.contains(iface)
+    }) {
+        gateways[gi].networkName = ssid
+    }
+}
+
 public func classifyRoutes(_ routes: [RouteEntry], gateways: [GatewayNode])
     -> (direct: [RouteEntry], encrypted: [RouteEntry], local: [RouteEntry]) {
     let vpnGW = gateways.first { $0.isVPN && $0.vpnServer != nil }

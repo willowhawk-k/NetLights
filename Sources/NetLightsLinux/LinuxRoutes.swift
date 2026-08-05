@@ -35,7 +35,12 @@ func linuxRoutes() -> (routes: [RouteEntry], rank: [String: Int]) {
             netmask: isDefault ? nil : mask,
             interfaceName: iface,
             isDefault: isDefault,
-            flags: flags))
+            flags: flags,
+            // The metric was parsed and thrown away before. Surfacing it is what explains
+            // the "duplicate" routes a VM shows: two default routes over one interface,
+            // identical in every displayed field, differ only by metric (e.g. 100 from one
+            // DHCP config and 1024 from another).
+            metric: metric))
 
         if isDefault { rank[iface] = min(rank[iface] ?? Int.max, metric) }
     }
