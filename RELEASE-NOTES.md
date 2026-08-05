@@ -34,7 +34,15 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
-### 1.9.1 — 2026-08-04
+### 1.9.2 — 2026-08-04
+
+- **Fixed: duplicate-looking routes could be dropped or mis-drawn.** A routing table can hold
+  several routes that match in destination, gateway and interface — two default routes that
+  differ only by metric, or a pair of host routes to a VPN concentrator. 1.9.1 identified routes
+  by those three fields, so such routes shared an identity and the Routes table could render
+  them incorrectly. Routes are identified uniquely again, and snapshots stay reproducible.
+
+### 1.9.1 — 2026-08-04 *(superseded by 1.9.2; never published)*
 
 - **Snapshots are now reproducible.** `netlights --dump-json` gave different output on every
   run of an unchanged machine: each route carried a random identifier that was written out but
