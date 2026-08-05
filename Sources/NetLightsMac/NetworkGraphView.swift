@@ -522,31 +522,20 @@ struct NetworkGraphView: View {
 
     @ViewBuilder
     private func tbBrackets(h: CGFloat) -> some View {
-        let physBand = bandRect("Physical")
-        let bracketY = physBand.minY + 26
-        ForEach(hardwarePorts) { port in
-            let pts = receptacleBSDs(port).compactMap { ifacePositions[$0] }
-            // Span only the top-row tiles. In a narrow window spreadAnchored can
-            // wrap a receptacle's tiles to a lower lane; the bracket sits at the
-            // band top, so spanning a wrapped tile's x would float misleadingly
-            // above it. In the common single-row case all tiles share this row.
-            if let topY = pts.map({ $0.y }).min() {
-                let xs = pts.filter { abs($0.y - topY) < 1 }.map { $0.x }
-                let minX = (xs.min() ?? 0) - 46
-                let maxX = (xs.max() ?? 0) + 46
-                let midX = (minX + maxX) / 2
-                Path { p in
-                    p.move(to:    CGPoint(x: minX, y: bracketY + 10))
-                    p.addLine(to: CGPoint(x: minX, y: bracketY))
-                    p.addLine(to: CGPoint(x: maxX, y: bracketY))
-                    p.addLine(to: CGPoint(x: maxX, y: bracketY + 10))
-                }
-                .stroke(Color.orange.opacity(0.28), lineWidth: 1)
-                Text(portBracketLabel(port))
-                    .font(.system(size: 7.5, weight: .medium))
-                    .foregroundColor(.orange.opacity(0.42))
-                    .position(x: midX, y: bracketY - 6)
+        // The span/label math lives in the engine (`tbBracketSpans`) so the SVG renderer
+        // draws the same brackets; this is now just the SwiftUI presentation of it.
+        ForEach(Array(engine.tbBracketSpans().enumerated()), id: \.offset) { (_, b) in
+            Path { p in
+                p.move(to:    CGPoint(x: b.minX, y: b.y + 10))
+                p.addLine(to: CGPoint(x: b.minX, y: b.y))
+                p.addLine(to: CGPoint(x: b.maxX, y: b.y))
+                p.addLine(to: CGPoint(x: b.maxX, y: b.y + 10))
             }
+            .stroke(Color.orange.opacity(0.28), lineWidth: 1)
+            Text(b.label)
+                .font(.system(size: 7.5, weight: .medium))
+                .foregroundColor(.orange.opacity(0.42))
+                .position(x: (b.minX + b.maxX) / 2, y: b.y - 6)
         }
     }
 

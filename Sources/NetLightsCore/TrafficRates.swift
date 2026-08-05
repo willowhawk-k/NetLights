@@ -70,6 +70,10 @@ public struct TrafficRateDeriver {
         states[interfaceID] ?? TrafficState()
     }
 
+    /// The whole map, for renderers that take one (the SVG renderer feeds it to the layout
+    /// engine, which needs per-interface activity to honour "Hide inactive").
+    public var allStates: [String: TrafficState] { states }
+
     /// Smoothed receive rate in BYTES/sec — feed to `formatRate` for a bits/sec label.
     public func rxRate(for interfaceID: String) -> Double { states[interfaceID]?.rxRate ?? 0 }
     public func txRate(for interfaceID: String) -> Double { states[interfaceID]?.txRate ?? 0 }

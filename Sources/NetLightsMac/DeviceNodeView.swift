@@ -30,7 +30,7 @@ struct DeviceNodeView: View {
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 5)
-        .frame(width: 74, height: 52)
+        .frame(width: GraphNodeSize.device.w, height: GraphNodeSize.device.h)
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.5))
@@ -39,7 +39,6 @@ struct DeviceNodeView: View {
         )
     }
 
-    private var shortName: String {
-        device.name.count > 12 ? String(device.name.prefix(11)) + "…" : device.name
-    }
+    /// Shared with the SVG renderer (InterfaceModel.swift) so both graphs truncate alike.
+    private var shortName: String { deviceShortName(device.name) }
 }

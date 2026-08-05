@@ -108,9 +108,12 @@ func clipToWidth(_ s: String, _ width: Int) -> String {
     return out
 }
 
-/// Pad (or clip) to exactly `width` cells.
+/// Pad (or clip) to exactly `width` cells, always leaving at least one trailing space so a
+/// value that exactly fills its column can't run into the next one. (Without the reserve,
+/// a 13-cell "Miscellaneous" in a 13-wide CLASS column abutted the VID:PID beside it, and
+/// an 11-cell "Thunderbolt" bus produced "ThunderboltT7 Shield 2 TB".)
 func cell(_ s: String, _ width: Int, unicode: Bool = true) -> String {
-    let t = clip(s, width, unicode: unicode)
+    let t = clip(s, max(0, width - 1), unicode: unicode)
     return t + String(repeating: " ", count: max(0, width - displayWidth(t)))
 }
 
@@ -271,21 +274,10 @@ public struct TUIState: Equatable, Sendable {
 
 // MARK: - Privacy masking
 
-/// Keeps the IPv4 first octet / MAC OUI, matching the GUI's privacy mode. Hand-rolled
-/// rather than NSRegularExpression: this must run in the static musl build, where
-/// leaning on plain stdlib string ops is the safer bet.
-func maskIfNeeded(_ s: String, _ on: Bool) -> String {
-    guard on, !s.isEmpty else { return s }
-    if s.contains(":") {                       // MAC — keep the vendor OUI
-        let parts = s.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 6 else { return s }
-        return parts.prefix(3).joined(separator: ":") + ":xx:xx:xx"
-    }
-    let parts = s.split(separator: ".", omittingEmptySubsequences: false)
-    guard parts.count == 4, parts.allSatisfy({ $0.allSatisfy(\.isNumber) }) else { return s }
-    if s.hasPrefix("127.") { return s }        // loopback stays legible, as in the GUI
-    return "\(parts[0]).x.x.x"
-}
+/// Forwards to the shared masker in PrivacyMask.swift. This was a second, divergent
+/// implementation: it had no IPv6 branch (so `fe80::…` passed through in the clear) and it
+/// masked netmasks, which the GUI deliberately leaves legible.
+func maskIfNeeded(_ s: String, _ on: Bool) -> String { maskAddresses(s, on) }
 
 // MARK: - Frame
 
@@ -355,7 +347,10 @@ private func header(_ s: TopologySnapshot, _ st: TUIState,
     var bits: [String] = ["NetLights \(f.versionLabel)"]
     if !s.machineModel.isEmpty { bits.append(s.machineModel) }
     if let e = s.egress {
-        bits.append("egress \(e.viaInterface) (\(maskIfNeeded(e.displayName, st.privacy)))")
+        // The network NAME is the SSID (or the wired search domain) — it names a home or an
+        // office, so privacy mode replaces it outright rather than masking octets. The
+        // address masker never touched it, since an SSID isn't address-shaped.
+        bits.append("egress \(e.viaInterface) (\(maskNetworkName(e.displayName, st.privacy)))")
     }
     bits.append("\(up)/\(s.interfaces.count) up")
     if !s.gateways.isEmpty { bits.append("\(s.gateways.count) gw") }
@@ -412,13 +407,15 @@ private func rule(_ title: String, _ w: Int, _ f: TUIFrame, _ c: TUIColor) -> St
                  + String(repeating: dash, count: fill), c, f.colorMode)
 }
 
+/// Link-state glyph. Up and down MUST use different characters, not just different colours:
+/// `--no-color`, `NO_COLOR`, `TERM=dumb` and `--once` into a pipe are all first-class, and
+/// with colour off a filled dot for both made the single most important per-interface fact
+/// unreadable — `netlights tui --once > report.txt` showed a dead port and a live one alike.
 private func dot(_ ls: LinkState, _ f: TUIFrame) -> String {
-    let g = f.unicode ? "●" : "*"
-    let o = f.unicode ? "○" : "o"
     switch ls {
-    case .up:      return paint(g, .up, f.colorMode)
-    case .down:    return paint(g, .down, f.colorMode)
-    case .unknown: return paint(o, .unknown, f.colorMode)
+    case .up:      return paint(f.unicode ? "●" : "*", .up, f.colorMode)
+    case .down:    return paint(f.unicode ? "✕" : "x", .down, f.colorMode)
+    case .unknown: return paint(f.unicode ? "○" : "o", .unknown, f.colorMode)
     }
 }
 
@@ -447,24 +444,37 @@ private func visibleInterfaces(_ s: TopologySnapshot, _ st: TUIState,
 private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
                             _ st: TUIState, _ f: TUIFrame, _ w: Int) -> [String] {
     // Columns drop by priority as the terminal narrows; S/IFACE/IPV4/RX·s/TX·s always stay.
-    let wide = w >= 132, mid = w >= 104
+    // DESCRIPTION gets its own (lower) threshold ahead of MAC: knowing that en5 is "USB LAN"
+    // is more diagnostic than its MAC, and pinning both to 132 meant an 80- or 100-column
+    // terminal could not identify an adapter anywhere in the TUI.
+    let wide = w >= 132, mid = w >= 104, named = w >= 92
     var head = "  " + cell("IFACE", 10) + cell("TYPE", 13)
-    if wide { head += cell("DESCRIPTION", 18) }
+    if named { head += cell("DESCRIPTION", 18) }
     head += cell("IPV4", 16)
     if mid  { head += cell("MAC", 18) }
     head += cell("SPEED", 10) + cell("RX/s", 11) + cell("TX/s", 11)
     if wide { head += cell("RX", 10) + cell("TX", 10) }
     var rows = [paint(cell(head, w, unicode: f.unicode), .dim, f.colorMode)]
 
+    // An interface provided by a USB adapter should read as that adapter, so the Interfaces
+    // and Devices tabs refer to each other.
+    let providedBy = Dictionary(
+        s.attachedDevices.compactMap { d in d.interfaceBSD.map { ($0, d.name) } },
+        uniquingKeysWith: { a, _ in a })
+
     for i in visibleInterfaces(s, st, rates) {
         var r = dot(i.linkState, f) + " "
         r += paint(cell(i.id, 10), color(for: i.category), f.colorMode)
         r += cell(i.category.rawValue, 13)
-        // Prefer the SystemConfiguration hardware-port name ("Wi-Fi", "Thunderbolt 1"),
-        // matching the macOS Interfaces tab, and fall back to subtitleLabel for interfaces
-        // SC doesn't name. Not subtitleLabel first: it substitutes the IP address, which
-        // is right for a graph node but duplicates the IPV4 column here.
-        if wide { r += cell(i.displayName ?? i.subtitleLabel, 18) }
+        // Prefer the adapter that provides the interface, then the SystemConfiguration
+        // hardware-port name ("Wi-Fi", "Thunderbolt 1"), matching the macOS Interfaces tab,
+        // and fall back to subtitleLabel for interfaces SC doesn't name. Not subtitleLabel
+        // first: it substitutes the IP address, which is right for a graph node but
+        // duplicates the IPV4 column here.
+        if named {
+            let desc = providedBy[i.id] ?? i.displayName ?? i.subtitleLabel
+            r += cell(maskIfNeeded(desc, st.privacy), 18)
+        }
         r += cell(maskIfNeeded(i.ipv4Addresses.first ?? "—", st.privacy), 16)
         if mid { r += cell(maskIfNeeded(i.macAddress ?? "—", st.privacy), 18) }
         r += cell(i.formattedSpeed ?? "—", 10)
@@ -493,7 +503,9 @@ private func routesView(_ s: TopologySnapshot, _ st: TUIState,
             let dest = r.isDefault ? "\(r.destination) \(f.unicode ? "✦" : "*")" : r.destination
             line += cell(maskIfNeeded(dest, st.privacy), 20)
             line += cell(maskIfNeeded(r.gateway.isEmpty ? "—" : r.gateway, st.privacy), 17)
-            line += cell(maskIfNeeded(r.netmask ?? "—", st.privacy), 17)
+            // Netmask is NOT masked — it describes the prefix, not the host, and the GUI
+            // leaves it legible too. Masking it turned 255.255.255.0 into "255.x.x.x".
+            line += cell(r.netmask ?? "—", 17)
             line += cell(r.interfaceName, 9) + cell(r.flags, 8)
             rows.append(line)
         }
@@ -521,32 +533,78 @@ private func routesView(_ s: TopologySnapshot, _ st: TUIState,
 private func devicesView(_ s: TopologySnapshot, _ st: TUIState,
                          _ f: TUIFrame, _ w: Int) -> [String] {
     guard !s.attachedDevices.isEmpty else {
+        #if os(Linux)
         return ["", "  No external devices.",
                 "  (On Linux, USB / Thunderbolt collectors arrive in a later update.)"]
+        #else
+        return ["", "  No external devices detected.",
+                "  USB peripherals, hubs/docks and external displays appear here when connected."]
+        #endif
     }
-    let wide = w >= 120
-    var head = "  " + cell("DEVICE", 30) + cell("TYPE", 12) + cell("VENDOR", 16)
-        + cell("BUS", 11) + cell("SPEED", 15)
-    if wide { head += cell("CLASS", 13) + cell("VID:PID", 11) }
+    // Columns are added by priority while the DEVICE column can still hold a useful name,
+    // and DEVICE then takes everything left over. It used to be pinned at 30 cells at EVERY
+    // terminal size — so "CORSAIR K65 PLUS WIRELESS Keyboard" was clipped on an 80-column
+    // terminal and equally clipped on a 200-column one, where 90 columns sat empty. TYPE and
+    // CLASS are 16 because the longest labels ("Game Controller", "Vendor-Specific") are 15.
+    let optional: [(String, Int)] = [("VENDOR", 16), ("BUS", 11), ("PORT", 14),
+                                     ("CLASS", 16), ("VID:PID", 11)]
+    let minName = 24
+    var cols: [(String, Int)] = [("TYPE", 16), ("SPEED", 15)]
+    // -1: the header is run through cell(head, w), which reserves a trailing separator cell.
+    var used = 2 + cols.reduce(0) { $0 + $1.1 } + 1
+    for col in optional where used + col.1 + minName <= w {
+        cols.append(col); used += col.1
+    }
+    // Keep the on-screen order stable regardless of which ones fitted.
+    let order = ["TYPE", "VENDOR", "BUS", "SPEED", "PORT", "CLASS", "VID:PID"]
+    cols.sort { order.firstIndex(of: $0.0)! < order.firstIndex(of: $1.0)! }
+    let shown = Set(cols.map(\.0))
+    let nameW = max(minName, w - used)
+
+    var head = "  " + cell("DEVICE", nameW)
+    for (title, width) in cols { head += cell(title, width) }
     var rows = [paint(cell(head, w, unicode: f.unicode), .dim, f.colorMode)]
 
-    // Pre-order walk so hubs own their children, mirroring the graph's device tree.
-    let children = Dictionary(grouping: s.attachedDevices.filter { $0.parentID != nil },
-                              by: { $0.parentID! })
+    // Pre-order walk so hubs own their children, mirroring the graph's device tree. A
+    // parentID naming a device that isn't in the snapshot must fall back to being a root,
+    // or the device is neither a root nor reachable and silently vanishes from the table
+    // while the header still counts it. Both the GUI and the layout engine guard this.
+    let byId = Dictionary(s.attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let children = Dictionary(grouping: s.attachedDevices.filter {
+        guard let pid = $0.parentID else { return false }
+        return byId[pid] != nil
+    }, by: { $0.parentID! })
+    func byName(_ a: AttachedDevice, _ b: AttachedDevice) -> Bool {
+        a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+    }
     func walk(_ d: AttachedDevice, _ depth: Int) {
         let indent = String(repeating: "  ", count: min(depth, 8))
-        var r = "  " + cell(indent + maskIfNeeded(d.name, st.privacy), 30)
-        r += cell(d.kind.label, 12)
-        r += cell(d.vendorName ?? "—", 16)
-        r += cell(d.connectionLabel, 11)
-        r += cell(d.speedLabel, 15)
-        if wide { r += cell(d.classLabel, 13) + cell(d.idLabel, 11) }
-        rows.append(r)
-        for kid in (children[d.id] ?? []).sorted(by: { $0.name < $1.name }) {
-            walk(kid, depth + 1)
+        // A USB-Ethernet dongle or MiFi OWNS an interface; without this the device table and
+        // the interface table never referred to each other.
+        let name = indent + maskIfNeeded(d.name, st.privacy)
+            + (d.interfaceBSD.map { " \(f.unicode ? "→" : "->") \($0)" } ?? "")
+        let value: [String: String] = [
+            "TYPE": d.kind.label,
+            "VENDOR": d.vendorName ?? "—",
+            "BUS": d.connectionLabel,
+            "SPEED": d.speedLabel,
+            "PORT": devicePortLabel(d, s.hardwarePorts),
+            "CLASS": d.classLabel,
+            "VID:PID": d.idLabel,
+        ]
+        var r = "  " + cell(name, nameW)
+        for (title, width) in cols where shown.contains(title) {
+            r += cell(value[title] ?? "—", width)
         }
+        rows.append(r)
+        for kid in (children[d.id] ?? []).sorted(by: byName) { walk(kid, depth + 1) }
     }
-    for root in s.attachedDevices.filter({ $0.parentID == nil }).sorted(by: { $0.name < $1.name }) {
+    // Group by the port a device is plugged into, then by name — so the table reads
+    // port-by-port like the graph, instead of interleaving receptacles alphabetically.
+    let roots = s.attachedDevices.filter { $0.parentID == nil || byId[$0.parentID!] == nil }
+    for root in roots.sorted(by: {
+        $0.receptacle != $1.receptacle ? $0.receptacle < $1.receptacle : byName($0, $1)
+    }) {
         walk(root, 0)
     }
     return rows
@@ -565,7 +623,7 @@ private func dnsView(_ s: TopologySnapshot, _ st: TUIState,
         // would otherwise run off the screen (auto-wrap is disabled, so it would be
         // truncated by the terminal rather than by us — and shove the layout around).
         if !global.searchDomains.isEmpty {
-            let joined = global.searchDomains.joined(separator: " ")
+            let joined = maskDomainList(global.searchDomains, st.privacy, separator: " ")
             rows.append(paint("  search: " + clip(joined, max(10, w - 12), unicode: f.unicode),
                               .dim, f.colorMode))
         }
@@ -575,14 +633,123 @@ private func dnsView(_ s: TopologySnapshot, _ st: TUIState,
         + cell("RESOLVERS", 32) + cell("SEARCH", 20)
     rows.append(paint(cell(head, w, unicode: f.unicode), .dim, f.colorMode))
     for d in s.dnsConfigs where !d.isGlobal {
-        var scope = d.scopeLabel
-        if st.privacy && d.userNamedScope { scope = "(service)" }
+        var scope = maskScopeLabel(d.scopeLabel, interfaceName: d.interfaceName,
+                                   userNamed: d.userNamedScope, st.privacy)
         if d.isPrimary { scope = (f.unicode ? "★ " : "* ") + scope }
         if d.isSupplemental { scope += " [split-DNS]" }
         var r = "  " + cell(scope, 24) + cell(d.interfaceName ?? "—", 9)
         r += cell(d.servers.map { maskIfNeeded($0, st.privacy) }.joined(separator: " "), 32)
-        r += cell(d.searchDomains.joined(separator: " "), 20)
+        // Search / split-DNS domains name the employer, which is exactly what the help text
+        // promises privacy mode redacts.
+        r += cell(maskDomainList(d.searchDomains, st.privacy, separator: " "), 20)
         rows.append(r)
+    }
+    return rows
+}
+
+/// The Hardware (OSI L0) band for the text graph: one row per receptacle or synthetic
+/// entity, with the interfaces it carries and the device tree hanging off it — the same
+/// slot order the SwiftUI/SVG graph lays out left-to-right (iPhone, TB ports, Wi-Fi,
+/// Displays, Bluetooth, Battery), read top-to-bottom instead.
+private func hardwareBand(_ s: TopologySnapshot, _ st: TUIState,
+                          _ f: TUIFrame, _ w: Int) -> [String] {
+    let m = f.colorMode
+    let displays = s.attachedDevices.filter { $0.receptacle == -2 }
+    let bluetooth = s.attachedDevices.filter { $0.receptacle == -4 }
+    let hasWifi = s.interfaces.contains { $0.category == .wifi }
+    guard !s.hardwarePorts.isEmpty || !s.attachedDevices.isEmpty
+            || hasWifi || s.systemPower != nil else { return [] }
+
+    var rows = [rule("Hardware  (OSI L0)", w, f, .dim)]
+    let arrow = f.unicode ? "→" : "->"
+    let tee = f.unicode ? "├─" : "|-"      // a child with siblings below it
+    let elbow = f.unicode ? "└─" : "`-"    // the last child
+
+    // Same dangling-parent guard as the Devices table: a child whose parent isn't in the
+    // snapshot must still appear, as a root on its own receptacle.
+    let byId = Dictionary(s.attachedDevices.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let children = Dictionary(grouping: s.attachedDevices.filter {
+        guard let pid = $0.parentID else { return false }
+        return byId[pid] != nil
+    }, by: { $0.parentID! })
+    func byKindThenName(_ a: AttachedDevice, _ b: AttachedDevice) -> Bool {
+        a.kind.label != b.kind.label ? a.kind.label < b.kind.label
+            : a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+    }
+
+    func emitDevice(_ d: AttachedDevice, _ depth: Int, last: Bool) {
+        let pad = String(repeating: "  ", count: min(depth, 6))
+        var line = "      " + pad + paint((last ? elbow : tee) + " ", .dim, m)
+        line += paint(maskIfNeeded(d.name, st.privacy), .headline, m)
+        var tail: [String] = [d.kind.label]
+        if let bsd = d.interfaceBSD { tail.append("\(arrow) \(bsd)") }
+        if d.speedLabel != "—" { tail.append(d.speedLabel) }
+        if let b = d.batteryLabel { tail.append(b) }
+        line += paint("  " + tail.joined(separator: " · "), .dim, m)
+        rows.append(line)
+        let kids = (children[d.id] ?? []).sorted(by: byKindThenName)
+        for (n, kid) in kids.enumerated() { emitDevice(kid, depth + 1, last: n == kids.count - 1) }
+    }
+
+    /// One slot header plus everything hanging off it.
+    // `tint`, not `color` — a parameter named `color` would shadow the `color(for:)`
+    // category-palette function used two lines down.
+    func emitSlot(_ title: String, _ tint: TUIColor, subtitle: String,
+                  bsds: [String], devices: [AttachedDevice]) {
+        var head = "  " + paint(cell(title, 30), tint, m)
+        if !subtitle.isEmpty { head += paint(subtitle, .dim, m) }
+        rows.append(head)
+        // The interfaces this receptacle carries — the "physical adapter" relation the
+        // Physical band alone can't express.
+        for bsd in bsds.sorted() {
+            guard let i = s.interfaces.first(where: { $0.id == bsd }) else { continue }
+            var line = "      " + dot(i.linkState, f) + " "
+            line += paint(cell(i.id, 10), color(for: i.category), m)
+            line += paint(cell(i.category.rawValue, 13), .dim, m)
+            line += paint(maskIfNeeded(i.ipv4Addresses.first ?? "—", st.privacy), .dim, m)
+            rows.append(line)
+        }
+        let roots = devices.sorted(by: byKindThenName)
+        for (n, d) in roots.enumerated() { emitDevice(d, 0, last: n == roots.count - 1) }
+    }
+
+    // Real receptacles: the iPhone/iPad entry first (it's the one most likely to be the
+    // egress), then TB ports in order — matching hwPortOrder in the layout engine.
+    let phone = s.hardwarePorts.filter(\.isPhone)
+    let tb = s.hardwarePorts.filter { !$0.isPhone }.sorted { $0.id < $1.id }
+    for p in phone + tb {
+        var bsds = Set(p.childBSDNames)
+        for d in s.attachedDevices where d.receptacle == p.id {
+            if let bsd = d.interfaceBSD { bsds.insert(bsd) }
+        }
+        let roots = s.attachedDevices.filter {
+            $0.receptacle == p.id && ($0.parentID == nil || byId[$0.parentID!] == nil)
+        }
+        // A bare, empty port is noise; skip it unless something is actually attached.
+        guard !bsds.isEmpty || !roots.isEmpty || p.hasConnectedDevice || p.hasPower else { continue }
+        var badges: [String] = []
+        if p.hasPower { badges.append(f.unicode ? "⚡︎ charger" : "charger") }
+        emitSlot(hardwarePortLabel(p), .purple,
+                 subtitle: badges.joined(separator: " · "),
+                 bsds: Array(bsds), devices: roots)
+    }
+
+    // Synthetic entities — the same ones the graph draws as Hardware-row cards.
+    if hasWifi {
+        let wifiBSDs = s.interfaces.filter { $0.category == .wifi }.map(\.id)
+        let ssid = s.egress.map { maskNetworkName($0.displayName, st.privacy) } ?? ""
+        emitSlot("Wi-Fi", .wifi, subtitle: ssid, bsds: wifiBSDs, devices: [])
+    }
+    if !displays.isEmpty {
+        emitSlot("Displays", .headline, subtitle: "\(displays.count) external",
+                 bsds: [], devices: displays)
+    }
+    if !bluetooth.isEmpty {
+        emitSlot("Bluetooth", .wifi, subtitle: "\(bluetooth.count) connected",
+                 bsds: [], devices: bluetooth)
+    }
+    if let label = s.systemPower?.label {
+        rows.append("  " + paint(cell("Battery", 30), .amber, m) + paint(label, .dim, m))
     }
     return rows
 }
@@ -600,7 +767,7 @@ private func graphView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
 
     // Internet + egress.
     if let e = s.egress {
-        let name = maskIfNeeded(e.displayName, st.privacy)
+        let name = maskNetworkName(e.displayName, st.privacy)
         rows.append("  " + paint("\(cloud) Internet", .headline, m)
                     + paint("  — via \(e.viaInterface) (\(name))", .dim, m))
     } else {
@@ -618,12 +785,18 @@ private func graphView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
                 line += paint("→ \(maskIfNeeded(server, st.privacy))", .teal, m)
                 if let carrier = g.vpnCarrier { line += paint("  via \(carrier)", .dim, m) }
             } else if let net = g.networkName {
-                line += paint(net, .dim, m)
+                line += paint(maskNetworkName(net, st.privacy), .dim, m)
             }
             rows.append(line)
         }
         rows.append("      " + paint(pipe, .dim, m))
     }
+
+    // Hardware (OSI L0) — the band the text graph used to omit entirely. Without it the
+    // TUI never showed which receptacle anything is plugged into, never nested a device
+    // under its hub, and never showed that en0 hangs off the Wi-Fi radio: the graph said
+    // "12 dev" in the header and then listed none of them.
+    rows.append(contentsOf: hardwareBand(s, st, f, w))
 
     // The OSI bands, top-down, exactly as the graph stacks them.
     let ifaces = visibleInterfaces(s, st, rates)
@@ -632,6 +805,12 @@ private func graphView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
         guard !groups.isEmpty else { continue }
         rows.append(rule("\(layer)  (OSI \(osi))", w, f, .dim))
         for group in groups {
+            // `subgroups` already computes the group label ("VPN / Tunnels", "Apple
+            // Wireless", …) and the SwiftUI graph draws it; the TUI was computing it and
+            // throwing it away, so the band read as one undifferentiated list.
+            if groups.count > 1 && !group.label.isEmpty {
+                rows.append(paint("    " + group.label, .dim, m))
+            }
             for i in group.interfaces {
                 var line = "  " + dot(i.linkState, f) + " "
                 line += paint(cell(i.id, 10), color(for: i.category), m)

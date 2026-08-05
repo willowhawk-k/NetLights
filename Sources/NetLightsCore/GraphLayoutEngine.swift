@@ -112,14 +112,22 @@ enum ColorToken: Equatable {
 
 // MARK: - Layout helper (pure)
 
+/// Horizontal gap between adjacent groups in a uniform row. Shared with
+/// `computeContentWidth` so the canvas it asks for accounts for the same gaps.
+let uniformGroupGap: CGFloat = 20
+
 func uniformRects(groups: [IfaceGroup], band: CGRect, w: CGFloat) -> [CGRect] {
     guard !groups.isEmpty else { return [] }
     let margin: CGFloat = 36
-    let gap: CGFloat    = 20
+    let gap = uniformGroupGap
     let nodeW: CGFloat  = 108
     let totalN = groups.map { $0.interfaces.count }.reduce(0, +)
     let usable = w - margin * 2 - CGFloat(groups.count - 1) * gap
-    let wPerN  = min(nodeW, usable / CGFloat(max(totalN, 1)))
+    // Floor at the drawn box width: compressing the pitch below the tile just overlaps the
+    // tiles, which is strictly worse than letting the canvas scroll. Belt and braces behind
+    // the contentWidth fix — a canvas can still be narrower than the content on a small
+    // window, and the graph should stay legible when it is.
+    let wPerN  = max(min(nodeW, usable / CGFloat(max(totalN, 1))), GraphNodeSize.iface.w)
     // Center the packed groups in the band: when the content is narrower than the
     // usable span (few interfaces, or "Hide inactive"), it would otherwise be left-
     // aligned while every other band centers. With full content the offset is ~0.
@@ -373,9 +381,16 @@ struct GraphLayoutEngine {
         let hwNatural = order.isEmpty ? 0
             : order.reduce(0) { $0 + max(hwMinSlotW, CGFloat(leaves($1)) * hwLeafSlotW,
                                          anchoredSlotSpan(anchoredCounts[$1] ?? 0)) } + margin * 2
-        // Virtual band: two balanced rows of ~112-wide node slots.
-        let vN = subgroups(layer: "Virtual", ifaces: visible).reduce(0) { $0 + $1.interfaces.count }
-        let vNatural = vN == 0 ? 0 : CGFloat((vN + 1) / 2) * 112 + margin * 2
+        // Virtual band: two rows of ~112-wide node slots, sized from the row that actually
+        // ends up WIDEST. Sizing from (total + 1) / 2 assumed a balanced split; the split is
+        // on group boundaries, so one row routinely holds more than half the nodes.
+        let vRows = virtualRows()
+        let vWidest = vRows.map { row in
+            let n = row.reduce(0) { $0 + $1.interfaces.count }
+            return n == 0 ? CGFloat(0)
+                          : CGFloat(n) * 112 + CGFloat(max(row.count - 1, 0)) * uniformGroupGap
+        }.max() ?? 0
+        let vNatural = vWidest == 0 ? 0 : vWidest + margin * 2
         // Physical free-adapter row.
         let pN = physFreeVisible.count
         let pNatural = pN == 0 ? 0 : CGFloat(pN) * 112 + margin * 2
@@ -437,16 +452,33 @@ struct GraphLayoutEngine {
         return f.rootsByPort.values.flatMap { $0 }.map(depth).max() ?? 0
     }
 
-    /// Whether the Virtual band actually fills its second row (mirrors the split
-    /// in `virtualGroupLayout`), so it doesn't reserve height it won't use.
-    private var virtualRowsUsed: Int {
+    /// Assign the Virtual-band subgroups to the two rows. THE single definition of the
+    /// split: `virtualGroupLayout`, `virtualRowsUsed` and `computeContentWidth` all used to
+    /// re-derive it, and the width calculation got it wrong — it assumed the two rows split
+    /// the node count evenly, when the split is actually on GROUP boundaries. A first group
+    /// larger than half (16 tunnels out of 22, say) therefore had the canvas sized for 11
+    /// nodes while row 0 had to fit 16, and `uniformRects` compressed the per-node width
+    /// below the drawn box, overlapping every chip in the row.
+    func virtualRows() -> [[IfaceGroup]] {
         let groups = subgroups(layer: "Virtual", ifaces: visible)
-        guard !groups.isEmpty else { return 0 }
+        guard !groups.isEmpty else { return [[], []] }
         let total = groups.reduce(0) { $0 + $1.interfaces.count }
         let half  = (total + 1) / 2
+        var rows: [[IfaceGroup]] = [[], []]
         var counts = [0, 0]
-        for g in groups { let r = counts[0] < half ? 0 : 1; counts[r] += g.interfaces.count }
-        return counts[1] > 0 ? 2 : 1
+        for g in groups {
+            let r = counts[0] < half ? 0 : 1
+            rows[r].append(g); counts[r] += g.interfaces.count
+        }
+        return rows
+    }
+
+    /// Whether the Virtual band actually fills its second row, so it doesn't reserve
+    /// height it won't use.
+    private var virtualRowsUsed: Int {
+        let rows = virtualRows()
+        if rows[0].isEmpty && rows[1].isEmpty { return 0 }
+        return rows[1].isEmpty ? 1 : 2
     }
 
     // MARK: - Content-driven band sizing
@@ -597,16 +629,8 @@ struct GraphLayoutEngine {
     /// shared by node placement and the group headers.
     func virtualGroupLayout(w: CGFloat) -> [(group: IfaceGroup, rect: CGRect)] {
         let band = bandRect("Virtual")
-        let groups = subgroups(layer: "Virtual", ifaces: visible)
-        guard !groups.isEmpty else { return [] }
-        let total = groups.reduce(0) { $0 + $1.interfaces.count }
-        let half  = (total + 1) / 2
-        var rows: [[IfaceGroup]] = [[], []]
-        var counts = [0, 0]
-        for g in groups {
-            let r = counts[0] < half ? 0 : 1
-            rows[r].append(g); counts[r] += g.interfaces.count
-        }
+        let rows = virtualRows()
+        guard !(rows[0].isEmpty && rows[1].isEmpty) else { return [] }
         // Keep the tunnel rows below the strip reserved for the VPN gateway chip.
         let inset: CGFloat = gateways.contains { $0.isVPN } ? vpnStripHeight : 0
         let rowH = max(band.height - inset, 1) / 2
@@ -937,15 +961,32 @@ struct GraphLayoutEngine {
         return Array(ids)
     }
 
-    func portBracketLabel(_ p: HardwarePort) -> String {
-        if p.isPhone {
-            let loc = p.side.isEmpty ? "" : (p.position.isEmpty ? p.side : "\(p.side) · \(p.position)")
-            return loc.isEmpty ? "\(p.deviceName) · \(p.connectionMedium)"
-                               : "\(p.deviceName) · \(p.connectionMedium) (\(loc))"
+    func portBracketLabel(_ p: HardwarePort) -> String { hardwarePortLabel(p) }
+
+    /// The Thunderbolt-port brackets: for each receptacle, the horizontal span of the
+    /// interface tiles it owns, plus its label. Pure geometry, so both renderers draw the
+    /// same bracket — the SVG had no brackets at all, so a port owning several interfaces
+    /// lost the grouping the SwiftUI graph shows.
+    ///
+    /// Only the TOP row of tiles is spanned: in a narrow window `spreadAnchored` can wrap a
+    /// receptacle's tiles to a lower lane, and the bracket sits at the band top, so spanning
+    /// a wrapped tile's x would float misleadingly above it.
+    struct BracketSpan {
+        let minX: CGFloat, maxX: CGFloat, y: CGFloat, label: String
+    }
+
+    func tbBracketSpans() -> [BracketSpan] {
+        let bracketY = bandRect("Physical").minY + 26
+        var out: [BracketSpan] = []
+        for port in hardwarePorts {
+            let pts = receptacleBSDs(port).compactMap { ifacePositions[$0] }
+            guard let topY = pts.map({ $0.y }).min() else { continue }
+            let xs = pts.filter { abs($0.y - topY) < 1 }.map { $0.x }
+            guard !xs.isEmpty else { continue }
+            out.append(BracketSpan(minX: (xs.min() ?? 0) - 46, maxX: (xs.max() ?? 0) + 46,
+                                   y: bracketY, label: portBracketLabel(port)))
         }
-        guard !p.side.isEmpty else { return "TB Port \(p.id)" }
-        let loc = p.position.isEmpty ? p.side : "\(p.side) · \(p.position)"
-        return "TB Port \(p.id)  (\(loc))"
+        return out
     }
 
     /// Point on a quadratic Bézier at t = 0.5 — the visual middle of the wire.

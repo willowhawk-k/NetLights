@@ -53,8 +53,15 @@ rather than silently ignored.
 | `SPACE` | Pause / resume |
 | `q`, `Ctrl-C` | Quit |
 
+The **Graph** view stacks the same OSI bands the app draws, starting with **Hardware
+(L0)**: each receptacle, the interfaces it carries, and the device tree hanging off it —
+so a USB-Ethernet adapter and the interface it provides appear together, and a hub owns
+its children.
+
 It resizes with the window, restores your terminal on exit (including after `Ctrl-Z` /
 `fg`), and opens no sockets — so it works in the sandboxed App Store build and over SSH.
+Link state uses distinct glyphs, not just colour, so `--no-color` and `--once` into a file
+stay readable.
 
 `--once` prints a single frame to stdout and exits, which needs no terminal at all:
 pipe it, cron it, drop it in CI.
@@ -62,8 +69,30 @@ pipe it, cron it, drop it in CI.
 ## `serve` — the web UI
 
 `serve` starts a small HTTP server and prints its URL. `/` is the same graph the app
-draws, rendered as SVG from the shared layout engine; `/snapshot.json` is the live
-`TopologySnapshot`.
+draws, rendered as SVG from the shared layout engine, with tabs for Routes, Interfaces,
+Devices and DNS.
+
+| Path | What it returns |
+|------|-----------------|
+| `/` | the page |
+| `/graph.svg` | the graph, laid out for the browser's viewport |
+| `/ui.json` | the tables, with every cell already formatted by the app's own helpers |
+| `/snapshot.json` | the raw live `TopologySnapshot` — the `--dump-json` contract |
+
+### Privacy and Hide inactive
+
+The browser has the same two controls as the TUI, in the top right — or press **p** and
+**h**. Both are reflected in the URL (`?privacy=1&hide=1`), so a masked view can be
+bookmarked or handed to someone else and stays masked.
+
+Both are resolved **server-side**. For *Hide inactive* that's forced — the graph is
+server-rendered SVG, so only the layout engine can drop nodes. For *Privacy* it's the
+stronger choice anyway: `serve` has no authentication, so masking before the response is
+written means the real addresses never cross the wire, rather than relying on the page not
+to render them. `/snapshot.json` honours the flags too.
+
+The graph re-lays-out when you resize the window, the same way the app's graph follows the
+window.
 
 ### `--bind` values
 
@@ -92,6 +121,15 @@ lets a snapshot captured on one render on the other.
 ```bash
 netlights --dump-json --compact > snapshot.json
 ```
+
+The current `schemaVersion` is **3**. Changes are additive, so a reader written against an
+earlier version still works:
+
+| Version | Change |
+|---------|--------|
+| 3 | added `serviceRank` (interface → macOS network-service order, the macOS analog of a Linux route metric). Empty on Linux. |
+| 2 | `RouteEntry.id` is no longer encoded — it was a random UUID, so two dumps of an unchanged machine differed by hundreds of lines. |
+| 1 | initial cross-platform contract. |
 
 ## Installing the command
 
