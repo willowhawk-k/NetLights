@@ -16,7 +16,18 @@ bad()  { echo "  FAIL  $1"; fail=$((fail+1)); }
 
 echo "== NetLights Linux CLI verification =="
 echo "binary: $BIN"
-[ -x "$BIN" ] || { echo "not executable: $BIN"; exit 1; }
+# Distinguish "no such file" from "exists but not executable". Reporting a missing path as
+# "not executable" sends you off checking chmod when the real cause is usually a typo in the
+# argument — a stray character on the path is invisible until the two cases are separated.
+if [ ! -e "$BIN" ]; then
+    echo "no such file: $BIN"
+    case "$BIN" in
+        *[!A-Za-z0-9._/-]*) echo "  (the path contains an unusual character — check for a typo)" ;;
+    esac
+    [ -e "${BIN%?}" ] && echo "  did you mean: ${BIN%?}"
+    exit 1
+fi
+[ -x "$BIN" ] || { echo "not executable: $BIN  (try: chmod +x '$BIN')"; exit 1; }
 echo
 
 echo "-- 1. fully static (no runtime deps: the whole portability claim) --"
