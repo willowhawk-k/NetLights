@@ -2,13 +2,13 @@
 
 # NetLights
 
-**A live, layered map of your Mac's network interfaces.**
+**A live, layered map of your network interfaces.**
 
-![platform](https://img.shields.io/badge/platform-macOS%2013%2B-blue)
+![platform](https://img.shields.io/badge/platform-macOS%2013%2B%20%C2%B7%20Linux-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.9-orange)
 
-NetLights arranges every network interface on your Mac into horizontal bands that
+NetLights arranges every network interface on your machine into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
 tunnels at the bottom — and lights up live link, traffic, device, and power state.
 
@@ -38,322 +38,87 @@ tunnels at the bottom — and lights up live link, traffic, device, and power st
 
 ## Install
 
+### Homebrew — the app and the `netlights` command
+
+```bash
+brew tap willowhawk-k/tap
+brew install --cask netlights
+```
+
+One tap, and you get **NetLights.app** plus the `netlights` command on your `PATH`.
+Updates come with `brew upgrade`.
+
+> Already have NetLights from the **Mac App Store** and only want the command line?
+> `brew install netlights-cli` adds the command against the app you already have.
+> Install one or the other — both provide a `netlights` executable.
+
 ### Mac App Store
-Install it (with automatic updates) in one click — same app, same MIT source, just the
-convenient sandboxed build:
+
+Automatic updates, sandboxed, same MIT source:
 
 <a href="https://apps.apple.com/us/app/netlights-map-your-ports/id6784530981?mt=12">
   <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-mac-app-store/black/en-us"
        alt="Download on the Mac App Store" height="44"></a>
 
-### Download the app (no build required)
+The App Store build cannot run `netlights serve` — the sandbox has no
+incoming-connections entitlement. Everything else is identical.
+
+### Direct download
+
 1. Grab the latest `NetLights-*.zip` from the [Releases](../../releases) page.
-2. Unzip and drag **NetLights.app** into your **Applications** folder.
-3. **Launch it** — the app is **signed and notarized** with an Apple Developer ID,
-   so it opens normally with no Gatekeeper warning.
+2. Unzip and drag **NetLights.app** into **Applications**.
+3. Launch it — signed and notarized with an Apple Developer ID, so no Gatekeeper warning.
 
-### Build from source
-```bash
-git clone https://github.com/willowhawk-k/NetLights.git
-cd NetLights
-swift run                 # build & launch
-# or, to produce a distributable NetLights.app + zip:
-./scripts/build-app.sh    # output in dist/
-```
-Requires Xcode command-line tools (Swift 5.9+) on macOS 13 or later.
+### Linux
+
+The command line and the browser UI work today; see
+[**docs/LINUX.md**](docs/LINUX.md) for what's supported and what's still landing.
+
+### From source
+
+See [**docs/BUILDING.md**](docs/BUILDING.md).
 
 ---
 
-## What you're looking at
+## Using it
 
-### The layer bands
-A top row holds the **Internet** node and a tier of **gateway chips**; below it the OSI bands:
+Open the app and you get the live graph, plus tabs for **Routes**, **Interfaces**,
+**Devices** and **DNS**. Hover anything for detail — a wire shows its negotiated link
+speed and live throughput; a port shows what's attached.
 
-| Band | OSI | Contents |
-|------|-----|----------|
-| **Hardware** | L0 | Physical USB-C / Thunderbolt receptacles, the Wi-Fi network entity, a Displays entity, a Bluetooth entity, plus attached devices (iPhone, MiFi, dongles) — hubs/docks expand into a tree. Position labels come from a per-model layout table. |
-| **Physical** | L1 | Real link-layer interfaces: Wi-Fi, Thunderbolt-bridge members (`en1`–`en3`), USB Ethernet, and app/VM virtual adapters. TB & iPhone interfaces sit under their hardware port. |
-| **Data Link** | L2 | Bridges and VLANs (e.g. `bridge0`, the Thunderbolt Bridge), centered over their members. |
-| **Virtual** | L3+ | Software-defined interfaces: VPN/`utun` tunnels, loopback, AWDL (AirDrop), Continuity, system interfaces. |
+[**→ Full visual guide**](docs/GUIDE.md) — what the bands, LEDs, wires and badges mean.
 
-### Nodes, LEDs & lines
-- **Green dot** — active link / device attached.
-- **Amber ant-crawl** — live traffic; the dashes march while bytes move and hold steady (no blink) for ~3 s after activity stops.
-- **Dim dot** — no link / nothing attached.
-- **Connection lines** — hardware port → its `en*` interfaces, bridge ↔ members, interface → gateway. Emphasized links (iPhone ↔ port, VPN egress) stay brightly lit.
-- **Throughput on the wire** — a wire carrying a single interface's flow shows its live rate right on the line (e.g. **↓ 98 Mbps  ↑ 12 Mbps**, in bits/sec like the link speed), updated every refresh.
+### From a terminal
 
-### Link throughput
-Hover any connection wire for a **Link** tooltip: the negotiated **link speed**,
-the live **Down / Up** rate (in bits/sec — Kbps/Mbps/Gbps, like the link speed —
-smoothed so it doesn't jitter between refreshes), and **Received / Sent** byte
-totals (data volume, so these stay in bytes). The totals are the OS's
-cumulative interface counters — i.e. **since that interface came up** (boot for
-built-in interfaces; plug-in for hot-plugged ones like a USB-Ethernet dock or an
-iPhone), not since the app launched.
-
-> Per-**app** breakdown isn't shown: per-process network attribution needs a
-> private framework (what `nettop` uses) that a sandboxed app can't call.
-
-### Hardware ports & power
-- A port lights if **anything** is physically attached — a Thunderbolt device, a USB-C cable/device, an iPhone, or even a **charger** — regardless of whether it carries network traffic.
-- A yellow **plug badge** (a powerplug icon) marks a port with a USB-C charger attached.
-- A USB-connected **iPhone** (or **iPad**) is detected via the IOKit USB tree, mapped to its physical receptacle, and joined to that port with a green "USB-C" link.
-- A **battery entity** in the Hardware row shows charge level and state — *on battery* / *powered* (full, running off the adapter) / *charging* — with the adapter name + wattage on hover (and echoed in the status bar). It's a **system** fact, **not** pinned to a port: macOS exposes no per-port power direction — a port *receiving* power (a dock charging the Mac) and one *providing* power (the Mac charging an accessory) are indistinguishable in the registry, and MagSafe can't be told from USB-C (it's electrically USB-C PD) — so NetLights reports charging at the system level rather than guessing.
-
-### Recognizing what's attached
-NetLights classifies each USB peripheral and draws it with a fitting icon and a hover tooltip:
-
-<p align="center">
-<a href="assets/netlights_headphones.png"><img src="assets/netlights_headphones.png" alt="Audio device" width="250"></a>
-<a href="assets/netlights_apple_battery.png"><img src="assets/netlights_apple_battery.png" alt="Battery" width="250"></a>
-<a href="assets/netlights_whoop_battery.png"><img src="assets/netlights_whoop_battery.png" alt="Generic USB device with tooltip" width="250"></a>
-<br>
-<a href="assets/netlights_apple_charger.png"><img src="assets/netlights_apple_charger.png" alt="Charger device" width="250"></a>
-<a href="assets/netlights_usb-pd.png"><img src="assets/netlights_usb-pd.png" alt="USB-C power-delivery plug badge" width="160"></a>
-<a href="assets/netlights_tablet.png"><img src="assets/netlights_tablet.png" alt="iPad tether" width="250"></a>
-</p>
-
-<sub>Audio (AirPods) · Battery (MagSafe) · generic USB device (with tooltip) · charger · USB-C PD plug badge · iPad vs iPhone — click to enlarge</sub>
-
-### USB hubs, docks & the device tree
-Devices behind a hub or dock **nest beneath it as a tidy tree**. Each hardware port
-owns its own horizontal region (sized to how much hangs off it), so one port's
-subtree — and its wires — never overlap or cross another's.
-
-<p align="center">
-<a href="assets/netlights_tree.png"><img src="assets/netlights_tree.png" alt="USB hub/dock device tree" width="620"></a>
-</p>
-
-The **Devices** tab turns the same data into a sortable table — manufacturer, bus
-(`USB 2.1` / `3.2` …), negotiated link speed, USB class, `vendor:product` id, and
-which port each device sits on. Hovering any chip in the graph shows the same
-details.
-
-<p align="center">
-<a href="assets/netlights_devices.png"><img src="assets/netlights_devices.png" alt="Devices table" width="680"></a>
-</p>
-
-### External displays
-Connected monitors are detected and grouped under a **Displays** entity; hover one
-for its maker, model, and resolution / refresh.
-
-<p align="center">
-<a href="assets/netlights_displays.png"><img src="assets/netlights_displays.png" alt="External displays entity" width="220"></a>
-</p>
-
-They're **grouped rather than pinned to a port** on purpose: macOS exposes no way
-for an unprivileged app to learn which physical receptacle (or HDMI) a monitor
-uses — a DisplayPort-over-USB-C display never appears in the Thunderbolt tree, and
-the display data carries no connection type. There's no permission that unlocks
-this (unlike the Wi-Fi SSID, which Location access does gate), so NetLights lists
-displays instead of guessing a wrong port.
-
-### Bluetooth devices
-Connected Bluetooth devices are grouped under a **Bluetooth** entity in the Hardware
-row ("Bluetooth is a kind of network"), each shown with its type and — for input
-devices (mice, keyboards, trackpads) — its **battery %**.
-
-macOS gates the Bluetooth device list behind a privacy permission, so NetLights asks
-for **Bluetooth access** (the same opt-in model as the Wi-Fi SSID's Location prompt).
-Decline and the Bluetooth entity simply doesn't appear; the prompt only shows in the
-packaged app, not under `swift run`. The access is **read-only** — NetLights lists
-already-connected devices and never scans, pairs, or connects.
-
-> **Audio-device battery** (AirPods, headphones, speakers) is **not shown**: macOS
-> keeps it in the Bluetooth daemon, reachable only via the `system_profiler`
-> subprocess NetLights dropped for sandbox compatibility. Input-device battery comes
-> from the IORegistry, which is readable in-process.
-
-### Gateways & the Internet
-- The **Internet** node sits in the top row; every default gateway links up to it.
-- **GW #1, #2, … (orange)** — default-route gateways, each pinned in a tier above
-  the host it lives on (iPhone, Wi-Fi router, dongle). The number is **precedence** —
-  `GW #1` wins the `0.0.0.0/0` race (the active uplink), so you can see at a glance
-  which gateway actually carries your traffic.
-- **VPN GW (blue)** — a default route over a tunnel, pinned next to its `utun` down
-  in the Virtual row, with an egress link to the physical gateway it exits through.
-
-### DNS resolvers
-
-The **DNS** tab surfaces the resolvers name resolution actually uses — as diagnosable
-as knowing which interface you egress on. A banner shows the **active/global** set (the
-"which DNS wins" answer) above a table of every network service's set: bound interface,
-server addresses, search domains, and **split-DNS** scoping (`SupplementalMatchDomains`).
-The OS **primary** service is starred, so a VPN pushing its own resolvers is plainly
-visible winning over your physical uplinks'. Read live from SystemConfiguration
-(`SCDynamicStore`) — in-process, no privileges. Privacy mode masks resolver IPs and
-redacts search / scoped domains and user-named services.
-
-### Feedback & device-tree submissions
-
-**Help ▸ Send Feedback / Report an Issue…** (and a link in About) opens a prefilled
-GitHub issue tagged with your app version, macOS version, and Mac model — handy for bug
-reports, ideas, and **contributing your Mac's port layout** for the per-model table.
-
----
-
-## How it works (data sources)
-
-NetLights is **read-only** and needs **no elevated privileges** — it never changes
-configuration.
-
-| Data | Source |
-|------|--------|
-| Interfaces & addresses | `getifaddrs()` |
-| Link state, MAC, MTU, 64-bit rx/tx byte counters & baud | `sysctl(NET_RT_IFLIST2)` (`if_data64`) |
-| Per-link throughput (↓/↑ rate) | computed from rx/tx counter deltas, EMA-smoothed |
-| Routes & gateways | `sysctl(NET_RT_DUMP)` over `PF_ROUTE` |
-| Friendly hardware-port names | SystemConfiguration (`SCNetworkInterface`) |
-| Active + per-service DNS resolvers | SystemConfiguration (`SCDynamicStore`: `State:/Network/Global/DNS`, `.../Service/<id>/DNS`) |
-| Thunderbolt receptacle status | IOKit `IOThunderboltSwitch` (in-process) |
-| Attached devices, hub tree, iPhone port | IOKit `IOUSBHostDevice` registry (in-process) |
-| USB-C attachment / charger badge | IOKit `AppleHPM` PD controller (in-process) |
-| Device details (vendor, class, USB version, link speed) | IOKit registry properties |
-| External displays | CoreGraphics `CGGetActiveDisplayList` |
-| System charging (AC / wattage) | IOKit `AppleSmartBattery` (system-level, not per-port) |
-| Wi-Fi link speed | CoreWLAN negotiated transmit rate |
-| Connected Bluetooth devices | `IOBluetooth` paired-device list (needs Bluetooth permission) |
-| Bluetooth HID battery | IOKit registry `BatteryPercent` (HID devices only; no audio battery) |
-
-> **All in-process** as of 1.4 — no `system_profiler`/`ioreg` subprocesses — so NetLights runs under the App Sandbox. See [`APPSTORE.md`](APPSTORE.md).
-
-### Capabilities & restrictions
-- **No admin rights** — everything runs as your user, read-only.
-- **Refresh cadence** — interface/route data every 0.75 s; the slower port-topology
-  probe runs ~every 5 s on a background thread so the UI never stalls.
-- **Link speed** — wired links read the interface's negotiated baud rate (64-bit via
-  `NET_RT_IFLIST2`); Wi-Fi uses CoreWLAN's current transmit rate, which fluctuates as
-  the radio adapts. The baud rate is what the driver reports and isn't always the full
-  PHY rate (e.g. a Thunderbolt bridge advertises a nominal figure).
-- **Throughput numbers** — derived from the kernel's rx/tx byte counters (now 64-bit,
-  so they don't wrap mid-transfer), sampled each refresh and lightly smoothed. They
-  reflect the interface's total traffic, which a per-app tool can't be derived from.
-- **External displays** — detected and listed, but **not mapped to a specific port**:
-  macOS doesn't expose which receptacle (or HDMI) a monitor uses to an unprivileged
-  app, and no permission unlocks it. See *External displays* above.
-- **Port front/rear labels** — receptacle position labels come from a hand-curated
-  per-model table and may be approximate on some Macs; connection/power state itself
-  is read live and accurate.
-- **Locked iPhone** — absent from the high-level USB device list, so NetLights reads
-  the IOKit registry directly to find it.
-- **Wi-Fi network name (Location)** — macOS only reveals the current SSID to apps
-  with Location access, so NetLights requests it **solely to label the Wi-Fi
-  uplink**. No location coordinates are ever read, stored, or shared; declining is
-  fine (the uplink just shows "Wi-Fi"). The prompt only appears in the packaged
-  app, not under `swift run`.
-- **Bluetooth devices (permission)** — macOS gates the connected-device list behind
-  Bluetooth access, so NetLights requests it **solely to list already-connected
-  devices** (it never scans/pairs/connects). Decline and the Bluetooth entity just
-  doesn't appear; like the SSID prompt, it only shows in the packaged app.
-- **Bluetooth audio battery** — input-device battery is read from the IORegistry, but
-  AirPods/headphone/speaker battery lives in the Bluetooth daemon (no in-process API),
-  so it isn't shown.
-
----
-
-## Contributing
-
-PRs and forks welcome! The code is split so the portable parts can be shared with the
-Linux build:
-
-```
-Sources/
-├── NetLightsCore/            # portable, Foundation-only — no platform imports
-│   ├── InterfaceModel.swift      # data models, TopologySnapshot, per-Mac port layout table
-│   ├── Normalize.swift           # pure transforms: gateways, egress, route classification
-│   ├── GraphLayoutEngine.swift   # renderer-agnostic geometry (bands, tidy tree, wires)
-│   ├── GraphSVGRenderer.swift    # the graph as SVG (used by `serve`)
-│   ├── TUIRender.swift           # the terminal dashboard, as a pure snapshot -> ANSI function
-│   ├── TrafficRates.swift        # shared rate deriver, so app/TUI/web report the same numbers
-│   └── CommandLine.swift         # the CLI grammar, identical on every platform
-├── NetLightsHost/            # libc layer: termios terminal driver + BSD-socket web server
-├── NetLightsMac/             # the macOS app
-│   ├── NetLightsCLI.swift        # @main: dispatches GUI vs tui/serve/--dump-json
-│   ├── NetLightsApp.swift        # SwiftUI App, menu commands, dock icon, lifecycle
-│   ├── ContentView.swift         # Tabs: Graph / Routes / Interfaces / Devices / DNS
-│   ├── NetworkMonitor.swift      # system data gathering (sysctl/IOKit/CoreWLAN/SC)
-│   ├── IOKitProbe.swift          # IOKit/CoreGraphics probes (USB tree, TB, displays, power)
-│   ├── BluetoothProbe.swift      # IOBluetooth connected-device list (TCC-gated, optional)
-│   ├── NetworkGraphView.swift    # the layered graph in SwiftUI
-│   └── *NodeView / *EntityView / Tooltips / AboutView / HelpView / AssetExport
-└── NetLightsLinux/           # the Linux collectors + entry point
-scripts/build-app.sh          # packages dist/NetLights.app + zip
-scripts/verify-linux-cli.sh   # CLI verification suite, run on a Linux box
-```
-
-**Adding your Mac's port layout:** if your model shows generic port positions,
-extend `hardwarePortLayout(model:)` in `InterfaceModel.swift` with your
-`hw.model` identifier (find it via `sysctl hw.model`).
-
-### Command line
-
-Running NetLights with no arguments opens the app as usual. It also has a small
-command-line interface — the **same on macOS and Linux** — for terminals and servers:
-
-| Command | What it does | Availability |
-|---------|--------------|--------------|
-| `netlights` | Opens the graphical app (the default). | macOS |
-| `netlights tui` | A live, full-screen terminal dashboard, `top`-style. Switch views with **g**raph / **r**outes / **i**nterfaces / **d**evices / d**n**s (or `1`–`5`); **h** hides inactive, **p** privacy mode, **s** route sort, `SPACE` pauses, **q** quits. | everywhere |
-| `netlights serve` | Runs the built-in web server and prints its URL — the same graph in a browser, plus `/snapshot.json`. `--port N` (default 8765), `--bind loopback\|all\|egress\|ADDR`. | GitHub build + Linux |
-| `netlights --dump-json` | Prints one `TopologySnapshot` as JSON and exits. | everywhere |
+The same binary is a command-line tool, with an identical grammar on macOS and Linux:
 
 ```bash
-netlights tui                      # live dashboard in your terminal
-netlights tui --once --view routes # one frame, no terminal needed (pipes, cron, CI)
-netlights serve --port 9000        # browse at http://127.0.0.1:9000
-ssh box 'netlights tui'            # works fine over SSH
+netlights tui        # live full-screen dashboard, top-style
+netlights serve      # the same graph in your browser
+netlights --dump-json
 ```
+
+`netlights tui` switches views with **g**raph / **r**outes / **i**nterfaces /
+**d**evices / d**n**s (or `1`–`5`); **q** quits. It works over SSH.
 
 > **`serve` listens on `127.0.0.1` only, by default.** It has no authentication and
 > publishes your interfaces, addresses, routes and DNS servers, so exposing it to the
 > network (`--bind all`) is an explicit choice that prints a warning. See
-> [PRIVACY.md](PRIVACY.md). The **Mac App Store** build cannot listen at all (the sandbox
-> has no incoming-connections entitlement), so `serve` ships only in the Developer-ID
-> build; `tui` opens no sockets and works in both.
+> [PRIVACY.md](PRIVACY.md).
 
-#### Installing the command
+[**→ Full command-line reference**](docs/CLI.md)
 
-The easiest route is Homebrew — one tap, then either package:
+---
 
-```bash
-brew tap willowhawk-k/tap
-brew install --cask netlights     # the app + the `netlights` command
-```
+## How it works
 
-If you already have NetLights from the **Mac App Store** and only want the command line,
-install the shim instead (the App Store build can't `serve`, but `tui` and `--dump-json`
-work):
+NetLights is **read-only** and needs **no elevated privileges** — it never changes
+configuration, and everything is read in-process (no `system_profiler`/`ioreg`
+subprocesses), so it runs under the App Sandbox.
 
-```bash
-brew install netlights-cli
-```
-
-Install one or the other — both provide a `netlights` executable. Without Homebrew, point
-your `PATH` at the shim inside the bundle:
-
-```bash
-sudo ln -sf "/Applications/NetLights.app/Contents/Resources/netlights" /usr/local/bin/netlights
-```
-
-Link the shim in `Contents/Resources`, not the executable in `Contents/MacOS` — a symlink
-straight to the executable stops it resolving its own bundle, so it reports the wrong
-version and won't open the app window.
-
-Two developer/diagnostic flags also exist (each exits without showing a window):
-
-| Flag | What it does |
-|------|--------------|
-| `--probe-dump` | Prints the in-process IOKit / CoreGraphics probe results (Thunderbolt receptacles, USB-C power, system power, iPhone, BSD→receptacle map, and the USB/display attached-device list with classified kinds) to stdout, so they can be diffed against `ioreg` / `system_profiler` ground truth. (Bluetooth devices aren't included in the dump.) |
-| `--export-iconset <dir>` | Renders the SwiftUI app icon to a `.iconset` directory (all sizes) for packaging. Used by `scripts/build-app.sh`. |
-
-```bash
-swift run NetLights --probe-dump          # from source
-dist/NetLights.app/Contents/MacOS/NetLights --probe-dump   # the packaged binary
-```
-
-Found a bug or have a Mac with a different layout? Please open an issue with the
-output of `sysctl hw.model` and a screenshot.
+- [**docs/MACOS.md**](docs/MACOS.md) — macOS data sources, capabilities and limits
+- [**docs/LINUX.md**](docs/LINUX.md) — the Linux port: what works, what's coming
+- [**PRIVACY.md**](PRIVACY.md) — what is read, what leaves your machine (almost nothing)
 
 ---
 
@@ -361,8 +126,12 @@ output of `sysctl hw.model` and a screenshot.
 
 Questions, bug reports, and feature requests are welcome on the
 [**issue tracker**](https://github.com/willowhawk-k/NetLights/issues) — see
-[SUPPORT.md](SUPPORT.md) for what to include (macOS version, `hw.model`, app version)
-and answers to common questions. It's the best way to reach the developer.
+[SUPPORT.md](SUPPORT.md) for what to include (OS version, `hw.model`, app version)
+and answers to common questions.
+
+**Help ▸ Send Feedback** in the app opens a prefilled issue tagged with your app
+version, OS version and Mac model — handy for bug reports and for
+[contributing your Mac's port layout](docs/BUILDING.md#adding-your-macs-port-layout).
 
 ## Sponsor 💜
 
