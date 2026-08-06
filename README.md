@@ -145,6 +145,12 @@ Entirely optional — a ⭐️ on the repo is just as welcome!
 
 ## Credits
 
+NetLights has **no third-party code and no package dependencies**. On Linux it talks to
+BlueZ, systemd-resolved and NetworkManager through their documented public interfaces
+without linking or bundling any of them — see
+[docs/LINUX.md](docs/LINUX.md#interoperability-and-acknowledgments) for the full picture
+and thanks.
+
 Created by **Keith Willowhawk**, pair-programmed with **Claude (Anthropic)**.
 Claude helped architect the layered layout engine, the low-level `sysctl`/IOKit
 data plumbing, the port/power detection, and the docs.
