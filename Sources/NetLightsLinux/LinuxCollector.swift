@@ -22,6 +22,10 @@ struct LinuxCollector {
         var egress = computeEgress(routes: routes, interfaces: interfaces)
 
         let usb = linuxUSBTopology()
+        // Receptacle ids are disjoint by construction: USB uses kernel bus numbers (1, 2, …),
+        // Thunderbolt starts at thunderboltPortIDBase, and the synthetic entities use the
+        // negative sentinels. So the two port sets can simply be concatenated.
+        let tb = linuxThunderbolt()
 
         // Wi-Fi: the SSID and the negotiated rate both come from nl80211, which only `iw`
         // (or NetworkManager) exposes — sysfs `speed` is meaningless for wireless. The fold
@@ -37,8 +41,8 @@ struct LinuxCollector {
             interfaces: interfaces,
             routes: routes,
             gateways: gateways,
-            hardwarePorts: usb.ports,
-            attachedDevices: usb.devices + linuxDisplays(),
+            hardwarePorts: usb.ports + tb.ports,
+            attachedDevices: usb.devices + tb.devices + linuxDisplays() + linuxBluetoothDevices(),
             egress: egress,
             systemPower: linuxSystemPower(),
             dnsConfigs: linuxDNSConfigs())

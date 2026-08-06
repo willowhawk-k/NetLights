@@ -28,3 +28,6 @@ Package.resolved
 
 # Local-only collaboration notes
 docs/AI-ASSIST.md
+
+# Scratch scratch-path used to build Core as a standalone module for off-Linux parser tests
+.build-lh/

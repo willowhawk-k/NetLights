@@ -1,8 +1,8 @@
 # NetLights on Linux
 
-> **Status: in progress.** The command line and the browser UI work today on Linux;
-> the native desktop window and the rich hardware collectors are still landing. This
-> page tracks what's real right now — not what's planned. The plan itself lives in
+> **Status: collectors complete.** Every data source NetLights shows on macOS now has a
+> Linux equivalent. What's left is the native desktop window and packaging. This page
+> tracks what's real right now — not what's planned; the plan lives in
 > [LINUX-PORT.md](LINUX-PORT.md).
 
 There is **no packaged Linux release yet** — no `.deb`, `.rpm`, AppImage or AUR
@@ -38,8 +38,8 @@ instead — there is no window on Linux yet).
 | Displays + EDID | ✅ works | `/sys/class/drm/*/edid` — see below |
 | Battery / power | ✅ works | `/sys/class/power_supply/*` |
 | Wi-Fi SSID / link rate | ✅ works | `iw` or `nmcli` — degrades if absent |
-| Thunderbolt | ⏳ not yet | `/sys/bus/thunderbolt/devices` |
-| Bluetooth devices | ⏳ not yet | BlueZ over D-Bus |
+| Thunderbolt | ✅ works | `/sys/bus/thunderbolt/devices` |
+| Bluetooth devices | ✅ works | BlueZ over D-Bus — see below |
 | Native desktop window | ⏳ not yet | WebKitGTK |
 
 Everything is **read-only** and needs no elevated privileges, same as macOS. Collectors
@@ -86,6 +86,27 @@ reached through adaptive-sync rather than a declared timing, the two can differ 
 developer's own 180 Hz panel declares 100 Hz as its fastest detailed timing. Reading the
 live mode needs a libdrm ioctl, which the static build deliberately avoids.
 
+## Bluetooth without libdbus
+
+BlueZ is reachable only over D-Bus, and linking `libdbus` would forfeit the single static
+binary that the whole distribution plan rests on. So NetLights **speaks D-Bus itself** —
+about 400 lines of Foundation-only code implementing the SASL EXTERNAL handshake, the
+message header, the alignment rules for every type involved, and the
+`GetManagedObjects` call. No dependency, and the binary stays `statically linked`.
+
+The marshaller was cross-checked against GLib's independent implementation for
+byte-identical output before it shipped.
+
+Devices are selected by the presence of the `org.bluez.Device1` **interface**, never by the
+shape of the object path — a single connected LE peripheral contributes 50–150 GATT child
+objects that all live beneath its own path. Battery arrives on the same object as a sibling
+`org.bluez.Battery1` interface, which is *more* reliable than the macOS path (that one has
+to join an IORegistry entry against the Bluetooth address).
+
+Classification handles both worlds: Classic devices carry a Class-of-Device that feeds the
+same classifier macOS uses, while BLE-only devices have no Class at all and are resolved
+from their GAP Appearance, then BlueZ's derived icon.
+
 ## Known differences from macOS
 
 - **Route metric vs service order** — Linux ranks routes by metric; macOS has no metric and
@@ -101,6 +122,10 @@ live mode needs a libdrm ioctl, which the static build deliberately avoids.
   rather than pretending to know which physical hole they're in. Note an xHCI controller
   registers its USB2 and USB3 root hubs as separate buses, so the same socket can appear as
   a different bus depending on what you plug into it.
+- **Connected-but-unpaired Bluetooth devices appear on Linux** and not on macOS. That's not
+  a bug in either: macOS enumerates *paired* devices and filters by connected because
+  IOBluetooth offers no connected-device list, whereas BlueZ answers the question directly.
+  A GATT-connected peripheral with no bond is genuinely attached.
 - **No Location gate on the SSID** — Linux needs no permission prompt for the network name,
   but it does need `iw` (or NetworkManager) present; a minimal server install may have
   neither, in which case the SSID is simply absent.
