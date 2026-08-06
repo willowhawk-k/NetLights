@@ -130,6 +130,38 @@ from their GAP Appearance, then BlueZ's derived icon.
   but it does need `iw` (or NetworkManager) present; a minimal server install may have
   neither, in which case the SSID is simply absent.
 
+## Interoperability and acknowledgments
+
+NetLights is MIT-licensed and has **no third-party code and no package dependencies** —
+`Package.swift` declares none. Everything below is an *interface* NetLights talks to, not
+code it contains, links, or ships.
+
+| Project | How NetLights uses it | Relationship |
+|---------|----------------------|--------------|
+| **BlueZ** (GPL-2.0-or-later) | Bluetooth devices, via its documented D-Bus API (`org.bluez.Device1`, `org.bluez.Battery1`) | separate process, spoken to over a socket |
+| **D-Bus** (freedesktop.org specification) | The wire protocol itself, implemented from the published spec | specification only — no `libdbus` |
+| **systemd-resolved** (LGPL-2.1-or-later) | DNS resolvers past the local stub, from its files and `resolvectl` | files read; binary optionally invoked |
+| **NetworkManager** (GPL-2.0-or-later) | Wi-Fi SSID fallback, via `nmcli` | binary optionally invoked |
+| **`iw`** | Wi-Fi SSID and link rate | binary optionally invoked |
+| **The Linux kernel** | Everything else — sysfs, procfs, netlink | public kernel interfaces |
+
+Two clarifications worth stating plainly, because the code comments reference both:
+
+**The D-Bus implementation is written from the specification**, not decompiled or copied.
+BlueZ's D-Bus API is public and documented in BlueZ's own source tree precisely so that
+third-party applications can use it — `bluetoothctl`, GNOME Settings and Blueman are all
+D-Bus clients of the same interface. Nothing here is reverse-engineered.
+
+**GLib was used as a verification oracle during development only.** The marshaller's output
+was compared against GLib's independent D-Bus implementation to confirm byte-for-byte
+agreement before shipping. No GLib code is in this repository and nothing links against it.
+
+Every optional binary above degrades to absent: if `iw`, `nmcli` and `resolvectl` are all
+missing, NetLights loses the SSID and some DNS attribution and keeps working.
+
+Thanks to the BlueZ, systemd, NetworkManager and freedesktop.org maintainers, whose
+documented, stable interfaces made a dependency-free port possible.
+
 ## Distributions
 
 Targeted: **Ubuntu / Debian** (primary), **Mint**, **Fedora / RHEL / Rocky / Oracle
