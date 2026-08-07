@@ -34,6 +34,54 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
+### 1.9.3 — 2026-08-05
+
+The biggest release since the Linux port began: the browser and terminal UIs reach parity
+with the app, and the Linux collectors are functionally complete.
+
+**Privacy and Hide inactive now work in `serve`.** Both are resolved server-side — forced
+for the graph, which is server-rendered SVG, and the right call for privacy anyway, since
+`serve` has no authentication and masking before the response is written keeps real
+addresses off the wire entirely. Toggle them in the top right or with **p** / **h**; the
+state lives in the URL, so a masked view can be shared and stays masked.
+
+**The served graph draws everything the app draws.** The Wi-Fi, Displays, Battery and
+Bluetooth entities were positioned by the layout engine but never rendered, so wires ran to
+empty space and an interface appeared to have no parent. Node sizes, labels, port brackets
+and hover text now match the app, and long device names are truncated to their box instead
+of overrunning their neighbours.
+
+**The browser tables are formatted by the app's own code.** They previously reimplemented
+six formatters in JavaScript, all of which had drifted — USB devices showed no speed, the
+bus column said "USB" instead of "USB 3.2", and link-local routes were filed under
+"unencrypted split-tunnel".
+
+**The terminal UI gained a Hardware band**, so a USB adapter and the interface it provides
+finally appear together, along with a Port column, per-width column layout, and distinct
+up/down glyphs that survive `--no-color`.
+
+**Linux: the collector set is complete.** USB device tree, external displays read from raw
+EDID (including the model name, which the sandboxed Mac build cannot see), system power,
+Wi-Fi SSID and link rate, Thunderbolt, route metrics, and Bluetooth. Bluetooth required
+implementing the D-Bus wire protocol from scratch — BlueZ is reachable only over D-Bus, and
+linking libdbus would have forfeited the single static binary the distribution plan depends
+on. See [docs/LINUX.md](docs/LINUX.md).
+
+**Routes gained a Priority column** on every surface, showing the Linux route metric or the
+macOS network-service order — whichever the platform has.
+
+**Fixes found by an adversarial pre-release review** (19 confirmed findings, all fixed):
+terminal-escape injection from a hostile USB or Bluetooth device name in the default TUI
+view; two ways a malformed D-Bus reply could hang or trap the process; several paths where
+privacy mode still emitted a real address (the VPN concentrator IP in SVG hover text, device
+serials and Bluetooth addresses in the JSON, the live resolver inside a DNS scope label);
+IPv6 resolvers silently dropped from `resolvectl` output when the line wrapped; and a
+non-UTF-8 request byte stalling `serve` for its full socket timeout.
+
+**Shared fix, so it lands on macOS too:** the Virtual band sized its canvas assuming an even
+two-row split, so a large tunnel group compressed the tiles below their own width and they
+overlapped. Widening the window used to work around it; the served graph could not.
+
 ### 1.9.2 — 2026-08-04
 
 - **Fixed: duplicate-looking routes could be dropped or mis-drawn.** A routing table can hold

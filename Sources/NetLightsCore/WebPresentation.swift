@@ -189,8 +189,10 @@ private func deviceSections(_ s: TopologySnapshot, _ privacy: Bool) -> [UISectio
         let name = maskAddresses(d.name, privacy)
             + (d.interfaceBSD.map { " → \($0)" } ?? "")
         rows.append(UIRow(cells: [
+            // idLabel is the serial for anything without a vendor:product pair — a Bluetooth
+            // MAC or an EDID monitor serial — so it has to be masked like any other address.
             name, d.kind.label, d.vendorName ?? "—", d.connectionLabel, d.speedLabel,
-            d.classLabel, d.idLabel, devicePortLabel(d, s.hardwarePorts),
+            d.classLabel, privacy ? "•••" : d.idLabel, devicePortLabel(d, s.hardwarePorts),
         ], depth: depth, state: nil, active: nil, iface: nil))
         for kid in (children[d.id] ?? []).sorted(by: byName) { walk(kid, depth + 1) }
     }
@@ -219,8 +221,11 @@ private func dnsSections(_ s: TopologySnapshot, _ privacy: Bool) -> [UISection] 
     let scoped = s.dnsConfigs.filter { !$0.isGlobal }
     guard !scoped.isEmpty else { return [] }
     let rows = scoped.map { c -> UIRow in
-        var scope = maskScopeLabel(c.scopeLabel, interfaceName: c.interfaceName,
-                                   userNamed: c.userNamedScope, privacy)
+        // maskScopeLabel only handles a user-named service. The Linux DNS collector appends
+        // the live resolver ("enp0s1  (using 192.168.64.1)"), so the label needs address
+        // masking too or privacy mode leaks the very address it redacts one column over.
+        var scope = maskAddresses(maskScopeLabel(c.scopeLabel, interfaceName: c.interfaceName,
+                                                 userNamed: c.userNamedScope, privacy), privacy)
         // The OS primary is starred, so a VPN winning over the physical uplinks is visible —
         // the browser table showed no primary marker and no split-DNS scoping at all.
         if c.isPrimary { scope = "★ " + scope }
@@ -284,13 +289,37 @@ public func redactedSnapshot(_ s: TopologySnapshot, rates: TrafficRateDeriver,
         c.servers = c.servers.map { maskAddresses($0, true) }
         c.searchDomains = c.searchDomains.isEmpty ? [] : ["••• (\(c.searchDomains.count) hidden)"]
         c.matchDomains = c.matchDomains.isEmpty ? [] : ["••• (\(c.matchDomains.count) hidden)"]
+        // domainName names the employer's network just as squarely as the search list does;
+        // redacting one and not the other defeats the point.
+        if c.domainName != nil { c.domainName = "•••" }
         if c.userNamedScope { c.scopeLabel = c.interfaceName ?? "(service)" }
         return c
     }
-    out.attachedDevices = out.attachedDevices.map { d in
-        var d = d
-        d.serial = d.serial.map { _ in "•••" }
-        return d
+    // AttachedDevice.id embeds the Bluetooth address ("bt-14-c2-13-ee-38-3a"), and `id` is a
+    // `let`, so the masked copy has to be rebuilt rather than mutated. Masking only `serial`
+    // left the same address in the id on /snapshot.json.
+    // The Bluetooth id is "bt-14-c2-13-ee-38-3a", and maskAddresses deliberately leaves the
+    // hyphen form alone (that is what keeps Linux and macOS rendering identically), so
+    // running the id through it is a NO-OP and the address stayed in the JSON. Replace the
+    // whole id with a positional one: it only has to be unique within this response.
+    out.attachedDevices = out.attachedDevices.enumerated().map { (i, d) in
+        let maskedID = d.id.hasPrefix("bt-") ? "bt-\(i)" : maskAddresses(d.id, true)
+        var m = AttachedDevice(id: maskedID, name: d.name,
+                               receptacle: d.receptacle, kind: d.kind)
+        m.interfaceBSD = d.interfaceBSD
+        m.parentID = d.parentID.map { maskAddresses($0, true) }
+        m.vendorName = d.vendorName
+        m.vendorID = d.vendorID
+        m.productID = d.productID
+        m.serial = d.serial.map { _ in "•••" }
+        m.classCode = d.classCode
+        m.usbVersion = d.usbVersion
+        m.linkSpeedBps = d.linkSpeedBps
+        m.detail = d.detail
+        m.connection = d.connection
+        m.batteryPercent = d.batteryPercent
+        m.capacityBytes = d.capacityBytes
+        return m
     }
     return out
 }

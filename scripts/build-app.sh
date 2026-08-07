@@ -23,6 +23,21 @@ xcval() { awk -F= -v k="$1" '$0 ~ "^"k"[ \t]*=" {sub(/^[^=]*=[ \t]*/,""); sub(/[
 VERSION="$(xcval MARKETING_VERSION)"
 BUILD="$(xcval CURRENT_PROJECT_VERSION)"
 RELEASE_DATE="$(xcval NL_RELEASE_DATE)"
+
+# Version.swift carries a hand-maintained copy of MARKETING_VERSION, because the Linux and
+# `swift run` builds have no Info.plist to read and a SwiftPM manifest is evaluated on the
+# host, so it cannot pull the value from this xcconfig at build time. That duplication is
+# exactly the kind that drifts silently — the Linux binary would keep reporting the previous
+# release forever. Fail the build rather than ship a mislabelled binary.
+SWIFT_VERSION_FILE="Sources/NetLightsCore/Version.swift"
+SWIFT_VERSION="$(sed -n 's/^public let netLightsVersion = "\(.*\)"$/\1/p' "$SWIFT_VERSION_FILE")"
+if [ "$SWIFT_VERSION" != "$VERSION" ]; then
+    echo "error: version drift" >&2
+    echo "  $XCCONFIG says       $VERSION" >&2
+    echo "  $SWIFT_VERSION_FILE says $SWIFT_VERSION" >&2
+    echo "  Update netLightsVersion in $SWIFT_VERSION_FILE to match, then rebuild." >&2
+    exit 1
+fi
 [ -n "$VERSION" ] && [ -n "$BUILD" ] || { echo "✗ couldn't read version from $XCCONFIG"; exit 1; }
 echo "▸ Version $VERSION ($BUILD) — from $XCCONFIG"
 

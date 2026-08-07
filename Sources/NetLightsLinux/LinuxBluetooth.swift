@@ -56,7 +56,8 @@ private final class BusConnection {
         sa.withUnsafeBufferPointer { buf in
             buf.baseAddress!.withMemoryRebound(to: sockaddr.self, capacity: 1) { p in
                 if connect(s, p, socklen_t(addrlen)) == 0 { ok = true; return }
-                guard errno == EINPROGRESS else { return }
+                // A full accept backlog on AF_UNIX reports EAGAIN, not EINPROGRESS.
+                guard errno == EINPROGRESS || errno == EAGAIN else { return }
                 var pfd = pollfd(fd: s, events: Int16(POLLOUT), revents: 0)
                 guard poll(&pfd, 1, 1500) > 0 else { return }
                 var err: Int32 = 0
@@ -184,6 +185,12 @@ func linuxBluetoothDevices() -> [AttachedDevice] {
                                      interface: "org.freedesktop.DBus.ObjectManager",
                                      member: "GetManagedObjects") else { continue }
 
+        // Pin the signature rather than trusting the one on the wire. A Swift trap is
+        // UNCATCHABLE, so `try?` would not save the process from a malformed signature; and
+        // decoding to a shape buildBluetoothDevices doesn't expect just yields nothing
+        // useful anyway. If BlueZ ever answers with something else, that is a bug worth
+        // showing as "no devices", not worth guessing at.
+        guard objects.bodySignature == "a{oa{sa{sv}}}" else { continue }
         var reader = DBusReader(objects.body, littleEndian: objects.littleEndian)
         guard let tree = try? reader.read(objects.bodySignature) else { continue }
         return buildBluetoothDevices(managedObjects: tree)

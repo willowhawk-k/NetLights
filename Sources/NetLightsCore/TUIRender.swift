@@ -151,7 +151,16 @@ public enum TUIColor {
     }
 }
 
+/// Colour a fragment.
+///
+/// Sanitizes here, at the choke point, rather than at each call site. `cell()`/`clip()`
+/// already neuter escapes for anything that goes through a column, but the Hardware band
+/// composes its lines by concatenating painted fragments directly — so a USB product string
+/// or a Bluetooth alias containing `ESC[2J` reached the terminal raw and let an attached
+/// device erase and repaint the operator's screen. Every caller passes plain text, so
+/// sanitizing the input here closes that class of bug for good instead of one site at a time.
 func paint(_ s: String, _ c: TUIColor, _ mode: TUIColorMode) -> String {
+    let s = sanitizeForTerminal(s)
     switch mode {
     case .none:     return s
     case .ansi16:   return "\u{1B}[\(c.ansi16)m\(s)\u{1B}[0m"
@@ -162,11 +171,13 @@ func paint(_ s: String, _ c: TUIColor, _ mode: TUIColorMode) -> String {
 /// Reverse video — used for the active tab and section rules so the UI still parses with
 /// colour disabled, which is what makes the no-colour tier genuinely usable.
 func reverse(_ s: String, _ mode: TUIColorMode) -> String {
-    mode == .none ? "[\(s)]" : "\u{1B}[7m\(s)\u{1B}[27m"
+    let s = sanitizeForTerminal(s)
+    return mode == .none ? "[\(s)]" : "\u{1B}[7m\(s)\u{1B}[27m"
 }
 
 func bold(_ s: String, _ mode: TUIColorMode) -> String {
-    mode == .none ? s : "\u{1B}[1m\(s)\u{1B}[22m"
+    let s = sanitizeForTerminal(s)
+    return mode == .none ? s : "\u{1B}[1m\(s)\u{1B}[22m"
 }
 
 // MARK: - Keys
