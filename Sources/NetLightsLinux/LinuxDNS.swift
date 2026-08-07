@@ -90,6 +90,9 @@ func linuxDNSConfigs() -> [DNSConfig] {
             interfaceName: link.interfaceName,
             servers: link.servers,
             searchDomains: link.searchDomains,
+            // "~domain" entries are routing-only scoping, which is what makes the DNS tab's
+            // split-DNS column meaningful — a VPN answering only its own domains.
+            matchDomains: link.matchDomains,
             isPrimary: link.isDefaultRoute, isGlobal: false))
     }
 

@@ -257,7 +257,20 @@ public struct WebServer {
             let n = read(fd, &buf, buf.count)
             if n <= 0 { break }
             raw.append(contentsOf: buf[0..<Int(n)])
-            if let s = String(bytes: raw, encoding: .utf8), s.contains("\r\n\r\n") { break }
+            // Scan the RAW BYTES for the terminator. Decoding to a String first meant a
+            // single non-UTF-8 byte anywhere in the request made the decode fail, so the
+            // terminator was never seen and this single-threaded server stalled for the full
+            // socket timeout on every such request — a trivial denial of service.
+            if raw.count >= 4 {
+                let n = raw.count
+                var found = false
+                var i = max(0, n - Int(4) - 4096)
+                while i + 3 < n {
+                    if raw[i] == 0x0D, raw[i+1] == 0x0A, raw[i+2] == 0x0D, raw[i+3] == 0x0A { found = true; break }
+                    i += 1
+                }
+                if found { break }
+            }
         }
         guard !raw.isEmpty else { return }
         let request = String(decoding: raw, as: UTF8.self)

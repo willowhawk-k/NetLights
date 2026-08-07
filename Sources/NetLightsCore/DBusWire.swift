@@ -257,17 +257,29 @@ public struct DBusReader {
             let end = start + Int(len)
             guard end <= bytes.count else { throw DBusWireError.truncated(need: end, have: bytes.count) }
             var items: [DBusValue] = []
-            while offset < end { items.append(try read(elem, depth: depth + 1)) }
+            while offset < end {
+                // A zero-width element type — "a()" is the reachable case — consumes no bytes,
+                // so without this guard the loop never advances and appends until memory is
+                // exhausted. A 40-byte message is enough to hang the process.
+                let before = offset
+                items.append(try read(elem, depth: depth + 1))
+                guard offset > before else { throw DBusWireError.badSignature("zero-width array element") }
+            }
             guard offset == end else { throw DBusWireError.badSignature("array overrun") }
             return .array(element: elem, items: items)
         case UInt8(ascii: "("):
             try align(8)
+            // A bare "(" makes 1..<(count-1) an INVALID RANGE, which traps — and a Swift trap
+            // is uncatchable, so `try?` at the call site would not save the process. The
+            // signature comes off the wire, so it must be validated, not assumed well-formed.
+            guard s.count >= 2 else { throw DBusWireError.badSignature("unterminated struct") }
             let inner = String(decoding: s[1..<(s.count - 1)], as: UTF8.self)
             var fields: [DBusValue] = []
             for t in try dbusSplitSignature(inner) { fields.append(try read(t, depth: depth + 1)) }
             return .structure(fields)
         case UInt8(ascii: "{"):
             try align(8)
+            guard s.count >= 2 else { throw DBusWireError.badSignature("unterminated dict entry") }
             let inner = String(decoding: s[1..<(s.count - 1)], as: UTF8.self)
             let parts = try dbusSplitSignature(inner)
             guard parts.count == 2 else { throw DBusWireError.badSignature(signature) }

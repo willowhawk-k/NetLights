@@ -61,6 +61,19 @@ private func maskAddressToken(_ t: String) -> String {
         if colons >= 3, !head.isEmpty, head.count <= 4, head.allSatisfy(\.isHexDigit) {
             return "\(head):\u{2022}\u{2022}"
         }
+        // "host:port" — mask the host half and keep the port, which is not identifying.
+        // Returning the whole token unchanged here leaked "192.168.1.5:8765" verbatim.
+        if colons == 1 {
+            let parts = t.split(separator: ":", omittingEmptySubsequences: false)
+            if parts.count == 2, parts[1].allSatisfy(\.isNumber), !parts[1].isEmpty {
+                return maskAddressToken(String(parts[0])) + ":" + parts[1]
+            }
+        }
+        // Any other colon-bearing token that looks like a compressed IPv6 ("::1" aside, which
+        // is loopback and deliberately legible) is masked wholesale rather than passed on.
+        if t != "::1", colons >= 2, t.allSatisfy({ $0.isHexDigit || $0 == ":" }) {
+            return "\u{2022}\u{2022}\u{2022}"
+        }
         return t
     }
 

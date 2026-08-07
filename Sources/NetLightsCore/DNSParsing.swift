@@ -49,16 +49,19 @@ public struct ResolverScope: Equatable, Sendable {
     public var interfaceName: String?
     public var servers: [String]
     public var searchDomains: [String]
+    /// Routing-only (split-DNS) domains, from a "~domain" entry.
+    public var matchDomains: [String] = []
     public var isDefaultRoute: Bool     // this link answers queries that match nothing else
     public var currentServer: String?   // the one resolved is actually using, when known
 
     public init(label: String, interfaceName: String? = nil, servers: [String] = [],
-                searchDomains: [String] = [], isDefaultRoute: Bool = false,
-                currentServer: String? = nil) {
+                searchDomains: [String] = [], matchDomains: [String] = [],
+                isDefaultRoute: Bool = false, currentServer: String? = nil) {
         self.label = label
         self.interfaceName = interfaceName
         self.servers = servers
         self.searchDomains = searchDomains
+        self.matchDomains = matchDomains
         self.isDefaultRoute = isDefaultRoute
         self.currentServer = currentServer
     }
@@ -132,10 +135,25 @@ public func parseResolvectlStatus(_ text: String) -> [ResolverScope] {
         if trimmed == "Global" { flush(); current = ResolverScope(label: "Global"); continuing = nil; continue }
 
         // A wrapped value: indented and carrying no "Key:" of its own.
-        if !trimmed.contains(":"), let field = continuing, current != nil {
+        //
+        // The test cannot be "contains no colon" — every IPv6 address contains colons, so
+        // that silently dropped every wrapped IPv6 resolver. A continuation line is one whose
+        // colon (if any) is not part of a "Key: value" head, i.e. the text before the first
+        // colon is not a plausible key.
+        let looksLikeKey: Bool = {
+            guard let c = trimmed.firstIndex(of: ":") else { return false }
+            let head = trimmed[trimmed.startIndex..<c]
+            return !head.isEmpty && head.allSatisfy { $0.isLetter || $0 == " " || $0 == "-" }
+        }()
+        if !looksLikeKey, let field = continuing, current != nil {
             let vals = trimmed.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
             if field == "servers" { current?.servers.append(contentsOf: vals) }
-            if field == "domains" { current?.searchDomains.append(contentsOf: vals.filter { $0 != "." }) }
+            if field == "domains" {
+                for v in vals where v != "." {
+                    if v.hasPrefix("~") { current?.matchDomains.append(String(v.dropFirst())) }
+                    else { current?.searchDomains.append(v) }
+                }
+            }
             continue
         }
 
@@ -148,8 +166,14 @@ public func parseResolvectlStatus(_ text: String) -> [ResolverScope] {
         case "DNS Servers":
             current?.servers.append(contentsOf: vals); continuing = "servers"
         case "DNS Domain":
-            // A leading "~" marks a routing-only domain (split DNS), not a search suffix.
-            current?.searchDomains.append(contentsOf: vals.filter { $0 != "." }); continuing = "domains"
+            // A leading "~" marks a ROUTING-ONLY domain (split DNS), not a search suffix —
+            // filing it as a search domain both mislabels it and hides the split-DNS scoping
+            // the DNS tab is supposed to surface.
+            for v in vals where v != "." {
+                if v.hasPrefix("~") { current?.matchDomains.append(String(v.dropFirst())) }
+                else { current?.searchDomains.append(v) }
+            }
+            continuing = "domains"
         case "Current DNS Server":
             current?.currentServer = vals.first; continuing = nil
         case "Default Route":

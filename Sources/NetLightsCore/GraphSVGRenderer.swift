@@ -113,8 +113,11 @@ extension GraphLayoutEngine {
         }
         if let sid = vpnServerID, let p = vpnServerPosition {
             let box = GraphNodeSize.vpnServer
+            // `full` becomes the <title> hover text, so it must be masked too — masking only
+            // the visible subtitle left the real concentrator IP one hover away.
+            let shown = maskAddresses(sid, privacy)
             o += svgNode(p, box.w, box.h, stroke: ColorToken.gatewayVPN.css,
-                         title: "VPN Server", subtitle: maskAddresses(sid, privacy), full: sid)
+                         title: "VPN Server", subtitle: shown, full: shown)
         }
         if hasVPNExcludes, let p = vpnExcludePosition {
             let box = GraphNodeSize.vpnExclude
@@ -261,7 +264,8 @@ private func deviceNode(_ p: CGPoint, _ dev: AttachedDevice, privacy: Bool) -> S
     let tint = dev.connection == "Bluetooth" ? "#58a6ff" : "#39c5cf"
     let name = maskAddresses(dev.name, privacy)
     let subtitle = dev.batteryLabel.map { "\(dev.kind.label) · \($0)" } ?? dev.kind.label
-    var s = "<g><title>\(xmlEsc(name))\(dev.interfaceBSD.map { " → \($0)" } ?? "")</title>"
+    let hover = name + (dev.interfaceBSD.map { " → \($0)" } ?? "")
+    var s = "<g><title>\(xmlEsc(hover))</title>"
     s += card(cx, cy, box.w, box.h, tint)
     s += deviceIcon(dev.kind, cx, cy - box.h / 2 + 14, tint)
     // deviceShortName is the SwiftUI chip's own rule, so both graphs truncate identically.
@@ -275,7 +279,8 @@ private func ifaceNode(_ p: CGPoint, _ iface: InterfaceInfo, privacy: Bool) -> S
     let box = GraphNodeSize.iface
     let cx = Double(p.x), cy = Double(p.y)
     let color = categoryColor(iface.category)
-    var s = "<g><title>\(xmlEsc(iface.id))\(iface.displayName.map { " — \($0)" } ?? "")</title>"
+    let title = iface.id + (iface.displayName.map { " — \($0)" } ?? "")
+    var s = "<g><title>\(xmlEsc(maskAddresses(title, privacy)))</title>"
     s += card(cx, cy, box.w, box.h, color)
     s += categoryIcon(iface.category, cx, cy - box.h / 2 + 20, color)
     let led = iface.hasLink ? "#3fb950" : (iface.linkState == .down ? "#f85149" : "#6e7681")
@@ -319,7 +324,10 @@ private func egressNode(_ p: CGPoint, via: String, name: String) -> String {
     s += "<g transform='translate(\(num(cx)),\(num(iy)))'><circle r='6' \(st)/><ellipse rx='2.6' ry='6' \(st)/>"
        + "<path d='M -6 0 h 12 M -5 -3 h 10 M -5 3 h 10' \(st)/></g>"
     s += label(cx, cy + 10, "Internet", 11, "#e6edf3")
-    s += label(cx, cy + 22, fit(via, box.w, size: 8), 8, "#8b949e")
+    // `name` (the already-masked network name) was computed by the caller and then dropped,
+    // so the served graph labelled the Internet node with the interface alone.
+    let sub = name.isEmpty ? via : "\(via) (\(name))"
+    s += label(cx, cy + 22, fit(sub, box.w, size: 8), 8, "#8b949e")
     s += "</g>"
     return s
 }
