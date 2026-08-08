@@ -166,7 +166,15 @@ extension WebServer {
           $('hdr').textContent=u.header;
           // Re-fetch the SVG only when the topology or the view flags change, so the
           // ant-crawl animation never restarts mid-stride.
-          const sig=JSON.stringify([u.interfaces.rows.map(r=>r.cells[0]),privacy,hide]);
+          // Everything the GRAPH draws has to be in this signature, not just the interface
+          // list: hardware, routes and gateways all change the picture. Keying on interface
+          // ids alone meant plugging in a dock or failing over the default route updated the
+          // tables beside the graph while the graph itself silently kept the old topology.
+          const sig=JSON.stringify([
+            u.interfaces.rows.map(r=>r.cells[0]),
+            u.devices.flatMap(s=>s.rows.map(r=>r.cells[0]+'|'+r.cells[7])),
+            u.routes.flatMap(s=>s.rows.map(r=>r.cells[0]+'|'+r.cells[1]+'|'+r.cells[3])),
+            u.header, privacy, hide]);
           if(sig!==topoSig){topoSig=sig;await loadGraph();}
           const active=new Set(u.activeInterfaces||[]);
           document.querySelectorAll('#graph path.wire').forEach(w=>{

@@ -460,7 +460,7 @@ private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
     // terminal could not identify an adapter anywhere in the TUI.
     let wide = w >= 132, mid = w >= 104, named = w >= 92
     var head = "  " + cell("IFACE", 10) + cell("TYPE", 13)
-    if named { head += cell("DESCRIPTION", 18) }
+    if named { head += cell("DESCRIPTION", 19) }
     head += cell("IPV4", 16)
     if mid  { head += cell("MAC", 18) }
     head += cell("SPEED", 10) + cell("RX/s", 11) + cell("TX/s", 11)
@@ -484,7 +484,7 @@ private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
         // duplicates the IPV4 column here.
         if named {
             let desc = providedBy[i.id] ?? i.displayName ?? i.subtitleLabel
-            r += cell(maskIfNeeded(desc, st.privacy), 18)
+            r += cell(maskIfNeeded(desc, st.privacy), 19)
         }
         r += cell(maskIfNeeded(i.ipv4Addresses.first ?? "—", st.privacy), 16)
         if mid { r += cell(maskIfNeeded(i.macAddress ?? "—", st.privacy), 18) }
@@ -504,8 +504,11 @@ private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
 
 private func routesView(_ s: TopologySnapshot, _ st: TUIState,
                         _ f: TUIFrame, _ w: Int) -> [String] {
+    // IFACE is 10, not 9: the trailing-separator reserve in cell() costs one cell, and at 9
+    // both bridge100 and bridge101 truncated to the same "bridge1…" on any Mac running
+    // Internet Sharing or a VM bridge.
     let head = "  " + cell("DESTINATION", 20) + cell("GATEWAY", 17)
-        + cell("NETMASK", 17) + cell("IFACE", 9) + cell("FLAGS", 8) + cell("PRIO", 6)
+        + cell("NETMASK", 17) + cell("IFACE", 10) + cell("FLAGS", 8) + cell("PRIO", 6)
     var rows: [String] = []
 
     func emit(_ list: [RouteEntry]) {
@@ -517,7 +520,7 @@ private func routesView(_ s: TopologySnapshot, _ st: TUIState,
             // Netmask is NOT masked — it describes the prefix, not the host, and the GUI
             // leaves it legible too. Masking it turned 255.255.255.0 into "255.x.x.x".
             line += cell(r.netmask ?? "—", 17)
-            line += cell(r.interfaceName, 9) + cell(r.flags, 8)
+            line += cell(r.interfaceName, 10) + cell(r.flags, 8)
             // Linux route metric, else the macOS network-service rank. Lower wins on both;
             // they are mutually exclusive by platform, so one column serves both.
             line += cell(r.metric.map(String.init)
@@ -548,13 +551,8 @@ private func routesView(_ s: TopologySnapshot, _ st: TUIState,
 private func devicesView(_ s: TopologySnapshot, _ st: TUIState,
                          _ f: TUIFrame, _ w: Int) -> [String] {
     guard !s.attachedDevices.isEmpty else {
-        #if os(Linux)
-        return ["", "  No external devices.",
-                "  (On Linux, USB / Thunderbolt collectors arrive in a later update.)"]
-        #else
         return ["", "  No external devices detected.",
                 "  USB peripherals, hubs/docks and external displays appear here when connected."]
-        #endif
     }
     // Columns are added by priority while the DEVICE column can still hold a useful name,
     // and DEVICE then takes everything left over. It used to be pinned at 30 cells at EVERY
@@ -644,7 +642,7 @@ private func dnsView(_ s: TopologySnapshot, _ st: TUIState,
         }
         rows.append("")
     }
-    let head = "  " + cell("SCOPE", 24) + cell("IFACE", 9)
+    let head = "  " + cell("SCOPE", 24) + cell("IFACE", 10)
         + cell("RESOLVERS", 32) + cell("SEARCH", 20)
     rows.append(paint(cell(head, w, unicode: f.unicode), .dim, f.colorMode))
     for d in s.dnsConfigs where !d.isGlobal {
@@ -652,7 +650,7 @@ private func dnsView(_ s: TopologySnapshot, _ st: TUIState,
                                    userNamed: d.userNamedScope, st.privacy)
         if d.isPrimary { scope = (f.unicode ? "★ " : "* ") + scope }
         if d.isSupplemental { scope += " [split-DNS]" }
-        var r = "  " + cell(scope, 24) + cell(d.interfaceName ?? "—", 9)
+        var r = "  " + cell(scope, 24) + cell(d.interfaceName ?? "—", 10)
         r += cell(d.servers.map { maskIfNeeded($0, st.privacy) }.joined(separator: " "), 32)
         // Search / split-DNS domains name the employer, which is exactly what the help text
         // promises privacy mode redacts.
@@ -752,7 +750,13 @@ private func hardwareBand(_ s: TopologySnapshot, _ st: TUIState,
     // Synthetic entities — the same ones the graph draws as Hardware-row cards.
     if hasWifi {
         let wifiBSDs = s.interfaces.filter { $0.category == .wifi }.map(\.id)
-        let ssid = s.egress.map { maskNetworkName($0.displayName, st.privacy) } ?? ""
+        // Only label the slot with the network name when Wi-Fi is actually the uplink. Taking
+        // it from the egress unconditionally printed "Wi-Fi / Wired" on a docked laptop —
+        // reading as if the machine were associated to a network called "Wired", and
+        // disagreeing with the SwiftUI/SVG graph, which draws no Wi-Fi entity at all there.
+        let ssid = s.egress.flatMap { e in
+            wifiBSDs.contains(e.viaInterface) ? maskNetworkName(e.displayName, st.privacy) : nil
+        } ?? ""
         emitSlot("Wi-Fi", .wifi, subtitle: ssid, bsds: wifiBSDs, devices: [])
     }
     if !displays.isEmpty {
