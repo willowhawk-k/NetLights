@@ -75,14 +75,12 @@ public struct WebServer {
     /// The snapshot as the web UI should see it: masked and/or filtered per the query.
     private func viewSnapshot(maxAge: Double, privacy: Bool, hide: Bool) -> TopologySnapshot {
         let snap = cachedSnapshot(maxAgeSeconds: maxAge)
-        Self.rates.update(snap.interfaces)
         return redactedSnapshot(snap, rates: Self.rates, privacy: privacy, hideInactive: hide)
     }
 
     /// The pre-formatted table payload — see WebPresentation.swift for why it exists.
     private func uiJSON(maxAge: Double, privacy: Bool, hide: Bool) -> String {
         let snap = cachedSnapshot(maxAgeSeconds: maxAge)
-        Self.rates.update(snap.interfaces)
         let payload = buildUIPayload(snap, rates: Self.rates, privacy: privacy, hideInactive: hide)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -95,6 +93,11 @@ public struct WebServer {
         let s = collect()
         Self.cache.snapshot = s
         Self.cache.takenAt = now
+        // Sample rates once per COLLECT, never per request. Updating on a cache hit fed the
+        // deriver the same counters again, which advanced its clock without advancing the
+        // bytes — so with two tabs polling out of phase the next real delta was divided by a
+        // short dt and the reported throughput ran high.
+        Self.rates.update(s.interfaces)
         return s
     }
 
@@ -327,7 +330,6 @@ public struct WebServer {
             let w = clampDim(query["w"], fallback: 1200, lo: 640, hi: 6000)
             let h = clampDim(query["h"], fallback: 760, lo: 480, hi: 6000)
             let snap = cachedSnapshot(maxAgeSeconds: maxAge)
-            Self.rates.update(snap.interfaces)
             respond(fd, status: "200 OK", type: "image/svg+xml; charset=utf-8",
                     body: renderGraphSVG(snapshot: snap, width: w, height: h,
                                          privacy: privacy, hideUnused: hide,

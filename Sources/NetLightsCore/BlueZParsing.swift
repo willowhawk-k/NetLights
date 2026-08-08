@@ -137,7 +137,18 @@ public func buildBluetoothDevices(managedObjects: DBusValue) -> [AttachedDevice]
             connection: "Bluetooth",
             batteryPercent: battery.map { min(max($0, 0), 100) }))
     }
-    return out.sorted { $0.id < $1.id }
+    // A peer linked to two adapters (built-in plus a dongle) appears once per adapter with
+    // the SAME id. `computeDevicePositions` writes result[d.id], so the duplicate silently
+    // overwrites the first position and one chip is left with a slot but no node. Prefer the
+    // entry that carries a battery, then the one with a real name.
+    var byID: [String: AttachedDevice] = [:]
+    for d in out {
+        guard let existing = byID[d.id] else { byID[d.id] = d; continue }
+        let better = (d.batteryPercent != nil && existing.batteryPercent == nil)
+            || (existing.name == "Bluetooth device" && d.name != "Bluetooth device")
+        if better { byID[d.id] = d }
+    }
+    return byID.values.sorted { $0.id < $1.id }
 }
 
 /// The classification cascade, mirroring `NetworkMonitor.buildBluetooth` and extending it

@@ -86,11 +86,11 @@ public func buildUIPayload(_ s: TopologySnapshot, rates: TrafficRateDeriver,
 }
 
 private func deviceEmptyText() -> String {
-    #if os(Linux)
-    return "No external devices — USB / Thunderbolt collectors arrive in a later update."
-    #else
-    return "No external devices detected. USB peripherals, hubs/docks and external displays appear here when connected."
-    #endif
+    // Platform-neutral now that the Linux collectors have shipped. The old Linux wording
+    // ("collectors arrive in a later update") turned a correct "nothing is plugged in" into
+    // a missing-feature notice, and made a real collector failure indistinguishable from an
+    // empty machine.
+    "No external devices detected. USB peripherals, hubs/docks and external displays appear here when connected."
 }
 
 // MARK: - Interfaces

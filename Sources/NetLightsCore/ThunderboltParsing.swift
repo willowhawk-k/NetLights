@@ -140,10 +140,14 @@ public func buildThunderboltTopology(nodes: [ThunderboltNode]) -> ThunderboltTop
         }
     }
     let ordered = receptacles.sorted()
-    // Sequential 1-based numbering across sorted (domain, port), so the label reads like a
-    // port number rather than exposing the packed key.
+    // Derive the id from the packed (domain, adapter) key, NOT from an enumeration index. A
+    // dense rank of the receptacles that happen to be occupied numbered a dock in the second
+    // physical port as "TB Port 1" — telling the user to unplug the wrong socket — and made
+    // every id shift the moment another device appeared. The key is already stable and
+    // disjoint, so it can be the id.
     var portID: [Int: Int] = [:]
-    for (i, key) in ordered.enumerated() { portID[key] = thunderboltPortIDBase + i }
+    for key in ordered { portID[key] = thunderboltPortIDBase + key }
+    let multiDomain = Set(ordered.map { $0 >> 8 }).count > 1
 
     var occupied = Set<Int>()
     var devices: [AttachedDevice] = []
@@ -211,7 +215,10 @@ public func buildThunderboltTopology(nodes: [ThunderboltNode]) -> ThunderboltTop
 
     let ports = ordered.compactMap { key -> HardwarePort? in
         guard let id = portID[key] else { return nil }
-        let n = id - thunderboltPortIDBase + 1
+        // The real adapter number the kernel reports, so the label names the socket the user
+        // can actually find. The domain only appears when there is more than one controller.
+        let adapter = key & 0xFF
+        let label = multiDomain ? "TB \(key >> 8)-\(adapter)" : "TB Port \(adapter)"
         return HardwarePort(id: id, side: "", position: "",
                             childBSDNames: [],
                             hasConnectedDevice: occupied.contains(id),
@@ -219,7 +226,7 @@ public func buildThunderboltTopology(nodes: [ThunderboltNode]) -> ThunderboltTop
                             // Genuinely Thunderbolt here, so the default label would have
                             // been right — but the id is offset to avoid colliding with USB
                             // bus numbers, so it must be spelled out rather than derived.
-                            title: "TB Port \(n)")
+                            title: label)
     }
     return ThunderboltTopology(devices: devices, ports: ports)
 }
