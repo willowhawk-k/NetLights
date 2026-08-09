@@ -69,6 +69,36 @@ Source and release notes: https://github.com/willowhawk-k/NetLights/releases/tag
 
 ---
 
+## 3 · App Store Description
+
+*Paste into App Store Connect → Version Information → Description. This evolves with the
+app rather than with each version — review it when a user-visible feature lands. Limit is
+4,000 characters.*
+
+```
+NetLights turns your Mac's network into a live, layered map. Every interface — Wi-Fi, Ethernet, Thunderbolt, USB, VPN tunnels, loopback — is arranged into OSI-style bands, from the physical chassis ports at the top down to virtual tunnels at the bottom, with small LEDs showing live link and traffic.
+
+• See the whole picture: ports, the Wi-Fi network, external displays, connected Bluetooth devices, and attached devices (iPhone/iPad, hubs, docks, drives, keyboards) — with USB hubs expanded into a tidy tree.
+• Follow your traffic: live up/down throughput is drawn right on the links, and default gateways are ranked by precedence so you can see which uplink actually carries your packets.
+• See your VPN end to end: the encrypted tunnel is drawn as a glowing pipe from your apps out to the far-side server, split-tunnel traffic that bypasses the VPN shows as a separate direct path, and the Routes tab groups routes into Direct, Encrypted and Local. Optionally reveal your public exit address alongside the underlay one.
+• Know which DNS actually answers: the DNS tab shows the resolvers in use for every network service, marks the set that wins, and makes split-DNS scoping visible — so a VPN quietly pushing its own resolvers is obvious at a glance.
+• Inspect anything: hover for details, or use the Routes, Interfaces, Devices and DNS tabs for full tables — manufacturer, negotiated link speed, USB class, vendor and product IDs, and which port each device sits on.
+• Battery and power: a battery entity shows charge level and whether you are on battery, powered, or charging, with the adapter's name and wattage on hover.
+• Privacy mode: one toggle masks every IP and MAC address across the graph and the tables while keeping the shape of your network readable — made for screenshots, screen-sharing and demos.
+• Prefer a terminal? The app also includes an optional command-line dashboard that draws the same map as text, which works over SSH.
+
+NetLights is read-only and needs no administrator rights — it never changes your configuration, collects no data, and runs entirely on your Mac. Its one optional outbound action is a "Public IP" button you can press to look up the address the internet sees for you, using a standard STUN query. Nothing else ever leaves your machine.
+
+Free and open source under the MIT License — source at https://github.com/willowhawk-k/NetLights
+```
+
+**What changed vs. the description in APPSTORE.md:** added the **DNS tab** and **Privacy
+mode**, both of which have shipped for several releases and were missing from the listing
+entirely; added the optional terminal dashboard; and expanded the tables line to name the
+columns. The rest is the previous wording.
+
+---
+
 ## Checklist before submitting
 
 - [ ] Build **22** selected (must strictly exceed 21, which shipped as 1.9.2)
@@ -76,4 +106,5 @@ Source and release notes: https://github.com/willowhawk-k/NetLights/releases/tag
 - [ ] "What's New" pasted from section 1
 - [ ] App Review Notes pasted from section 2
 - [ ] App Privacy still declared **Data Not Collected** — unchanged
-- [ ] No screenshot updates needed; the UI is unchanged apart from one column heading
+- [ ] Description pasted from section 3 (adds the DNS tab and Privacy mode — see the note there)
+- [ ] Screenshots: see the note below

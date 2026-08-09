@@ -137,39 +137,13 @@ Create the app in App Store Connect (Apps → + → New App; macOS; bundle id
 - **Privacy Policy URL:** `https://github.com/willowhawk-k/NetLights/blob/main/PRIVACY.md`
 - **Copyright:** `© 2026 Keith Willowhawk`
 - **Age rating:** 4+
-- **Description:**
-
-> NetLights turns your Mac's network into a live, layered map. Every interface —
-> Wi-Fi, Ethernet, Thunderbolt, USB, VPN tunnels, loopback — is arranged into
-> OSI-style bands, from the physical chassis ports at the top down to virtual tunnels
-> at the bottom, with small LEDs showing live link and traffic.
->
-> • See the whole picture: ports, the Wi-Fi network, external displays, connected
-> Bluetooth devices, and attached devices (iPhone/iPad, hubs, docks, drives, keyboards)
-> — with USB hubs expanded into a tidy tree.
-> • Follow your traffic: live up/down throughput is drawn right on the links, and
-> default gateways are ranked by precedence so you can see which uplink carries your
-> packets.
-> • See your VPN end to end: the encrypted tunnel is drawn as a glowing pipe from your
-> apps out to the far-side server, split-tunnel traffic that bypasses the VPN shows as a
-> separate direct path, and the Routes tab groups routes into Direct, Encrypted, and
-> Local. Optionally reveal your public exit vs. underlay IP.
-> • Inspect anything: hover for details, or use the Routes, Interfaces, and Devices
-> tabs for full tables (manufacturer, link speed, USB class, and more).
-> • Battery & power: a battery entity shows charge level and whether you're on
-> battery, powered, or charging.
->
-> NetLights is read-only and needs no admin rights — it never changes your
-> configuration, collects no data, and runs entirely on-device. Its one optional
-> outbound action is a "Public IP" button you can tap to look up the address the
-> internet sees for you (a standard STUN query); nothing else ever leaves your Mac.
->
-> Free and open source under the MIT License — source at
-> https://github.com/willowhawk-k/NetLights
-
+- **Description:** lives in [`APPSTORE-LATEST.md`](APPSTORE-LATEST.md) § 3, not here. It
+  evolves with the app's feature set rather than with the release process this document
+  describes, and keeping one copy avoids the two drifting — the version that sat here had
+  gone several releases without mentioning the DNS tab or Privacy mode.
 - **License Agreement:** Apple's **Standard License Agreement** (keep the default; do
   NOT fill the custom EULA field). The app is MIT-licensed — that governs the source
-  on GitHub and is noted in the description above; the standard EULA covers the App
+  on GitHub and is noted in the description itself; the standard EULA covers the App
   Store binary. (A bare MIT custom EULA would fail Apple's minimum-terms requirement.)
 
 ## Privacy "nutrition label" answers
