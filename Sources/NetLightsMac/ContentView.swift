@@ -185,6 +185,23 @@ struct ContentView: View {
             Text("\(upCount) / \(totalCount) interfaces up")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+            // Which interface actually carries traffic to the internet. The TUI has always
+            // said this in its header; the window only implied it through the graph's
+            // emphasised wire, so there was no way to read it as a fact.
+            if let e = monitor.egress {
+                Text("·").font(.system(size: 10)).foregroundColor(.secondary.opacity(0.4))
+                Image(systemName: e.kind.systemImage)
+                    .font(.system(size: 9))
+                    .foregroundColor(.accentColor)
+                Text("egress \(e.viaInterface)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                if let name = e.name, !name.isEmpty {
+                    Text(Privacy.mask(name, on: privacy))
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+            }
             if hideUnused && hiddenCount > 0 {
                 Text("· \(hiddenCount) inactive hidden")
                     .font(.system(size: 10))
@@ -246,8 +263,12 @@ struct ContentView: View {
             Table(of: RouteEntry.self) {
                 TableColumn("Destination") { r in
                     HStack {
-                        if r.isDefault {
+                        // Only the winning default is starred. `isDefault` is true for EVERY
+                        // default route — Wi-Fi, Ethernet, the VPN tunnel and any bridge all
+                        // have one — so starring them all claimed four primaries at once.
+                        if r.id == primaryDefaultRouteID(monitor.routes, egress: monitor.egress) {
                             Image(systemName: "star.fill").foregroundColor(.yellow).font(.caption)
+                                .help("Primary default route — traffic to the internet leaves through \(monitor.egress?.viaInterface ?? "this interface")")
                         }
                         Text(Privacy.mask(r.destination, on: privacy)).font(.system(.body, design: .monospaced))
                     }
@@ -332,6 +353,15 @@ struct ContentView: View {
                 HStack {
                     Image(systemName: i.category.systemImage).foregroundColor(.accentColor)
                     Text(i.id).font(.system(.body, design: .monospaced))
+                    // Star the interface that actually reaches the internet. With Wi-Fi and
+                    // Ethernet both up and both holding a default route, nothing in this
+                    // table said which one wins.
+                    if i.id == monitor.egress?.viaInterface {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.orange)
+                            .help("Primary egress — traffic to the internet leaves through this interface")
+                    }
                 }
             }
             .width(min: 90, ideal: 110)

@@ -102,12 +102,14 @@ private func interfacesSection(_ s: TopologySnapshot, _ ifaces: [InterfaceInfo],
         s.attachedDevices.compactMap { d in d.interfaceBSD.map { ($0, d.name) } },
         uniquingKeysWith: { a, _ in a })
 
+    let egressIface = s.egress?.viaInterface
     let rows = ifaces.map { i -> UIRow in
         let desc = providedBy[i.id] ?? i.displayName ?? i.subtitleLabel
         let st = rates.state(for: i.id)
         return UIRow(
             cells: [
-                i.id,
+                // Star the primary egress, matching the app and the TUI.
+                i.id == egressIface ? "★ \(i.id)" : i.id,
                 i.category.rawValue,
                 maskAddresses(desc, privacy),
                 i.ipv4Addresses.isEmpty ? "—"
@@ -146,11 +148,13 @@ private func routeSections(_ s: TopologySnapshot, _ privacy: Bool) -> [UISection
     // "unencrypted split-tunnel" the moment privacy was switched on, because "192.x.x.x" no
     // longer matches a private-range test.
     let g = classifyRoutes(s.routes, gateways: s.gateways)
+    // Only the winning default is starred — see primaryDefaultRouteID.
+    let primaryID = primaryDefaultRouteID(s.routes, egress: s.egress)
     func rows(_ list: [RouteEntry]) -> [UIRow] {
         list.sorted { routeSortKey($0.destination) < routeSortKey($1.destination) }
             .map { r in
                 UIRow(cells: [
-                    maskAddresses(r.destination, privacy) + (r.isDefault ? " ✦" : ""),
+                    maskAddresses(r.destination, privacy) + (r.id == primaryID ? " ✦" : ""),
                     maskAddresses(r.gateway.isEmpty ? "—" : r.gateway, privacy),
                     r.netmask ?? "—",     // a netmask describes the prefix, not the host
                     r.interfaceName,

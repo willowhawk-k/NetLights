@@ -10,14 +10,36 @@ import Foundation
 /// The machine's egress: the physical (non-tunnel) default route's interface and kind.
 /// The network name (Wi-Fi SSID) is attached by the caller — it comes from a platform
 /// API (CoreWLAN on macOS) — so this transform stays pure.
-public func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> EgressInfo? {
-    // The physical default route (not a tunnel) is the real egress.
-    guard let r = routes.first(where: {
+public func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo],
+                          rank: [String: Int] = [:]) -> EgressInfo? {
+    // Every physical (non-tunnel) default route is a CANDIDATE uplink. A machine with both
+    // Wi-Fi and Ethernet up has one per interface, and they arrive in the kernel's table
+    // order, which carries no priority at all.
+    let candidates = routes.filter {
         $0.isDefault && !$0.interfaceName.isEmpty
         && !$0.interfaceName.hasPrefix("utun") && !$0.interfaceName.hasPrefix("ipsec")
-    }) else { return nil }
+    }
+    guard !candidates.isEmpty else { return nil }
 
-    let ifname = r.interfaceName
+    // Pick the one that actually WINS, using the same ranking `buildGatewayNodes` already
+    // uses — the macOS network-service order, or the Linux route metric. Lower wins.
+    //
+    // This used to be `routes.first(where:)`, i.e. whichever default route the kernel
+    // happened to list first. On a laptop docked to Ethernet with Wi-Fi still associated
+    // that reported the Wi-Fi interface as the egress while traffic left over Ethernet —
+    // and the Routes tab, ranked correctly, sat right next to it disagreeing.
+    func score(_ r: RouteEntry) -> Int { rank[r.interfaceName] ?? r.metric ?? Int.max }
+    let best = candidates.enumerated().min { a, b in
+        // A default route with no gateway (a link-scope default, e.g. an Internet-Sharing
+        // bridge) is not a real uplink, so it loses to any route that has one.
+        let ga = a.element.gateway.isEmpty ? 1 : 0, gb = b.element.gateway.isEmpty ? 1 : 0
+        if ga != gb { return ga < gb }
+        let sa = score(a.element), sb = score(b.element)
+        if sa != sb { return sa < sb }
+        return a.offset < b.offset          // stable: table order breaks a genuine tie
+    }!.element
+
+    let ifname = best.interfaceName
     let iface  = interfaces.first { $0.id == ifname }
     let kind: EgressInfo.Kind
     switch iface?.category {
@@ -27,6 +49,24 @@ public func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo]) -> 
     default:                      kind = .other
     }
     return EgressInfo(viaInterface: ifname, kind: kind, name: nil)
+}
+
+/// The ONE default route that actually carries traffic off this machine — the default on
+/// the primary egress interface.
+///
+/// `RouteEntry.isDefault` is true for EVERY default route, and a laptop with Wi-Fi and
+/// Ethernet both up plus a VPN has three or four of them. Marking them all with a star said
+/// only "this is a default route", which the destination column already says, while reading
+/// as "this is THE one" — so every surface appeared to claim four primaries at once.
+///
+/// Returns the route's id so a renderer can mark exactly one row: an interface can carry
+/// more than one default (two DHCP configs on Linux give the same interface two metrics),
+/// and the lowest metric wins among those.
+public func primaryDefaultRouteID(_ routes: [RouteEntry], egress: EgressInfo?) -> UUID? {
+    guard let e = egress else { return nil }
+    let onEgress = routes.filter { $0.isDefault && $0.interfaceName == e.viaInterface }
+    guard !onEgress.isEmpty else { return nil }
+    return onEgress.min { ($0.metric ?? Int.max) < ($1.metric ?? Int.max) }?.id
 }
 
 /// Whether an IPv4 string is a routable public address (not RFC1918 / loopback /
