@@ -6,7 +6,7 @@
 
 ![platform](https://img.shields.io/badge/platform-macOS%2013%2B%20%C2%B7%20Linux-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![version](https://img.shields.io/badge/version-1.9.3-orange)
+![version](https://img.shields.io/badge/version-1.9.4-orange)
 
 NetLights arranges every network interface on your machine into horizontal bands that
 mirror the network stack — from the physical chassis ports at the top down to virtual
