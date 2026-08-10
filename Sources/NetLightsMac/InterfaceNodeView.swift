@@ -110,6 +110,10 @@ struct InterfaceNodeView: View {
     let iface: InterfaceInfo
     let traffic: TrafficState?
     var isHovered: Bool = false
+    /// True for the interface that actually carries traffic to the internet. The graph
+    /// already emphasised its WIRE, but nothing marked the interface itself, so on a
+    /// machine with Wi-Fi and Ethernet both up you had to trace the line to work it out.
+    var isEgress: Bool = false
 
     @Environment(\.privacyMode) private var privacyMode
 
@@ -147,8 +151,13 @@ struct InterfaceNodeView: View {
                     .fill(cardBackground)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(borderColor, lineWidth: isHovered ? 1.5 : 1)
+                            .stroke(isEgress ? Color.orange.opacity(0.9) : borderColor,
+                                    lineWidth: isEgress ? 2 : (isHovered ? 1.5 : 1))
                     )
+                    // A soft outward glow rather than a badge: the chip is small and already
+                    // carries an icon, a name, an address, a speed and an LED.
+                    .shadow(color: isEgress ? Color.orange.opacity(0.55) : .clear,
+                            radius: isEgress ? 7 : 0)
             )
             .opacity(dimmed ? 0.55 : 1.0)
             .scaleEffect(isHovered ? 1.03 : 1.0)

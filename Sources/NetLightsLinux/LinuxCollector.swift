@@ -19,7 +19,7 @@ struct LinuxCollector {
         var gateways = resolveVPNPaths(
             buildGatewayNodes(from: routes, interfaces: interfaces, rank: rank),
             routes: routes)
-        var egress = computeEgress(routes: routes, interfaces: interfaces)
+        var egress = computeEgress(routes: routes, interfaces: interfaces, rank: rank)
 
         let usb = linuxUSBTopology()
         // Receptacle ids are disjoint by construction: USB uses kernel bus numbers (1, 2, …),

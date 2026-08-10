@@ -473,9 +473,13 @@ private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
         s.attachedDevices.compactMap { d in d.interfaceBSD.map { ($0, d.name) } },
         uniquingKeysWith: { a, _ in a })
 
+    let egressIface = s.egress?.viaInterface
     for i in visibleInterfaces(s, st, rates) {
         var r = dot(i.linkState, f) + " "
-        r += paint(cell(i.id, 10), color(for: i.category), f.colorMode)
+        // Star the interface that actually reaches the internet — the header names it, but
+        // the table gave no way to spot it among several that are up.
+        let star = i.id == egressIface ? (f.unicode ? "★" : "*") : " "
+        r += paint(cell(star + i.id, 10), color(for: i.category), f.colorMode)
         r += cell(i.category.rawValue, 13)
         // Prefer the adapter that provides the interface, then the SystemConfiguration
         // hardware-port name ("Wi-Fi", "Thunderbolt 1"), matching the macOS Interfaces tab,
@@ -510,11 +514,13 @@ private func routesView(_ s: TopologySnapshot, _ st: TUIState,
     let head = "  " + cell("DESTINATION", 20) + cell("GATEWAY", 17)
         + cell("NETMASK", 17) + cell("IFACE", 10) + cell("FLAGS", 8) + cell("PRIO", 6)
     var rows: [String] = []
+    let primaryID = primaryDefaultRouteID(s.routes, egress: s.egress)
 
     func emit(_ list: [RouteEntry]) {
         for r in list.sorted(by: { routeSortKey($0.destination) < routeSortKey($1.destination) }) {
             var line = "  "
-            let dest = r.isDefault ? "\(r.destination) \(f.unicode ? "✦" : "*")" : r.destination
+            // Only the winning default is starred — see primaryDefaultRouteID.
+            let dest = r.id == primaryID ? "\(r.destination) \(f.unicode ? "✦" : "*")" : r.destination
             line += cell(maskIfNeeded(dest, st.privacy), 20)
             line += cell(maskIfNeeded(r.gateway.isEmpty ? "—" : r.gateway, st.privacy), 17)
             // Netmask is NOT masked — it describes the prefix, not the host, and the GUI

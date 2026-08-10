@@ -173,7 +173,8 @@ struct NetworkGraphView: View {
                     if let p = ifacePositions[iface.id] {
                         InterfaceNodeView(iface: iface,
                                          traffic: trafficStates[iface.id],
-                                         isHovered: shownTarget == .iface(iface.id))
+                                         isHovered: shownTarget == .iface(iface.id),
+                                         isEgress: iface.id == egress?.viaInterface)
                             .position(p).zIndex(1)
                     }
                 }

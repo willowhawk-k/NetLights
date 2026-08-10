@@ -170,7 +170,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
         let routes     = Self.gatherRoutes()
         let rank       = Self.serviceOrder()
         var gateways   = resolveVPNPaths(buildGatewayNodes(from: routes, interfaces: interfaces, rank: rank), routes: routes)
-        var egress     = computeEgress(routes: routes, interfaces: interfaces)
+        var egress     = computeEgress(routes: routes, interfaces: interfaces, rank: rank)
         if egress?.kind == .wifi { egress?.name = Self.currentSSID() }
         if let e = egress, let gi = gateways.firstIndex(where: {
             $0.isDefault && !$0.isVPN && $0.reachableVia.contains(e.viaInterface)
@@ -206,7 +206,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
         routes = newRoutes
         let rankNow = Self.serviceOrder()   // macOS network service order → gateway precedence
         var newGateways = resolveVPNPaths(buildGatewayNodes(from: newRoutes, interfaces: newInterfaces, rank: rankNow), routes: newRoutes)
-        var newEgress = computeEgress(routes: newRoutes, interfaces: newInterfaces)
+        var newEgress = computeEgress(routes: newRoutes, interfaces: newInterfaces, rank: rankNow)
         // SSID comes from macOS-specific CoreWLAN, so it's attached here rather than
         // inside computeEgress — keeping that transform pure/portable.
         if newEgress?.kind == .wifi { newEgress?.name = Self.currentSSID() }
