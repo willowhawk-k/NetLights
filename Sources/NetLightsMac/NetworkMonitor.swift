@@ -462,6 +462,8 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     // MARK: - sysctl enrichment (link state, speed, rx/tx bytes)
 
     private static func enrichWithSysctl(interfaces: inout [String: InterfaceInfo]) {
+        // Authoritative per-interface link state; see linkActiveByInterface().
+        let linkActive = linkActiveByInterface()
         // NET_RT_IFLIST2 yields if_msghdr2 / if_data64 — 64-bit rx/tx byte counters
         // (the 32-bit if_data counters wrap every 4 GiB and would under-report the
         // on-wire throughput during fast transfers) and a 64-bit baudrate (the 32-bit
@@ -508,11 +510,19 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
                             let baud = UInt64(data.ifi_baudrate)
                             interfaces[name]?.linkSpeedBps = baud > 0 ? baud : nil
 
-                            // Infer link state from IFF_RUNNING (0x40) in ifm_flags
+                            // SystemConfiguration's Link/Active is authoritative where it
+                            // exists; the IFF_RUNNING inference is only a fallback for
+                            // interfaces that have no Link key (utun, lo0, awdl, bridges).
+                            // Wi-Fi with the radio off keeps IFF_RUNNING set, so the flags
+                            // alone cannot tell it from a live Ethernet port.
                             let ifFlags = hdr.ifm_flags
                             let isRunning = ifFlags & 0x40 != 0
                             let isUp = ifFlags & 0x1 != 0
-                            interfaces[name]?.linkState = (isUp && isRunning) ? .up : (isUp ? .unknown : .down)
+                            if let active = linkActive[name] {
+                                interfaces[name]?.linkState = active ? .up : .down
+                            } else {
+                                interfaces[name]?.linkState = (isUp && isRunning) ? .up : (isUp ? .unknown : .down)
+                            }
                         }
                     }
                 }
@@ -1144,6 +1154,37 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
               let info = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any]
         else { return nil }
         return info["PrimaryInterface"] as? String
+    }
+
+    /// Interface (BSD name) → whether its LINK is actually active, from SystemConfiguration.
+    ///
+    /// The authoritative signal, and not the same thing as the interface flags. A Wi-Fi
+    /// interface with the radio switched off keeps IFF_UP *and* IFF_RUNNING set — en0 and a
+    /// live Ethernet port both read flags=8863 — while `ifconfig` shows "status: inactive"
+    /// and SystemConfiguration reports Active = FALSE. Inferring link from IFF_RUNNING
+    /// therefore reported switched-off Wi-Fi as up, in the interface count, the LED and the
+    /// hardware band alike.
+    ///
+    /// Read in-process from SCDynamicStore, which this class already uses for DNS and the
+    /// service order — no new API surface and no new entitlement. Interfaces with no Link
+    /// key (utun, lo0, awdl, bridges) are simply absent, and the caller keeps the flag-based
+    /// inference for those.
+    nonisolated static func linkActiveByInterface() -> [String: Bool] {
+        guard let store = SCDynamicStoreCreate(nil, "NetLights" as CFString, nil, nil),
+              let keys = SCDynamicStoreCopyKeyList(
+                  store, "State:/Network/Interface/[^/]+/Link" as CFString) as? [String]
+        else { return [:] }
+        var out: [String: Bool] = [:]
+        for key in keys {
+            // "State:/Network/Interface/en0/Link" -> "en0"
+            let parts = key.split(separator: "/")
+            guard parts.count >= 2, parts.last == "Link" else { continue }
+            let name = String(parts[parts.count - 2])
+            guard let info = SCDynamicStoreCopyValue(store, key as CFString) as? [String: Any],
+                  let active = info["Active"] as? Bool else { continue }
+            out[name] = active
+        }
+        return out
     }
 
     /// Interface (BSD name) → its rank in the macOS network service order

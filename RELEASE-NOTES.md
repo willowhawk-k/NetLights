@@ -34,6 +34,36 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
+### 1.9.4 — 2026-08-10
+
+A correctness release: NetLights was naming the wrong uplink.
+
+**The primary egress is now the interface that actually wins.** With Wi-Fi and Ethernet both
+up and both holding a default route, the status line picked whichever default route the
+kernel happened to list first — which carries no priority — so a docked laptop could be told
+its traffic left over Wi-Fi while it was really going out Ethernet. The Routes tab, which
+ranks correctly, sat next to it disagreeing. Egress now uses that same ranking: the macOS
+network-service order, or the Linux route metric.
+
+**Only the winning default route is starred.** Every surface marked `isDefault`, which is
+true for *every* default route — Wi-Fi, Ethernet, the VPN tunnel and any bridge each have
+one — so the Routes table appeared to claim four primaries at once. Exactly one row is
+marked now.
+
+**Link state is now read from the OS, not inferred from interface flags.** A Wi-Fi
+interface with the radio switched off keeps both IFF_UP and IFF_RUNNING set — it reads
+`flags=8863`, byte for byte the same as a live Ethernet port — while `ifconfig` reports
+`status: inactive`. NetLights inferred "up" from those flags and so counted switched-off
+Wi-Fi, cable-less Thunderbolt ports and idle bridges as up. It now reads
+SystemConfiguration's authoritative link state, which agrees with `ifconfig` on every
+interface that reports one; interfaces with no link state (tunnels, loopback) keep the old
+inference. Expect the "interfaces up" count to drop, and to be right.
+
+**And the primary is now visible where you'd look for it.** The app's status bar names the
+egress interface and its network, as the terminal dashboard's header always has; the
+Interfaces table stars it in the app, the TUI and the browser; and in the graph its chip
+takes an orange border and a soft glow.
+
 ### 1.9.3 — 2026-08-05
 
 The biggest release since the Linux port began: the browser and terminal UIs reach parity

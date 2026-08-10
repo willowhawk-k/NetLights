@@ -670,14 +670,18 @@ private func dnsView(_ s: TopologySnapshot, _ st: TUIState,
 /// entity, with the interfaces it carries and the device tree hanging off it — the same
 /// slot order the SwiftUI/SVG graph lays out left-to-right (iPhone, TB ports, Wi-Fi,
 /// Displays, Bluetooth, Battery), read top-to-bottom instead.
-private func hardwareBand(_ s: TopologySnapshot, _ st: TUIState,
+private func hardwareBand(_ s: TopologySnapshot, _ st: TUIState, _ rates: TrafficRateDeriver,
                           _ f: TUIFrame, _ w: Int) -> [String] {
     let m = f.colorMode
+    let visible = visibleInterfaces(s, st, rates)
     let displays = s.attachedDevices.filter { $0.receptacle == -2 }
     let bluetooth = s.attachedDevices.filter { $0.receptacle == -4 }
-    let hasWifi = s.interfaces.contains { $0.category == .wifi }
+    // The SAME rule the graph uses: Wi-Fi counts as hardware to draw only when it is an
+    // actual uplink. Testing for a Wi-Fi interface's mere existence kept a "Wi-Fi" slot on
+    // screen after the radio was switched off, while the graph correctly dropped it.
+    let wifiUp = wifiUplink(gateways: s.gateways, interfaces: s.interfaces)
     guard !s.hardwarePorts.isEmpty || !s.attachedDevices.isEmpty
-            || hasWifi || s.systemPower != nil else { return [] }
+            || wifiUp != nil || s.systemPower != nil else { return [] }
 
     var rows = [rule("Hardware  (OSI L0)", w, f, .dim)]
     let arrow = f.unicode ? "→" : "->"
@@ -721,7 +725,10 @@ private func hardwareBand(_ s: TopologySnapshot, _ st: TUIState,
         // The interfaces this receptacle carries — the "physical adapter" relation the
         // Physical band alone can't express.
         for bsd in bsds.sorted() {
-            guard let i = s.interfaces.first(where: { $0.id == bsd }) else { continue }
+            // Honour "hide inactive" here too. The band looked interfaces up directly, so a
+            // down interface stayed listed under its port while the same interface was
+            // hidden everywhere else on screen.
+            guard let i = visible.first(where: { $0.id == bsd }) else { continue }
             var line = "      " + dot(i.linkState, f) + " "
             line += paint(cell(i.id, 10), color(for: i.category), m)
             line += paint(cell(i.category.rawValue, 13), .dim, m)
@@ -754,8 +761,8 @@ private func hardwareBand(_ s: TopologySnapshot, _ st: TUIState,
     }
 
     // Synthetic entities — the same ones the graph draws as Hardware-row cards.
-    if hasWifi {
-        let wifiBSDs = s.interfaces.filter { $0.category == .wifi }.map(\.id)
+    if let wifi = wifiUp {
+        let wifiBSDs = [wifi]
         // Only label the slot with the network name when Wi-Fi is actually the uplink. Taking
         // it from the egress unconditionally printed "Wi-Fi / Wired" on a docked laptop —
         // reading as if the machine were associated to a network called "Wired", and
@@ -821,7 +828,7 @@ private func graphView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
     // TUI never showed which receptacle anything is plugged into, never nested a device
     // under its hub, and never showed that en0 hangs off the Wi-Fi radio: the graph said
     // "12 dev" in the header and then listed none of them.
-    rows.append(contentsOf: hardwareBand(s, st, f, w))
+    rows.append(contentsOf: hardwareBand(s, st, rates, f, w))
 
     // The OSI bands, top-down, exactly as the graph stacks them.
     let ifaces = visibleInterfaces(s, st, rates)
