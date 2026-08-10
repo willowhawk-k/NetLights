@@ -22,7 +22,11 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
    every package format wraps this same artifact.
 2. **Web renderer** — `netlights` runs a small local HTTP server; the graph is SVG
    generated from the shared `GraphLayoutEngine`, the browser is the view. Reuses the
-   engine, no GTK/Qt, future-proofs Windows.
+   engine, **no native widget toolkit UI** (no GTK/Qt views), future-proofs Windows.
+   *Clarified 2026-08-10:* this rules out a hand-built widget UI, not a native
+   **window**. The native window (Part 2, below) is an embedded WebKitGTK webview
+   displaying this same web UI — so it does link GTK, without reintroducing a second
+   renderer to keep in sync.
 3. **Full-parity collectors**, but the fiddly ones (**Bluetooth/BlueZ, Wi-Fi/nl80211**)
    **degrade-absent** — never block a release.
 4. **Distribution:** self-hosted signed **APT + YUM** repos + **AUR** + **AppImage** +
@@ -124,6 +128,35 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
   something exotic — each launches the graph. Optional Flatpak/Flathub afterward.
 - **Milestone:** installable everywhere; 2.0 candidate.
 
+### Part 2 — Native desktop window (WebKitGTK)  *(after L4; sequencing decided 2026-08-10)*
+
+A phase of its own because it is the one piece that does **not** wrap the static binary.
+Approach locked 2026-07-24: an **embedded WebKitGTK webview**, Tauri-style, showing the
+same web UI. (Rejected: `chromium --app` chromeless app-mode — stays static, but is not a
+true embedded webview.) The same approach later gives Windows a native window via WebView2.
+
+- **Three constraints that make it a separate track, not an L4 flag:**
+  1. `webkit2gtk` is a system library, so this build links **dynamically** — it is *not*
+     the fully-static binary. It is an additional **desktop variant**; the static
+     `serve` binary remains the universal baseline for every distro.
+  2. It **cannot cross-compile from the Mac** (the musl SDK has no webkitgtk), so it must
+     be built **natively on Linux, per arch** — the one thing the current build loop
+     can't do, and what the L4 CI matrix has to absorb.
+  3. It has **per-distro-family dependencies** (GTK/WebKitGTK package names differ across
+     Debian, RHEL and SUSE), forfeiting the zero-dep trick that lets one `.rpm` serve
+     RHEL/Rocky/Oracle/SLES. This variant needs its own package set.
+- **Setup on the build host/VM:** `swiftly` + a swift.org toolchain, plus
+  `webkit2gtk-4.1-dev`, `libgtk-3-dev`, `build-essential`, `pkg-config`.
+- **Shape:** a C system-library target (module map over webkit2gtk/`webview.h`) + a small
+  Swift wrapper that starts the local server on a loopback port in the background and
+  opens a native window at `http://127.0.0.1:<port>`. `#if`-guarded so the static build
+  stays clean and Core stays pure.
+- **Verify:** the window renders the same graph as the browser; the static build still
+  cross-compiles for both arches and still has no dynamic deps.
+- **Milestone:** NetLights looks like a desktop app on Linux, not a localhost URL.
+- **Open:** whether 2.0 waits for this or ships on the static binary with the `.desktop`
+  launcher (L2) and this lands in 2.1 — decide when L4 completes, not before.
+
 ### L5 — 2.0 release
 - Bump to **2.0** across all channels; multi-OS launch notes; README/INSTALL per distro.
 - macOS (App Store + GitHub) **and** Linux (apt/yum/AUR/AppImage) ship together.
@@ -131,8 +164,15 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
 ---
 
 ## Open decisions (lock as we reach them)
-- **HTTP server:** minimal hand-rolled vs SwiftNIO — decide at L2.
-- **D-Bus under static musl:** drop (Bluetooth absent) vs raw-socket protocol — decide at L3/L4.
+- ~~**HTTP server:** minimal hand-rolled vs SwiftNIO~~ — **RESOLVED at L2:** hand-rolled.
+  `LinuxServer.swift` is a dependency-free HTTP/1.1 server over BSD sockets.
+- ~~**D-Bus under static musl:** drop (Bluetooth absent) vs raw-socket protocol~~ —
+  **RESOLVED at L3:** raw socket. `NetLightsCore/DBusWire.swift` speaks the wire protocol
+  directly, so the static binary keeps Bluetooth with no libdbus.
+- **2.0 gating on the native window** (Part 2) vs shipping 2.0 on the static binary and
+  landing the window in 2.1 — decide when L4 completes.
+- **GPG signing key** for the self-hosted APT/YUM repos — needs a key decision before L4's
+  repo step; the tarball, nfpm packages, AppImage and CI do not.
 - **Flatpak:** deferred; add post-2.0 for reach.
 
 ## Risks & mitigations
@@ -152,6 +192,10 @@ Full-parity Linux build, **web-rendered** (SVG/HTML over the shared engine), for
 
 ## Suggested milestones
 - **MVP (L0–L2):** live web graph, installable as `.deb` + static tarball — ~1.5–2 weeks.
-- **Full parity + broad packaging (L0–L4):** ~4–6 focused weeks (L3 netlink/D-Bus + L4 the
-  variable parts).
+  **✅ DONE 2026-07-24.**
+- **Full parity (L3):** **✅ DONE 2026-08-05/07** — collectors are functionally complete,
+  Bluetooth included, and shipped inside macOS 1.9.3.
+- **Broad packaging (L4):** the remaining variable part — tarball, nfpm `.deb`/`.rpm`,
+  AppImage, CI matrix, then the signed repos.
+- **Native window (Part 2):** after L4, per the 2026-08-10 sequencing decision.
 - **2.0 (L5):** the coordinated macOS + Linux launch.
