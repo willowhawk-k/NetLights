@@ -51,6 +51,21 @@ public func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo],
     return EgressInfo(viaInterface: ifname, kind: kind, name: nil)
 }
 
+/// The Wi-Fi interface that is actually an UPLINK — one reachable via a default, non-VPN
+/// gateway.
+///
+/// Wi-Fi merely being PRESENT is not enough: the interface exists whether or not the radio
+/// is on, so a presence test draws a Wi-Fi entity on a Mac with Wi-Fi switched off. The
+/// graph has always used this rule; the TUI used presence, which is why the two disagreed.
+public func wifiUplink(gateways: [GatewayNode], interfaces: [InterfaceInfo]) -> String? {
+    for gw in gateways where gw.isDefault && !gw.isVPN {
+        for ifn in gw.reachableVia where interfaces.first(where: { $0.id == ifn })?.category == .wifi {
+            return ifn
+        }
+    }
+    return nil
+}
+
 /// The ONE default route that actually carries traffic off this machine — the default on
 /// the primary egress interface.
 ///

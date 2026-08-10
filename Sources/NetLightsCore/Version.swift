@@ -8,4 +8,4 @@ import Foundation
 /// builds; keep this in step with its `MARKETING_VERSION` when cutting a release. (It
 /// can't simply read the xcconfig: SwiftPM manifests are evaluated on the host and this
 /// value has to survive into a fully-static cross-compiled binary.)
-public let netLightsVersion = "1.9.3"
+public let netLightsVersion = "1.9.4"

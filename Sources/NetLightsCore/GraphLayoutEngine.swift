@@ -706,12 +706,7 @@ struct GraphLayoutEngine {
     /// The Wi-Fi interface carrying a default route — its AP becomes a Hardware-row
     /// entity (id -1 in hwPortPositions).
     private var wifiUplinkInterface: String? {
-        for gw in gateways where gw.isDefault && !gw.isVPN {
-            for ifn in gw.reachableVia where interfaces.first(where: { $0.id == ifn })?.category == .wifi {
-                return ifn
-            }
-        }
-        return nil
+        wifiUplink(gateways: gateways, interfaces: interfaces)
     }
 
     /// If Wi-Fi shares a gateway with a wired interface, the TB receptacle that
