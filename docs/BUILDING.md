@@ -70,6 +70,45 @@ This needs a swift.org toolchain (via [`swiftly`](https://swift.org/install/)), 
 Xcode's — the Xcode toolchain can't consume the musl SDK's Foundation. Prefix commands
 with `swiftly run`, e.g. `swiftly run swift build …`.
 
+### Packaging a release tarball
+
+`scripts/build-linux.sh` does the whole thing — build, strip, stage, archive, verify:
+
+```bash
+./scripts/build-linux.sh
+```
+
+Both architectures by default; pass `aarch64` or `x86_64` for one. Output lands in
+`dist/linux/` as `netlights-<version>-<arch>.tar.gz` plus a `.sha256`.
+
+Stripping matters more than it sounds: unstripped Swift binaries are ~144 MB, and
+`llvm-objcopy --strip-all` takes that to ~56 MB, ~22 MB compressed. (macOS's own `strip`
+can't read ELF, so the script uses the `llvm-objcopy` that ships with the swiftly
+toolchain.)
+
+The tarball tree mirrors an FHS prefix so every later package format can map it
+path-for-path:
+
+```
+netlights-<version>-<arch>/
+├── bin/netlights
+├── install.sh                                  # copies into a prefix; default /usr/local
+└── share/
+    ├── applications/netlights.desktop
+    ├── doc/netlights/{README,LICENSE,PRIVACY,LINUX,CLI}.md
+    └── icons/hicolor/{128x128,256x256,512x512}/apps/netlights.png
+```
+
+**Builds are reproducible** — the same commit produces byte-identical tarballs, so a CI
+artifact and a local build can be compared by hash. That needs all three of
+`SOURCE_DATE_EPOCH` (defaults to the commit date) pinning mtimes, `--numeric-owner`
+dropping the builder's uid/gid, and `gzip -n` omitting gzip's own header timestamp; miss
+any one and the hash drifts between runs.
+
+The script refuses to package a binary that isn't ELF, isn't statically linked, or doesn't
+match the requested architecture, then re-extracts the finished tarball and re-checks it —
+the artifact is verified, not the staging directory it came from.
+
 ### Verifying a Linux build
 
 Copy the binary to the Linux machine and run the verification suite **there**:

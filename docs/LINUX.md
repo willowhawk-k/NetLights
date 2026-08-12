@@ -5,8 +5,21 @@
 > tracks what's real right now — not what's planned; the plan lives in
 > [LINUX-PORT.md](LINUX-PORT.md).
 
-There is **no packaged Linux release yet** — no `.deb`, `.rpm`, AppImage or AUR
-package. Until then, [build from source](BUILDING.md#linux).
+There is **no published Linux release yet**. The static tarball is the first packaging
+format to land and can be [built locally](BUILDING.md#packaging-a-release-tarball) —
+`.deb`, `.rpm`, AppImage and AUR are still to come, as is the release itself. Until one
+exists, [build from source](BUILDING.md#linux).
+
+Once built, the tarball installs into any prefix:
+
+```bash
+tar -xzf netlights-<version>-<arch>.tar.gz
+cd netlights-<version>-<arch> && ./install.sh ~/.local
+```
+
+`./install.sh` with no argument targets `/usr/local` and needs root. It copies files and
+refreshes the desktop/icon caches; it never deletes anything, and prints the exact paths
+to remove if you want it gone.
 
 ## What works today
 
