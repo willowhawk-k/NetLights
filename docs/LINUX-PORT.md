@@ -171,8 +171,15 @@ true embedded webview.) The same approach later gives Windows a native window vi
   directly, so the static binary keeps Bluetooth with no libdbus.
 - **2.0 gating on the native window** (Part 2) vs shipping 2.0 on the static binary and
   landing the window in 2.1 — decide when L4 completes.
-- **GPG signing key** for the self-hosted APT/YUM repos — needs a key decision before L4's
-  repo step; the tarball, nfpm packages, AppImage and CI do not.
+- ~~**GPG signing key** for the self-hosted APT/YUM repos~~ — **RESOLVED 2026-08-11:**
+  a **new key created solely for NetLights**, private half held in **1Password**, and the
+  **final signing step stays manual and local**. CI may build and publish unsigned
+  artifacts; it never holds the private key. The reasoning is worth preserving because it
+  constrains the CI design: *it is a signature, so the signer should agree with what is
+  being signed* — an automated pipeline that signs whatever it just built cannot express
+  agreement, only availability. Practical consequences: repo metadata is signed on the Mac
+  before publication; a compromise of the CI account cannot produce a signed package; and
+  the key can be rotated without touching any other identity.
 - **Flatpak:** deferred; add post-2.0 for reach.
 
 ## Risks & mitigations
