@@ -5,13 +5,46 @@ shipped from one codebase through **two channels**: the **Mac App Store** and a
 **Developer-ID / GitHub** download. NetLights has been live on the Mac App Store
 since 1.6.3.
 
-Future enhancements are listed first; the release history follows, newest at the top.
+Work queued for the next release comes first, then the longer-range backlog, then the
+release history, newest at the top.
+
+---
+
+## Queued for 2.0
+
+Committed work for the pre-2.0 train, unlike the longer-range backlog below.
+
+### Public IP (STUN) in the terminal dashboard
+The app has an opt-in **Public IP** button; the TUI has no equivalent.
+
+Not a call-through: `ExternalIPProbe` is macOS-only (`Sources/NetLightsMac/`, built on
+Network.framework), while the TUI renders from Core and runs on Linux too. The portable
+home is `NetLightsHost` — a STUN binding request is one UDP round trip over the BSD
+sockets already living there.
+
+**Constraint:** it must stay keypress-triggered. "Never automatically, never on launch" is
+a commitment in [PRIVACY.md](PRIVACY.md) *and* in the App Store review notes, so a probe
+that fired on refresh would quietly break a statement made to App Review.
+
+### Tab order — g, r, i, n, d
+Swap **DNS** and **Devices** so the TUI hotkeys spell `grind`: Graph, Routes, Interfaces,
+DNS, Devices. Currently they read `g r i d n`.
+
+The numeric aliases `1`–`5` (`TUIRender.swift:237`) are positional and must follow the new
+order rather than staying pinned to the old one. Mirror the same order in the app's view
+picker so the two agree.
+
+### View picker polish (app)
+The "View" label is heavier than it needs to be and sits tight against the segments.
+Lighter weight and more separation, and closer to a real tab strip if the segmented style
+can be pushed that far.
 
 ---
 
 ## Future enhancements
 
-Backlog — not committed work, just where we're headed. Each carries a feasibility note.
+Longer-range backlog — not committed work, just where we're headed. Each carries a
+feasibility note.
 
 ### HDMI port + display capabilities
 Detect whether the dedicated HDMI port has a display attached, identify it, and — stretch —
