@@ -5,10 +5,10 @@
 > tracks what's real right now — not what's planned; the plan lives in
 > [LINUX-PORT.md](LINUX-PORT.md).
 
-There is **no published Linux release yet**. The static tarball is the first packaging
-format to land and can be [built locally](BUILDING.md#packaging-a-release-tarball) —
-`.deb`, `.rpm`, AppImage and AUR are still to come, as is the release itself. Until one
-exists, [build from source](BUILDING.md#linux).
+There is **no published Linux release yet**, but the formats now exist and can be
+[built locally](BUILDING.md#linux): a static **tarball**, zero-dependency **`.deb`** and
+**`.rpm`**, and an **AppImage**, for both x86_64 and aarch64. AUR, the signed apt/yum
+repositories, and the release itself are still to come.
 
 Once built, the tarball installs into any prefix:
 

@@ -130,6 +130,33 @@ and that is what lets a single `.rpm` serve RHEL, Rocky, Oracle Linux *and* SLES
 otherwise disagree on package names for the same libraries. Adding one real dependency
 collapses that into per-family builds.
 
+### Building the AppImage
+
+```bash
+./scripts/build-appimage.sh
+```
+
+There is no `appimagetool` for macOS — it is itself a Linux AppImage — and it is not
+needed. A type-2 AppImage is just the AppImage runtime (a small static ELF that mounts the
+rest of itself) with a SquashFS image concatenated on the end, so `mksquashfs` plus `cat`
+covers it, and the AppImage builds on the Mac like every other artifact.
+
+The runtime is fetched once into `dist/linux/.runtime/` and checked against
+`packaging/appimage-runtime.sha256` on **every** build — cached copies included, since a
+file already on disk is not automatically trustworthy. Upstream publishes it under a
+rolling `continuous` tag, so if they republish, the build stops rather than quietly
+adopting a different runtime; verify deliberately, then update the pin.
+
+`AppRun` with no arguments runs `serve --open`, because bare `netlights` defaults to
+`serve` *without* opening a browser and that makes a double-clicked AppImage look like it
+did nothing. Explicit arguments pass straight through, so `./NetLights-*.AppImage tui`
+works.
+
+Verification reads the SquashFS back out **at the runtime's offset** and checks that
+`AppRun`, the desktop entry, `.DirIcon` and the binary are all present. An ELF header at
+the front only proves the runtime is there; this proves the concatenation produced
+something mountable, which is the part that can silently go wrong.
+
 ### Verifying a Linux build
 
 Copy the binary to the Linux machine and run the verification suite **there**:
@@ -169,9 +196,11 @@ Sources/
 scripts/build-app.sh          # packages dist/NetLights.app + zip
 scripts/build-linux.sh        # static Linux binaries -> release tarballs, both arches
 scripts/build-packages.sh     # those tarballs -> .deb + .rpm, via nfpm
+scripts/build-appimage.sh     # those tarballs -> AppImages (runtime + squashfs)
 scripts/verify-linux-cli.sh   # CLI verification suite, run on a Linux box
 packaging/nfpm.yaml.in        # package description template (rendered by build-packages.sh)
 packaging/scripts/            # postinstall/postremove: desktop + icon cache refresh
+packaging/appimage-runtime.sha256  # pinned hashes for the upstream AppImage runtime
 ```
 
 The invariant that keeps the port honest: **`NetLightsCore` imports nothing but
