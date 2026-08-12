@@ -1,0 +1,83 @@
+# nfpm config TEMPLATE — produces the .deb and the .rpm from one description.
+#
+# Not consumed directly: scripts/build-packages.sh substitutes NL_VERSION / NL_NFPM_ARCH /
+# NL_STAGE and writes a rendered nfpm.yaml next to the extracted tarball. nfpm's own
+# environment expansion does not reach `contents.src`, so rendering it here is both the
+# thing that works and the thing you can read back to see exactly what was packaged.
+#
+# NL_STAGE points at a tree extracted from the release tarball, so the packages are built
+# from the exact bytes that ship — not from a parallel staging path that could drift.
+#
+# ZERO DEPENDENCIES IS THE POINT. The binary is fully static (musl, no glibc, no Swift
+# runtime, no shared libs), so `depends` stays empty — and that is what lets ONE .rpm serve
+# RHEL, Rocky, Oracle Linux AND SLES. The moment a real dependency appears here, that
+# collapses into per-family builds, because those families disagree on package names for
+# the same libraries. See docs/LINUX-PORT.md.
+
+name: netlights
+arch: ${NL_NFPM_ARCH}
+platform: linux
+version: ${NL_VERSION}
+release: 1
+section: net
+priority: optional
+maintainer: Keith Willowhawk <keith@baznet.org>
+vendor: Keith Willowhawk
+homepage: https://github.com/willowhawk-k/NetLights
+license: MIT
+
+description: |
+  Live, layered map of your network interfaces.
+  NetLights arranges every interface — Ethernet, Wi-Fi, Thunderbolt, USB, VPN tunnels,
+  loopback — into OSI-style bands, from physical ports down to virtual tunnels, and
+  lights up live link state and traffic. It shows routes and which uplink actually
+  carries your packets, the resolvers each network service uses, attached USB and
+  Bluetooth devices, displays, and battery state.
+  .
+  Read-only and unprivileged: it never changes your configuration and needs no root.
+  Runs as a terminal dashboard or serves the same map to a browser.
+
+contents:
+  - src: ${NL_STAGE}/bin/netlights
+    dst: /usr/bin/netlights
+    file_info:
+      mode: 0755
+
+  - src: ${NL_STAGE}/share/applications/netlights.desktop
+    dst: /usr/share/applications/netlights.desktop
+    file_info:
+      mode: 0644
+
+  - src: ${NL_STAGE}/share/icons/hicolor/128x128/apps/netlights.png
+    dst: /usr/share/icons/hicolor/128x128/apps/netlights.png
+    file_info:
+      mode: 0644
+  - src: ${NL_STAGE}/share/icons/hicolor/256x256/apps/netlights.png
+    dst: /usr/share/icons/hicolor/256x256/apps/netlights.png
+    file_info:
+      mode: 0644
+  - src: ${NL_STAGE}/share/icons/hicolor/512x512/apps/netlights.png
+    dst: /usr/share/icons/hicolor/512x512/apps/netlights.png
+    file_info:
+      mode: 0644
+
+  # No file_info.mode here, deliberately. On a `tree` it is applied to DIRECTORIES as well
+  # as files, so 0644 produced a drw-r--r-- doc directory — missing the execute bit, which
+  # means no non-root user can enter it and every file inside is unreachable. The modes in
+  # the staged tree are already correct (0644 files, 0755 dirs); inherit them.
+  - src: ${NL_STAGE}/share/doc/netlights
+    dst: /usr/share/doc/netlights
+    type: tree
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  postremove: packaging/scripts/postremove.sh
+
+deb:
+  fields:
+    Bugs: https://github.com/willowhawk-k/NetLights/issues
+
+rpm:
+  group: Applications/System
+  # No signing here. The packages are signed at the repository layer instead, so the key
+  # lives in one place rather than being needed by every build. See docs/LINUX-PORT.md.

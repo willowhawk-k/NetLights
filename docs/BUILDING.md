@@ -109,6 +109,27 @@ The script refuses to package a binary that isn't ELF, isn't statically linked, 
 match the requested architecture, then re-extracts the finished tarball and re-checks it —
 the artifact is verified, not the staging directory it came from.
 
+### Building the .deb and .rpm
+
+`scripts/build-packages.sh` turns the tarballs into packages via [nfpm](https://nfpm.goreleaser.com/):
+
+```bash
+./scripts/build-packages.sh
+```
+
+It builds from the **extracted release tarball**, not from a fresh staging pass, so the
+bytes users install are provably the bytes they can download and hash.
+
+`packaging/nfpm.yaml.in` is a template rather than a config: nfpm's own environment
+expansion does not reach `contents.src`, so the script substitutes the version, arch and
+stage path and writes a rendered `nfpm.yaml` beside the extracted tree — which also makes
+"what exactly went into this package" answerable by reading one file.
+
+**Zero dependencies is load-bearing.** The binary is fully static, so `depends` is empty —
+and that is what lets a single `.rpm` serve RHEL, Rocky, Oracle Linux *and* SLES, which
+otherwise disagree on package names for the same libraries. Adding one real dependency
+collapses that into per-family builds.
+
 ### Verifying a Linux build
 
 Copy the binary to the Linux machine and run the verification suite **there**:
@@ -146,7 +167,11 @@ Sources/
 │   └── *NodeView / *EntityView / Tooltips / AboutView / HelpView / AssetExport
 └── NetLightsLinux/           # the Linux collectors + entry point
 scripts/build-app.sh          # packages dist/NetLights.app + zip
+scripts/build-linux.sh        # static Linux binaries -> release tarballs, both arches
+scripts/build-packages.sh     # those tarballs -> .deb + .rpm, via nfpm
 scripts/verify-linux-cli.sh   # CLI verification suite, run on a Linux box
+packaging/nfpm.yaml.in        # package description template (rendered by build-packages.sh)
+packaging/scripts/            # postinstall/postremove: desktop + icon cache refresh
 ```
 
 The invariant that keeps the port honest: **`NetLightsCore` imports nothing but
