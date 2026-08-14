@@ -63,6 +63,28 @@ jobs:
       - name: Install the Static Linux SDK
         run: swift sdk install "$STATIC_SDK_URL" --checksum "$STATIC_SDK_SHA"
 
+      # build-linux.sh strips with llvm-objcopy specifically, because it is multi-target:
+      # GNU objcopy from binutils is built for one target and cannot strip the other
+      # architecture's binary. On a developer Mac the script finds it via swiftly, but
+      # there it is a SHIM that proxies to the active toolchain — a layout this image does
+      # not have. So locate the real binary and hand it over explicitly.
+      - name: Locate llvm-objcopy
+        run: |
+          objcopy="$(command -v llvm-objcopy || true)"
+          if [ -z "$objcopy" ]; then
+            objcopy="$(find /usr -name 'llvm-objcopy*' -type f 2>/dev/null | head -1)"
+          fi
+          if [ -z "$objcopy" ]; then
+            apt-get install -y -qq llvm
+            objcopy="$(find /usr -name 'llvm-objcopy*' -type f 2>/dev/null | head -1)"
+          fi
+          if [ -z "$objcopy" ]; then
+            echo "::error::llvm-objcopy not found in the swift image and not installable via llvm. Stripping cannot proceed."
+            exit 1
+          fi
+          echo "using $objcopy"
+          echo "OBJCOPY=$objcopy" >> "$GITHUB_ENV"
+
       # Each script verifies its own output — static linkage and architecture, a re-extract
       # of the finished tarball, the runtime hash pin, the AppImage payload read back at the
       # runtime's offset. Nothing here needs to re-check them.
