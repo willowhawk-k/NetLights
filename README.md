@@ -118,6 +118,8 @@ subprocesses), so it runs under the App Sandbox.
 
 - [**docs/MACOS.md**](docs/MACOS.md) — macOS data sources, capabilities and limits
 - [**docs/LINUX.md**](docs/LINUX.md) — the Linux port: what works, what's coming
+- [**docs/BUILDING.md**](docs/BUILDING.md) — building and packaging every artifact
+- [**docs/RELEASING.md**](docs/RELEASING.md) — the release checklist, all four channels
 - [**PRIVACY.md**](PRIVACY.md) — what is read, what leaves your machine (almost nothing)
 
 ---
