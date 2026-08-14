@@ -34,6 +34,9 @@ env:
   # here rather than silently producing a different binary.
   STATIC_SDK_URL: "https://download.swift.org/swift-6.3.3-release/static-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz"
   STATIC_SDK_SHA: "87c3eaf908e67c0e13a84367119e12273cec1d2cd3d81f7d74bb36722d6b607b"
+  # The runner image's DEFAULT Xcode, which currently matches the developer's exactly.
+  # Asserted rather than selected — see the "Check Xcode" step for why.
+  EXPECTED_XCODE_BUILD: "17F113"
 
 jobs:
   # ── macOS: the gate that swift build cannot replace ────────────────────────────────
@@ -43,26 +46,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Xcode selection is pinned deliberately rather than left to the image default: an
-      # image bump would otherwise change what this gate means without anyone deciding to.
-      # Leave XCODE_APP empty to use the image default and have the run print what it got —
-      # that is how you find the value to pin.
-      - name: Select Xcode
-        env:
-          XCODE_APP: ""
+      # Assert the Xcode version rather than select one.
+      #
+      # Pinning by `xcode-select` was the obvious approach and is wrong for this image: the
+      # explicitly-versioned /Applications/Xcode_*.app entries are all OLDER (26.0-26.1.1)
+      # than the default Xcode.app (26.6), which happens to match the developer's build
+      # exactly. Selecting a version would downgrade the gate below what actually ships.
+      #
+      # So take the default and fail if it moves. That keeps the property pinning was for —
+      # the gate cannot silently change meaning when GitHub bumps the image — without
+      # testing against a toolchain nobody releases with.
+      - name: Check Xcode
         run: |
-          echo "Available Xcode versions on this image:"
-          ls -d /Applications/Xcode*.app
-          if [ -n "$XCODE_APP" ]; then
-            if [ ! -d "$XCODE_APP" ]; then
-              echo "::error::Pinned Xcode $XCODE_APP is not on this image. Pick one from the list above and update XCODE_APP in .github/workflows/ci.yml."
-              exit 1
-            fi
-            sudo xcode-select -s "$XCODE_APP"
-          fi
-          echo "Using:"
           xcodebuild -version
           swift --version
+          actual="$(xcodebuild -version | awk '/^Build version/ {print $3}')"
+          if [ "$actual" != "$EXPECTED_XCODE_BUILD" ]; then
+            echo "::error::Runner Xcode build is $actual, expected $EXPECTED_XCODE_BUILD. The image moved. Confirm the App Store build still archives locally, then update EXPECTED_XCODE_BUILD in .github/workflows/ci.yml."
+            exit 1
+          fi
 
       - name: swift build (release)
         run: swift build -c release
@@ -96,6 +98,13 @@ jobs:
 
       - name: Build x86_64
         run: NETLIGHTS_LINUX=1 swift build -c release --swift-sdk x86_64-swift-linux-musl
+
+      # `file` is not in the swift image, and the collect step below uses it to confirm
+      # each binary really is the architecture it claims before anything downstream trusts it.
+      - name: Install file(1)
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq file
 
       - name: Collect binaries
         run: |
