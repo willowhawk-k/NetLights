@@ -12,6 +12,8 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib.sh
+. "$(dirname "$0")/lib.sh"
 
 # ── Version ───────────────────────────────────────────────────────────────────────────
 # Same single source of truth as the macOS build, and the same drift guard: Version.swift
@@ -40,14 +42,37 @@ fi
 # swift.org toolchain via swiftly. llvm-objcopy comes from the same place — macOS's own
 # strip(1) does not understand ELF.
 SWIFTLY_BIN="${SWIFTLY_BIN:-$HOME/.swiftly/bin}"
-SWIFTLY="$SWIFTLY_BIN/swiftly"
-OBJCOPY="$SWIFTLY_BIN/llvm-objcopy"
-[ -x "$SWIFTLY" ] || {
-    echo "✗ swiftly not found at $SWIFTLY — see docs/BUILDING.md" >&2
+
+# Resolve both tools by preference: an explicit override, then the swiftly toolchain, then
+# PATH. CI installs swiftly to a different prefix than a developer Mac, so neither location
+# can be assumed.
+SWIFTLY="${SWIFTLY:-}"
+if [ -z "$SWIFTLY" ]; then
+    if [ -x "$SWIFTLY_BIN/swiftly" ]; then
+        SWIFTLY="$SWIFTLY_BIN/swiftly"
+    elif command -v swiftly >/dev/null 2>&1; then
+        SWIFTLY="$(command -v swiftly)"
+    fi
+fi
+[ -n "$SWIFTLY" ] && [ -x "$SWIFTLY" ] || {
+    echo "✗ swiftly not found (tried \$SWIFTLY, $SWIFTLY_BIN/swiftly, PATH)" >&2
+    echo "  See docs/BUILDING.md#cross-compiling-from-a-mac" >&2
     exit 1
 }
-[ -x "$OBJCOPY" ] || {
-    echo "✗ llvm-objcopy not found at $OBJCOPY" >&2
+
+# llvm-objcopy specifically, not strip(1) or GNU objcopy: macOS strip cannot read ELF at
+# all, and GNU objcopy is typically built for a single target, so it cannot strip the
+# other architecture's binary. llvm-objcopy is multi-target on both hosts.
+OBJCOPY="${OBJCOPY:-}"
+if [ -z "$OBJCOPY" ]; then
+    if [ -x "$SWIFTLY_BIN/llvm-objcopy" ]; then
+        OBJCOPY="$SWIFTLY_BIN/llvm-objcopy"
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        OBJCOPY="$(command -v llvm-objcopy)"
+    fi
+fi
+[ -n "$OBJCOPY" ] && [ -x "$OBJCOPY" ] || {
+    echo "✗ llvm-objcopy not found (tried \$OBJCOPY, $SWIFTLY_BIN, PATH)" >&2
     exit 1
 }
 
@@ -71,7 +96,7 @@ mkdir -p "$DIST"
 # cross-ecosystem convention, defaulting to the commit date); --numeric-owner and `gzip -n`
 # below handle the other two.
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || echo 0)}"
-STAMP="$(date -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)"
+STAMP="$(nl_touch_stamp "$SOURCE_DATE_EPOCH")"
 
 echo "▸ NetLights $VERSION — static Linux tarballs"
 
@@ -227,7 +252,7 @@ INSTALL
     tar --format=ustar \
         --uid 0 --gid 0 --numeric-owner \
         -C "$DIST" -cf - "$NAME" | gzip -9 -n >"$TARBALL"
-    (cd "$DIST" && shasum -a 256 "$NAME.tar.gz" >"$NAME.tar.gz.sha256")
+    (cd "$DIST" && nl_sha256 "$NAME.tar.gz" >"$NAME.tar.gz.sha256")
 
     # ── Verify the artifact, not the staging tree ─────────────────────────────────────
     VERIFY="$DIST/.verify-$ARCH"

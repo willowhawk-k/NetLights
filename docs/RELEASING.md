@@ -75,9 +75,12 @@ git tag -a v<version> -m "NetLights <version>" && git push origin v<version>
 
 ## Step 3 — Linux artifacts *(CI, ~10 min, unattended)*
 
-The tag triggers the build of tarball, `.deb`, `.rpm` and AppImage for both architectures,
-runs the x86_64 binary, and runs `verify-linux-cli.sh` against it. Artifacts are uploaded
-to the workflow run — **not published**.
+The tag triggers the build of tarball, `.deb`, `.rpm` and AppImage for both architectures
+and uploads all ~14 files to a **draft release**.
+
+Draft, not published: hand-uploading that many files is where one quietly goes missing, but
+nothing reaches the public releases page unreviewed. You add the macOS zip, check the list,
+and publish in step 7.
 
 To build them locally instead (all three are safe to re-run):
 

@@ -14,9 +14,11 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+# shellcheck source=scripts/lib.sh
+. "$(dirname "$0")/lib.sh"
 
 command -v mksquashfs >/dev/null 2>&1 || {
-    echo "✗ mksquashfs not found — brew install squashfs" >&2
+    echo "✗ mksquashfs not found — brew install squashfs (macOS) / apt-get install squashfs-tools (Linux)" >&2
     exit 1
 }
 
@@ -78,7 +80,7 @@ for ARCH in $ARCHES; do
         echo "✗ no pinned hash for runtime-$ARCH in $PINS" >&2
         exit 1
     }
-    ACTUAL="$(shasum -a 256 "$RUNTIME" | cut -d' ' -f1)"
+    ACTUAL="$(nl_sha256 "$RUNTIME" | cut -d' ' -f1)"
     if [ "$ACTUAL" != "$EXPECTED" ]; then
         echo "✗ [$ARCH] AppImage runtime hash mismatch — REFUSING to build" >&2
         echo "    expected $EXPECTED" >&2
@@ -160,7 +162,7 @@ APPRUN
     APPIMAGE="$DIST/NetLights-$VERSION-$ARCH.AppImage"
     cat "$RUNTIME" "$SQUASH" >"$APPIMAGE"
     chmod 755 "$APPIMAGE"
-    (cd "$DIST" && shasum -a 256 "$(basename "$APPIMAGE")" >"$(basename "$APPIMAGE").sha256")
+    (cd "$DIST" && nl_sha256 "$(basename "$APPIMAGE")" >"$(basename "$APPIMAGE").sha256")
 
     # Verify the finished artifact, not the inputs. Starting with an ELF header only proves
     # the runtime is at the front; reading the SquashFS back out AT THE RUNTIME'S OFFSET

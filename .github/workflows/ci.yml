@@ -1,0 +1,161 @@
+# CI — the gates that used to run only when someone remembered to run them.
+#
+# Three things happen here that cannot happen on one developer machine:
+#   1. The App Store target gets built on every push, not just before a tag. Its absence
+#      once produced a tagged release that could not be archived at all.
+#   2. The x86_64 Linux binary gets EXECUTED. There is no x86_64 machine in the loop
+#      otherwise; until this existed it was only ever cross-compiled and hashed.
+#   3. Both architectures are cross-compiled, which is the only way to see the
+#      Core-as-a-real-module errors that `swift build` on macOS cannot produce (there,
+#      Core and Mac compile as a single module with no access-control boundary).
+#
+# Everything is a standard GitHub-hosted runner, which is free and unlimited on public
+# repositories. Nothing here signs anything — see docs/RELEASING.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SWIFT_VERSION: "6.3.3"
+  # Kept in lockstep with SWIFT_VERSION. The checksum is the one swift.org publishes with
+  # the SDK; `swift sdk install` enforces it, so a tampered or truncated download fails
+  # here rather than silently producing a different binary.
+  STATIC_SDK_URL: "https://download.swift.org/swift-6.3.3-release/static-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz"
+  STATIC_SDK_SHA: "87c3eaf908e67c0e13a84367119e12273cec1d2cd3d81f7d74bb36722d6b607b"
+
+jobs:
+  # ── macOS: the gate that swift build cannot replace ────────────────────────────────
+  macos-gate:
+    name: macOS build + App Store target
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Xcode selection is pinned deliberately rather than left to the image default: an
+      # image bump would otherwise change what this gate means without anyone deciding to.
+      # Leave XCODE_APP empty to use the image default and have the run print what it got —
+      # that is how you find the value to pin.
+      - name: Select Xcode
+        env:
+          XCODE_APP: ""
+        run: |
+          echo "Available Xcode versions on this image:"
+          ls -d /Applications/Xcode*.app
+          if [ -n "$XCODE_APP" ]; then
+            if [ ! -d "$XCODE_APP" ]; then
+              echo "::error::Pinned Xcode $XCODE_APP is not on this image. Pick one from the list above and update XCODE_APP in .github/workflows/ci.yml."
+              exit 1
+            fi
+            sudo xcode-select -s "$XCODE_APP"
+          fi
+          echo "Using:"
+          xcodebuild -version
+          swift --version
+
+      - name: swift build (release)
+        run: swift build -c release
+
+      # The real point of this job. The Xcode target applies settings SwiftPM does not, so
+      # this catches App-Store-only breaks that `swift build` compiles happily.
+      - name: App Store target (Release)
+        run: |
+          xcodebuild -project app/NetLights/NetLights.xcodeproj \
+                     -scheme NetLights -configuration Release \
+                     CODE_SIGNING_ALLOWED=NO build
+
+  # ── Linux: cross-compile both architectures ───────────────────────────────────────
+  linux-build:
+    name: Linux cross-build (both arches)
+    runs-on: ubuntu-latest
+    # The official Swift image pins the toolchain exactly, which matters because the whole
+    # musl cross-build depends on toolchain and SDK versions agreeing. Installing swiftly
+    # per-run would give a moving target.
+    container: swift:6.3.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Static Linux SDK
+        run: swift sdk install "$STATIC_SDK_URL" --checksum "$STATIC_SDK_SHA"
+
+      # NETLIGHTS_LINUX=1 because Package.swift is host-evaluated and cannot otherwise tell
+      # a native Linux build from a Mac-hosted cross-compile.
+      - name: Build aarch64
+        run: NETLIGHTS_LINUX=1 swift build -c release --swift-sdk aarch64-swift-linux-musl
+
+      - name: Build x86_64
+        run: NETLIGHTS_LINUX=1 swift build -c release --swift-sdk x86_64-swift-linux-musl
+
+      - name: Collect binaries
+        run: |
+          mkdir -p out
+          cp .build/aarch64-swift-linux-musl/release/netlights out/netlights-aarch64
+          cp .build/x86_64-swift-linux-musl/release/netlights out/netlights-x86_64
+          file out/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: out/
+          retention-days: 7
+
+  # ── Run them. Static binaries need no toolchain, so these jobs stay bare. ──────────
+  #
+  # x86_64 is the one that matters: there is no x86_64 machine anywhere else in this
+  # project, so this is the only place that binary is ever executed. aarch64 is partly
+  # covered by the developer's UTM VM, but it is nearly free to check here too.
+  smoke:
+    name: Smoke test (${{ matrix.arch }})
+    needs: linux-build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-binaries
+          path: out
+
+      - name: Run and check the snapshot
+        run: |
+          BIN="./out/netlights-${{ matrix.arch }}"
+          chmod +x "$BIN"
+          "$BIN" --version
+          "$BIN" --dump-json > snapshot.json
+          python3 - <<'EOF'
+          import json
+          d = json.load(open("snapshot.json"))
+          # Assert rather than print. A binary that starts, emits valid JSON and then
+          # reports zero interfaces has failed in the way that matters, and a bare
+          # "did it exit 0" check would call that a pass.
+          assert d["schemaVersion"] == 3, f"unexpected schemaVersion {d['schemaVersion']}"
+          assert len(d["interfaces"]) > 0, "no interfaces — even a bare runner has lo"
+          print(f"schema v{d['schemaVersion']}: "
+                f"{len(d['interfaces'])} interfaces, {len(d['routes'])} routes, "
+                f"{len(d['dnsConfigs'])} DNS configs")
+          EOF
+
+      # Static linkage, CLI grammar, JSON validity, bind behaviour and the --bind all
+      # warning. Has never run against a STRIPPED binary before this workflow existed.
+      - name: CLI verification suite
+        run: |
+          chmod +x scripts/verify-linux-cli.sh
+          ./scripts/verify-linux-cli.sh "./out/netlights-${{ matrix.arch }}"

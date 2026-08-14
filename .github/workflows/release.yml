@@ -1,0 +1,134 @@
+# Release — builds every Linux artifact on tag and puts them in a DRAFT release.
+#
+# Draft, not published, deliberately. A full release is ~14 files and hand-uploading that
+# set is exactly where one quietly goes missing — but nothing should appear on the public
+# releases page that has not been looked at. A draft gets the automation without the
+# exposure: CI assembles the files, you attach the notarized macOS zip, check the list and
+# publish. See docs/RELEASING.md step 7.
+#
+# CI never signs anything. Developer ID, GPG and App Store signatures all happen on the
+# developer's Mac, by hand.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build artifacts for"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  STATIC_SDK_URL: "https://download.swift.org/swift-6.3.3-release/static-sdk/swift-6.3.3-RELEASE/swift-6.3.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz"
+  STATIC_SDK_SHA: "87c3eaf908e67c0e13a84367119e12273cec1d2cd3d81f7d74bb36722d6b607b"
+  NFPM_VERSION: "2.47.0"
+
+jobs:
+  artifacts:
+    name: Build Linux artifacts
+    runs-on: ubuntu-latest
+    container: swift:6.3.3
+    steps:
+      - uses: actions/checkout@v4
+
+      # The scripts derive SOURCE_DATE_EPOCH from the HEAD commit date so builds are
+      # reproducible. Inside a container the checkout is owned by a different uid, so git
+      # refuses to read it ("dubious ownership") and the scripts would silently fall back
+      # to epoch 0 — still deterministic, but no longer matching a local build.
+      - name: Let git read the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install packaging tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq squashfs-tools file curl ca-certificates
+
+      # Pinned version, verified against upstream's own checksum manifest. Weaker than the
+      # repo-committed pin used for the AppImage runtime, but nfpm ships immutable
+      # per-version release assets rather than a rolling tag, so the version IS the pin.
+      - name: Install nfpm
+        run: |
+          base="https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}"
+          curl -fsSLO "$base/nfpm_${NFPM_VERSION}_amd64.deb"
+          curl -fsSLO "$base/checksums.txt"
+          sha256sum -c --ignore-missing checksums.txt
+          dpkg -i "nfpm_${NFPM_VERSION}_amd64.deb"
+          rm -f "nfpm_${NFPM_VERSION}_amd64.deb" checksums.txt
+          nfpm --version
+
+      - name: Install the Static Linux SDK
+        run: swift sdk install "$STATIC_SDK_URL" --checksum "$STATIC_SDK_SHA"
+
+      # Each script verifies its own output — static linkage and architecture, a re-extract
+      # of the finished tarball, the runtime hash pin, the AppImage payload read back at the
+      # runtime's offset. Nothing here needs to re-check them.
+      - name: Tarballs
+        run: ./scripts/build-linux.sh
+
+      - name: Packages (.deb, .rpm)
+        run: ./scripts/build-packages.sh
+
+      - name: AppImages
+        run: ./scripts/build-appimage.sh
+
+      - name: List what was produced
+        run: ls -lh dist/linux/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-artifacts
+          path: |
+            dist/linux/*.tar.gz
+            dist/linux/*.deb
+            dist/linux/*.rpm
+            dist/linux/*.AppImage
+            dist/linux/*.sha256
+          retention-days: 30
+
+  draft-release:
+    name: Attach to draft release
+    runs-on: ubuntu-latest
+    needs: artifacts
+    # The only job that writes anything. Scoped here rather than at workflow level so the
+    # build job cannot touch the repository even if something in the build goes wrong.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-release-artifacts
+          path: artifacts
+
+      # gh is preinstalled on the runner image but NOT inside the swift container, which is
+      # why publishing is a separate job rather than a step of the build.
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          ls -lh artifacts/
+
+          # If the release already exists — published or draft — leave its state alone and
+          # just add files. Creating it here as a draft is only for the case where CI got
+          # to the tag first.
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft \
+              --title "NetLights ${TAG#v}" \
+              --notes "Draft. Linux artifacts built by CI from \`$TAG\`.
+
+          Still to add by hand (see docs/RELEASING.md):
+          - the notarized macOS zip
+          - the real release notes
+          - publish"
+          fi
+
+          gh release upload "$TAG" artifacts/* --clobber
+          echo "Uploaded $(find artifacts -type f | wc -l) files to $TAG"
+          gh release view "$TAG" --json isDraft,url --jq '"draft=\(.isDraft) \(.url)"'
