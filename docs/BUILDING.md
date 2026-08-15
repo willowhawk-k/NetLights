@@ -99,11 +99,22 @@ netlights-<version>-<arch>/
     └── icons/hicolor/{128x128,256x256,512x512}/apps/netlights.png
 ```
 
-**Builds are reproducible** — the same commit produces byte-identical tarballs, so a CI
-artifact and a local build can be compared by hash. That needs all three of
-`SOURCE_DATE_EPOCH` (defaults to the commit date) pinning mtimes, `--numeric-owner`
-dropping the builder's uid/gid, and `gzip -n` omitting gzip's own header timestamp; miss
-any one and the hash drifts between runs.
+**Builds are reproducible on the same host** — the same commit built twice on the same
+machine produces byte-identical tarballs. That needs all three of `SOURCE_DATE_EPOCH`
+(defaults to the commit date) pinning mtimes, forced root ownership dropping the builder's
+uid/gid, and `gzip -n` omitting gzip's own header timestamp; miss any one and the hash
+drifts between runs.
+
+**They are NOT reproducible across hosts**, and this was measured rather than assumed. The
+same commit, same Swift 6.3.3, same Static Linux SDK, built on macOS and on the Linux CI
+container, produces different binaries — `5a97b37d…` vs `cb6f81b1…` for the same aarch64
+build. The difference is in the compiled binary, not the archive around it, and it is not
+embedded build paths (neither binary contains one). It is somewhere in codegen or linking,
+and chasing it would be a project rather than a tweak.
+
+The practical consequence: **a CI artifact and a local artifact are not interchangeable**,
+so one of them has to be the canonical source of published Linux binaries. Do not treat a
+hash mismatch between the two as evidence that something is wrong.
 
 The script refuses to package a binary that isn't ELF, isn't statically linked, or doesn't
 match the requested architecture, then re-extracts the finished tarball and re-checks it —

@@ -34,6 +34,10 @@ The numeric aliases `1`–`5` (`TUIRender.swift:237`) are positional and must fo
 order rather than staying pinned to the old one. Mirror the same order in the app's view
 picker so the two agree.
 
+### Checksums for the .deb and .rpm
+The tarballs and AppImages ship a `.sha256` beside them; the packages do not, so those two
+downloads cannot be verified. `build-packages.sh` should emit them like the other scripts do.
+
 ### View picker polish (app)
 The "View" label is heavier than it needs to be and sits tight against the segments.
 Lighter weight and more separation, and closer to a real tab strip if the segmented style
