@@ -206,8 +206,10 @@ The primary key is deliberately absent — `sec#` in that listing means "secret 
 which is what you want. Only the subkey signs; the primary exists to mint the next subkey
 and to revoke, and it stays in the vault.
 
-**Key fingerprint:** _record it here after running `.maintainer/provision-gpg.sh`_ — having
-it written down is how you catch signing with the wrong key later.
+**Key fingerprint:** `546871DCD08D64DC250C695A10B3B56D7C6CE28B`
+
+Written down deliberately — it is how you catch having signed with the wrong key, which is
+otherwise invisible until a user's `apt update` rejects the repo.
 
 Then sign both indexes:
 
