@@ -38,27 +38,31 @@ fi
 }
 
 # ── Toolchain ─────────────────────────────────────────────────────────────────────────
-# Xcode's swift cannot consume the musl SDK (module-format mismatch), so this needs the
-# swift.org toolchain via swiftly. llvm-objcopy comes from the same place — macOS's own
-# strip(1) does not understand ELF.
 SWIFTLY_BIN="${SWIFTLY_BIN:-$HOME/.swiftly/bin}"
 
-# Resolve both tools by preference: an explicit override, then the swiftly toolchain, then
-# PATH. CI installs swiftly to a different prefix than a developer Mac, so neither location
-# can be assumed.
-SWIFTLY="${SWIFTLY:-}"
-if [ -z "$SWIFTLY" ]; then
-    if [ -x "$SWIFTLY_BIN/swiftly" ]; then
-        SWIFTLY="$SWIFTLY_BIN/swiftly"
-    elif command -v swiftly >/dev/null 2>&1; then
-        SWIFTLY="$(command -v swiftly)"
-    fi
-fi
-[ -n "$SWIFTLY" ] && [ -x "$SWIFTLY" ] || {
-    echo "✗ swiftly not found (tried \$SWIFTLY, $SWIFTLY_BIN/swiftly, PATH)" >&2
-    echo "  See docs/BUILDING.md#cross-compiling-from-a-mac" >&2
+# How to invoke swift, in order of preference.
+#
+# The swiftly indirection exists for ONE reason: on a Mac, plain `swift` is Xcode's, and
+# the Xcode toolchain cannot consume the musl SDK (module-format mismatch). So where
+# swiftly is present it wins. In the official Swift container there is no swiftly and
+# `swift` already IS the swift.org toolchain, so plain swift is correct there — hard-
+# requiring swiftly made the script macOS-only for no reason.
+#
+# $SWIFT overrides both, for anyone with a toolchain somewhere else entirely.
+if [ -n "${SWIFT:-}" ]; then
+    SWIFT_CMD=("$SWIFT")
+elif [ -x "$SWIFTLY_BIN/swiftly" ]; then
+    SWIFT_CMD=("$SWIFTLY_BIN/swiftly" run swift)
+elif command -v swiftly >/dev/null 2>&1; then
+    SWIFT_CMD=("$(command -v swiftly)" run swift)
+elif command -v swift >/dev/null 2>&1; then
+    SWIFT_CMD=("$(command -v swift)")
+else
+    echo "✗ no swift found (tried \$SWIFT, swiftly, PATH)" >&2
+    echo "  See docs/BUILDING.md#linux" >&2
     exit 1
-}
+fi
+echo "▸ swift: ${SWIFT_CMD[*]}"
 
 # llvm-objcopy specifically, not strip(1) or GNU objcopy: macOS strip cannot read ELF at
 # all, and GNU objcopy is typically built for a single target, so it cannot strip the
@@ -104,12 +108,12 @@ for ARCH in $ARCHES; do
     SDK="$ARCH-swift-linux-musl"
     echo
     echo "▸ [$ARCH] building…"
-    NETLIGHTS_LINUX=1 "$SWIFTLY" run swift build -c release --swift-sdk "$SDK" >/dev/null
+    NETLIGHTS_LINUX=1 "${SWIFT_CMD[@]}" build -c release --swift-sdk "$SDK" >/dev/null
 
     # Ask SwiftPM where it put the binary rather than guessing: .build/release is a symlink
     # that follows whichever configuration built last, so a preceding macOS build would
     # otherwise get packaged as a Linux artifact.
-    BINDIR="$(NETLIGHTS_LINUX=1 "$SWIFTLY" run swift build -c release --swift-sdk "$SDK" --show-bin-path)"
+    BINDIR="$(NETLIGHTS_LINUX=1 "${SWIFT_CMD[@]}" build -c release --swift-sdk "$SDK" --show-bin-path)"
     BIN="$BINDIR/netlights"
     [ -f "$BIN" ] || {
         echo "✗ [$ARCH] binary not found at $BIN" >&2
