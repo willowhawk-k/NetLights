@@ -32,6 +32,12 @@ jobs:
     name: Build Linux artifacts
     runs-on: ubuntu-latest
     container: swift:6.3.3
+    # id-token/attestations are for build provenance below. Note this is NOT contents
+    # write — this job still cannot modify the repository or any release.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
@@ -99,6 +105,20 @@ jobs:
 
       - name: List what was produced
         run: ls -lh dist/linux/
+
+      # Build provenance: cryptographically binds each artifact to THIS workflow run and
+      # commit. Before signing anything, `gh attestation verify <file> --repo
+      # willowhawk-k/NetLights` turns "I think this is what CI built" into something
+      # checkable — which is the whole point, since the signer is attesting to bytes they
+      # did not compile. See docs/RELEASING.md step 6.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/linux/*.tar.gz
+            dist/linux/*.deb
+            dist/linux/*.rpm
+            dist/linux/*.AppImage
 
       - uses: actions/upload-artifact@v4
         with:

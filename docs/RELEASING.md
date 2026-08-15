@@ -22,6 +22,7 @@ NetLights ships through **four channels** from one codebase:
 | Linux artifacts | CI | Frees the Mac; the only place x86_64 gets executed |
 | macOS signed build | **Mac only** | Developer ID cert lives in the keychain |
 | Package install tests | **Linux hardware / VMs** | CI has no Bluetooth, USB, battery or Wi-Fi |
+| Repo index generation | Any Linux (arch-independent) | `createrepo_c` is not packaged for macOS |
 | GPG signing | **Mac only** | Key stays in 1Password — never in CI |
 | Publishing | Mac | You decide what goes out |
 
@@ -42,6 +43,7 @@ You do not need to remember these. They fail the build with the fix in the messa
 | `build-packages.sh` placeholder check | An unrendered `${NL_...}` reaching a package |
 | `build-appimage.sh` runtime pin | Upstream republishing the AppImage runtime under its rolling tag |
 | `build-appimage.sh` payload check | A concatenation that produced an unmountable AppImage |
+| `gh attestation verify` (step 6a) | An artifact that did not come from your workflow at your commit |
 
 ---
 
@@ -117,13 +119,95 @@ Work through `.arf/VM-TASKS.md`. Do not skip on the grounds that "nothing Linux 
 the packaging scripts change more often than the collectors, and a broken package is
 invisible until someone installs it.
 
-## Step 6 — Sign the repo metadata *(Mac, ~2 min)*
-
-Generate the apt and yum repository indexes from the **validated** artifacts, then sign
-them with the NetLights GPG key from 1Password.
+## Step 6 — Sign the repo metadata *(Mac + a Linux box, ~15 min)*
 
 **Signature #2 — yours.** Deliberately after step 5: by now you have seen these exact
 artifacts install and run, so the signature means agreement rather than availability.
+
+### What you are actually signing
+
+There is no Linux equivalent of `codesign`. You do not sign the binary — you sign the
+**repository indexes**, which is what `apt` and `dnf` verify:
+
+| Repo | Signed file | Produces |
+|---|---|---|
+| APT | the `Release` file | `InRelease` (clearsigned) + `Release.gpg` (detached) |
+| YUM/DNF | `repodata/repomd.xml` | `repomd.xml.asc` |
+
+Each index lists a SHA256 for every package, so **one signature transitively covers all of
+them**. Optionally also `rpm --addsign` the `.rpm`s — the RPM ecosystem expects
+package-level signatures. Individual `.deb` signing is not worth doing; apt trusts the
+repo, not the package.
+
+### 6a. Verify provenance before signing anything
+
+CI built these; you are about to vouch for them. Prove they came from your workflow at your
+commit rather than trusting the download:
+
+```bash
+gh attestation verify dist/linux/netlights-<version>-x86_64.tar.gz --repo willowhawk-k/NetLights
+```
+
+Run it on every artifact you are about to sign. A failure here means stop — not "probably
+fine".
+
+### 6b. Generate the indexes
+
+**Architecture does not matter for this step.** These tools read package headers and write
+text files full of hashes; they never execute the packages, so an **arm64 machine can index
+x86_64 packages perfectly well**. The UTM VM is enough. Only *install testing* (step 5)
+needs matching architecture, which is what the Dell is for.
+
+Where each tool can run:
+
+| Tool | macOS | Linux |
+|---|---|---|
+| `dpkg-scanpackages` (APT) | ✅ `brew install dpkg` | ✅ |
+| `aptly` (APT, alternative) | ✅ `brew install aptly` | ✅ |
+| `createrepo_c` (YUM) | ❌ not packaged for macOS | ✅ |
+| `gpg` | ✅ `brew install gnupg` | ✅ |
+
+So the practical split is: **APT metadata can be produced on the Mac; YUM metadata needs a
+Linux box** (any architecture). Generate the YUM indexes on the VM, copy the few KB of
+`repodata/` back, and sign on the Mac — the key never goes near Linux.
+
+### 6c. Sign
+
+The signing subkey comes out of 1Password into a throwaway keyring, and goes away after.
+1Password does not act as a GPG agent the way it does for SSH, so this is deliberate rather
+than incidental:
+
+```bash
+export GNUPGHOME="$(mktemp -d)"
+op document get "NetLights signing subkey" | gpg --batch --import
+gpg --list-secret-keys
+```
+
+Then sign both indexes:
+
+```bash
+# APT
+gpg --batch --yes --clearsign -o dist/repo/apt/dists/stable/InRelease dist/repo/apt/dists/stable/Release
+gpg --batch --yes --detach-sign --armor -o dist/repo/apt/dists/stable/Release.gpg dist/repo/apt/dists/stable/Release
+
+# YUM
+gpg --batch --yes --detach-sign --armor dist/repo/yum/repodata/repomd.xml
+```
+
+And export the public key for users to trust:
+
+```bash
+gpg --armor --export "NetLights" > dist/repo/netlights.asc
+```
+
+Finally, discard the keyring:
+
+```bash
+rm -rf "${GNUPGHOME:?}" && unset GNUPGHOME
+```
+
+Only the **signing subkey** is ever needed here. The primary key stays offline, so a
+compromise of this step costs a subkey rotation rather than the identity.
 
 ## Step 7 — Publish *(Mac, ~5 min)*
 
