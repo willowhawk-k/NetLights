@@ -197,10 +197,17 @@ The signing subkey comes out of 1Password into a throwaway keyring, and goes awa
 than incidental:
 
 ```bash
-export GNUPGHOME="$(mktemp -d)"
-op document get "NetLights signing subkey" | gpg --batch --import
-gpg --list-secret-keys
+export GNUPGHOME="$(mktemp -d)" && chmod 700 "$GNUPGHOME"
+op document get "NetLights Signing Sub-Key 2026-08-14" --vault Private | gpg --batch --import
+gpg --list-secret-keys        # expect the signing subkey, and a STUB for the primary
 ```
+
+The primary key is deliberately absent — `sec#` in that listing means "secret not here",
+which is what you want. Only the subkey signs; the primary exists to mint the next subkey
+and to revoke, and it stays in the vault.
+
+**Key fingerprint:** _record it here after running `.maintainer/provision-gpg.sh`_ — having
+it written down is how you catch signing with the wrong key later.
 
 Then sign both indexes:
 
