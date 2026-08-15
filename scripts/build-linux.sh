@@ -253,9 +253,17 @@ INSTALL
     # Pin every mtime to SOURCE_DATE_EPOCH, then archive with fixed ownership and gzip with
     # -n so no header timestamp is recorded. See the SOURCE_DATE_EPOCH note above.
     find "$STAGE" -exec touch -h -t "$STAMP" {} +
-    tar --format=ustar \
-        --uid 0 --gid 0 --numeric-owner \
-        -C "$DIST" -cf - "$NAME" | gzip -9 -n >"$TARBALL"
+    # The two tars spell "force root ownership" differently and each rejects the other's
+    # spelling: bsdtar (macOS) takes --uid/--gid, GNU tar takes --owner=/--group=. Written
+    # out twice rather than assembled into an array, because bash 3.2 still ships as
+    # /bin/bash on macOS and mapfile would be a portability bug of its own.
+    if tar --version 2>/dev/null | head -1 | grep -qi "gnu tar"; then
+        tar --format=ustar --owner=0 --group=0 --numeric-owner \
+            -C "$DIST" -cf - "$NAME" | gzip -9 -n >"$TARBALL"
+    else
+        tar --format=ustar --uid 0 --gid 0 --numeric-owner \
+            -C "$DIST" -cf - "$NAME" | gzip -9 -n >"$TARBALL"
+    fi
     (cd "$DIST" && nl_sha256 "$NAME.tar.gz" >"$NAME.tar.gz.sha256")
 
     # ── Verify the artifact, not the staging tree ─────────────────────────────────────
