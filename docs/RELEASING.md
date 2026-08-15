@@ -134,7 +134,7 @@ An ad-hoc zip sits at exactly the filename `gh release create` uploads.
 
 **The real gate.** CI proves things build and start; only this proves they install and work.
 
-Work through `.arf/VM-TASKS.md`. Do not skip on the grounds that "nothing Linux changed" —
+Work through `.maintainer/VM-TASKS.md`. Do not skip on the grounds that "nothing Linux changed" —
 the packaging scripts change more often than the collectors, and a broken package is
 invisible until someone installs it.
 

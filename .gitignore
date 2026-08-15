@@ -32,5 +32,6 @@ docs/AI-ASSIST.md
 # Scratch scratch-path used to build Core as a standalone module for off-Linux parser tests
 .build-lh/
 
-# Adversarial review findings — local working notes, see .arf/README.md
-.arf/
+# Maintainer working notes — review findings, deferred defects, manual test lists.
+# Local only, never published; see .maintainer/README.md
+.maintainer/
