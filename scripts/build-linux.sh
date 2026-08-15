@@ -189,7 +189,7 @@ Comment=Live, layered map of your network interfaces
 Exec=netlights serve --open
 Icon=netlights
 Terminal=false
-Categories=Network;Monitor;System;
+Categories=Network;Monitor;
 Keywords=network;interface;route;dns;monitor;traffic;
 StartupNotify=true
 DESKTOP
