@@ -15,8 +15,21 @@ public func computeEgress(routes: [RouteEntry], interfaces: [InterfaceInfo],
     // Every physical (non-tunnel) default route is a CANDIDATE uplink. A machine with both
     // Wi-Fi and Ethernet up has one per interface, and they arrive in the kernel's table
     // order, which carries no priority at all.
+    //
+    // Tunnels are excluded by CATEGORY, not by name. This used to test for the "utun" and
+    // "ipsec" prefixes, which are macOS device names and match nothing on Linux — so the
+    // two platforms disagreed about the same situation. A Linux VPN only failed to become
+    // the egress by accident (its default route has no gateway, so it lost an unrelated
+    // tiebreak); one named tun0 WITH a gateway would have won and reported the tunnel as
+    // the egress while macOS reported the carrier.
+    //
+    // The carrier is the right answer on both: the VPN is drawn as its own pipe, and what
+    // the status line answers is "which wire do my packets physically leave on".
+    let tunnels = Set(interfaces.filter { $0.category == .tunnel }.map(\.id))
     let candidates = routes.filter {
         $0.isDefault && !$0.interfaceName.isEmpty
+        && !tunnels.contains($0.interfaceName)
+        // Belt and braces: if categorisation ever fails, the macOS names still catch it.
         && !$0.interfaceName.hasPrefix("utun") && !$0.interfaceName.hasPrefix("ipsec")
     }
     guard !candidates.isEmpty else { return nil }
@@ -152,7 +165,18 @@ public func buildGatewayNodes(from routes: [RouteEntry], interfaces: [InterfaceI
     let tunnelIfaces = Set(interfaces.filter { $0.category == .tunnel }.map { $0.id })
 
     for route in routes {
-        let gw = route.gateway
+        var gw = route.gateway
+        // A point-to-point tunnel's default route has NO next hop — the tunnel itself is
+        // the hop. macOS's kernel fills the tunnel's own address in as the gateway, so a
+        // VPN gateway node appeared for free; Linux leaves the field empty (flags=U, not
+        // UG), so the route was skipped here and the VPN ended up with no gateway node at
+        // all — nothing for the graph to draw the encrypted pipe to. Substitute the
+        // tunnel's own address, which is exactly what macOS reports.
+        if gw.isEmpty, route.isDefault, tunnelIfaces.contains(route.interfaceName),
+           let own = interfaces.first(where: { $0.id == route.interfaceName })?
+                               .ipv4Addresses.first {
+            gw = own
+        }
         // Skip empty, loopback, and non-IPv4 (link-local IPv6, etc.)
         guard !gw.isEmpty, gw != "0.0.0.0", gw != "127.0.0.1" else { continue }
         guard gw.contains(".") else { continue }

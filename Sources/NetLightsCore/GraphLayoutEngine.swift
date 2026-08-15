@@ -594,21 +594,37 @@ struct GraphLayoutEngine {
             }
         }
 
-        // Data Link (L2) — bridges centered under their physical members
+        // Data Link (L2) — bridges centered under their physical members, and the rest
+        // spread rather than piled up.
+        //
+        // Every node here used to fall back to the band centre when it had no physical
+        // member to sit under. On a Mac that is at most one bridge0, which does have a
+        // member, so it never showed. A Linux box with docker0, virbr0, mpqemubr0 and two
+        // container bridges put FIVE tiles on the same pixel — the graph appeared to be
+        // missing four interfaces that the tables listed.
         let dlBand = bandRect("Data Link")
+        var anchored: [(id: String, x: CGFloat)] = []
+        var floating: [String] = []
         for iface in visible.filter({ $0.effectiveLayer == "Data Link" }) {
-            let lx: CGFloat
             if iface.category == .bridge, let mac = iface.macAddress {
                 let prefix = String(mac.prefix(8))
                 let xs = visible
                     .filter { ($0.category == .ethernet || $0.category == .thunderbolt)
                                && $0.macAddress?.hasPrefix(prefix) == true }
                     .compactMap { result[$0.id]?.x }
-                lx = xs.isEmpty ? bw / 2 + gwColWidth : xs.reduce(0, +) / CGFloat(xs.count)
-            } else {
-                lx = bw / 2 + gwColWidth
+                if !xs.isEmpty {
+                    anchored.append((iface.id, xs.reduce(0, +) / CGFloat(xs.count)))
+                    continue
+                }
             }
-            result[iface.id] = CGPoint(x: lx, y: dlBand.midY)
+            floating.append(iface.id)
+        }
+        for a in anchored { result[a.id] = CGPoint(x: a.x, y: dlBand.midY) }
+        if !floating.isEmpty {
+            let sp = bw / CGFloat(floating.count)
+            for (i, id) in floating.enumerated() {
+                result[id] = CGPoint(x: sp * (CGFloat(i) + 0.5) + gwColWidth, y: dlBand.midY)
+            }
         }
 
         // Virtual (L3+) — two rows, groups balanced across them (like Hardware).

@@ -34,6 +34,22 @@ The numeric aliases `1`–`5` (`TUIRender.swift:237`) are positional and must fo
 order rather than staying pinned to the old one. Mirror the same order in the app's view
 picker so the two agree.
 
+### Traffic rates and hover detail in the served graph
+The app draws throughput badges directly on each wire (`↓112Kbps ↑36Kbps`) and shows detail
+on hover. **The served graph has neither, on macOS or Linux** — the SVG renderer never
+gained them when the app did.
+
+Confirmed on both platforms from the same machine: the app window shows rate badges, the
+browser at `127.0.0.1:8765` shows the same topology with bare wires. `GraphSVGRenderer`
+already receives `trafficStates`, so the data is there; it is the emitter that is missing
+the labels and the `<title>` detail.
+
+Not Linux-specific and not a regression — a parity gap from a macOS-only enhancement.
+
+### Public IP (STUN) — also missing from the served UI
+Broadens the item above: the served web UI has no Public IP control either, not just the
+TUI. Same portable-probe work covers both.
+
 ### Checksums for the .deb and .rpm
 The tarballs and AppImages ship a `.sha256` beside them; the packages do not, so those two
 downloads cannot be verified. `build-packages.sh` should emit them like the other scripts do.

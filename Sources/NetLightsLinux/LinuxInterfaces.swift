@@ -75,8 +75,12 @@ func linuxCategory(for name: String) -> InterfaceCategory {
     if fm.fileExists(atPath: "\(base)/bridge") { return .bridge }
     switch true {
     case name.hasPrefix("wl"):                                                 return .wifi
+    // "vpn" is not a kernel-assigned prefix like tun/tap — it is what several corporate
+    // clients name their device (the Dell's GlobalProtect link is vpn0). Missing it put a
+    // live VPN in .other, which cost it the tunnel band, the VPN styling AND its gateway
+    // node, so nothing connected it to the carrier.
     case name.hasPrefix("wg"), name.hasPrefix("tun"), name.hasPrefix("tap"),
-         name.hasPrefix("ppp"), name.hasPrefix("ipsec"),
+         name.hasPrefix("vpn"), name.hasPrefix("ppp"), name.hasPrefix("ipsec"),
          name.hasPrefix("gre"), name.hasPrefix("sit"):                         return .tunnel
     case name.hasPrefix("virbr"), name.hasPrefix("br"):                        return .bridge
     case name.contains("."):                                                   return .vlan   // eth0.100
