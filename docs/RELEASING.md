@@ -13,6 +13,25 @@ NetLights ships through **four channels** from one codebase:
 | Homebrew | cask + formula | `willowhawk-k/homebrew-tap` |
 | Linux | tarball, `.deb`, `.rpm`, AppImage | GitHub Releases (+ apt/yum repos) |
 
+## At a glance
+
+| # | Step | Where | Who | Time |
+|---|---|---|---|---|
+| 1 | Bump version, write notes | Mac | **You** | 10 min |
+| 2 | Compile gates → then tag | **CI** | Automatic (you tag) | 5 min |
+| 3 | Build all Linux artifacts, smoke-test, attest → draft release | **CI** | **Automatic** | 10 min |
+| 4 | Notarized macOS build — **signature #1** | Mac | **You** | 10 min |
+| 5 | Install-test on real Linux | Dell + VMs | **You** | 30 min |
+| 6 | Verify provenance, build indexes, sign — **signature #2** | VM + Mac | **You** | 15 min |
+| 7 | Publish: release → tap → repos → App Store (**signature #3**) | Mac | **You** | 5 min |
+| 8 | Docs + memory | Both repos | **You** | 5 min |
+
+**Only steps 2 and 3 are automated.** Everything else is yours, by design — every signature
+and every publish is a decision, not a pipeline stage.
+
+The long pole is step 5, and it is the one that cannot be automated away: CI proves the
+software builds and runs, only a real machine proves a *package installs*.
+
 ## Where each thing runs
 
 | Work | Runs on | Why there |

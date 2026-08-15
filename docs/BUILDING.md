@@ -180,6 +180,32 @@ It checks static linkage, the CLI grammar, JSON schema validity, bind behaviour 
 `--bind all` warning. Don't run it on macOS — one section binds `0.0.0.0`, which trips
 the macOS Application Firewall prompt and hangs the script.
 
+## Continuous integration
+
+Two workflows in `.github/workflows/`, all on standard GitHub-hosted runners (free and
+unlimited on public repositories):
+
+**`ci.yml`** — every push and pull request:
+- macOS: `swift build` plus the **App Store `xcodebuild` Release build**. That second one is
+  not redundant: the Xcode target applies settings SwiftPM does not, and its absence once
+  produced a tagged release that could not be archived at all. The Xcode version is
+  *asserted* rather than selected, so an image bump fails loudly instead of silently
+  changing what the gate means.
+- Linux: both architectures cross-compiled in the official `swift:6.3.3` container, then
+  **executed** on `ubuntu-latest` and `ubuntu-24.04-arm` — `--dump-json` with a schema
+  assertion, plus the full `verify-linux-cli.sh` suite. This is the only place the x86_64
+  binary runs at all.
+
+**`release.yml`** — on tag: builds all four Linux formats, attests build provenance, and
+uploads to a **draft** release. Draft rather than published so nothing reaches the releases
+page unreviewed. See [RELEASING.md](RELEASING.md).
+
+Neither workflow signs anything. Verify an artifact came from a given workflow run with:
+
+```bash
+gh attestation verify <file> --repo willowhawk-k/NetLights
+```
+
 ## Source tree
 
 ```

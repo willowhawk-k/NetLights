@@ -10,6 +10,9 @@ There is **no published Linux release yet**, but the formats now exist and can b
 **`.rpm`**, and an **AppImage**, for both x86_64 and aarch64. AUR, the signed apt/yum
 repositories, and the release itself are still to come.
 
+All four formats are built and smoke-tested by CI on every tag, on both x86_64 and aarch64.
+What has not happened yet is installing them on real hardware.
+
 Once built, the tarball installs into any prefix:
 
 ```bash
