@@ -4,8 +4,10 @@ cask "netlights" do
   version "1.9.4"
   sha256 "49da253b517d721e408ea639114c2df26da09c25273edeace7536d09ed9e6727"
 
-  url "https://github.com/willowhawk-k/NetLights/releases/download/v#{version}/NetLights-#{version}.zip",
-      verified: "github.com/willowhawk-k/NetLights/"
+  # No `verified:` — Homebrew checks the URL against the homepage host itself (both are
+  # github.com/willowhawk-k/NetLights), and as of Homebrew 7 the parameter is ignored with
+  # a deprecation warning on every install.
+  url "https://github.com/willowhawk-k/NetLights/releases/download/v#{version}/NetLights-#{version}.zip"
   name "NetLights"
   desc "Live, layered map of your network interfaces"
   homepage "https://github.com/willowhawk-k/NetLights"
@@ -19,44 +21,48 @@ cask "netlights" do
   # never fires. The shim execs its own bundle's binary by absolute path, so both work.
   binary "#{appdir}/NetLights.app/Contents/Resources/netlights", target: "netlights"
 
-  # The Mac App Store build installs to the same path, /Applications/NetLights.app, so the
-  # two cannot coexist. Homebrew must not delete an app it didn't install — and a Store app
-  # is receipt-owned, so removing it behind the user's back would be wrong even if it were
-  # possible. Detect it, explain the trade-off, and stop.
+  # The Mac App Store build installs to the same path, so the two cannot coexist. Homebrew
+  # must not delete an app it didn't install — a Store app is receipt-owned, so removing it
+  # behind the user's back would be wrong even if it were possible. Detect it, explain the
+  # trade-off, and stop.
   #
-  # `brew install` has to stay non-interactive (brew bundle, CI, brew upgrade), so this
-  # can't be a prompt. NETLIGHTS_REPLACE_APPSTORE=1 is the explicit, scriptable "yes".
-  preflight do
-    mas_receipt = "/Applications/NetLights.app/Contents/_MASReceipt/receipt"
-    next unless File.exist?(mas_receipt)
-    next if ENV["NETLIGHTS_REPLACE_APPSTORE"]
+  # This is a declarative `preflight_steps` plan, not Ruby: Homebrew 7 runs it sandboxed and
+  # its audit rejects the legacy `preflight` block. The plan language has no way to test an
+  # environment variable, so the old NETLIGHTS_REPLACE_APPSTORE=1 override is gone — which
+  # is the more honest behaviour anyway, since overwriting a receipt-owned app is exactly
+  # what this guard exists to prevent. The only path is the deliberate one: delete the App
+  # Store copy, then install.
+  #
+  # `run` is the only step that can abort. printf shows the explanation (and exits 0), then
+  # false fails the install with a one-word error line instead of echoing a script.
+  preflight_steps do
+    if_path_exists "NetLights.app/Contents/_MASReceipt/receipt", base: :appdir do
+      run "/usr/bin/printf", args: ["%s", <<~EOS], print_stdout: true
+        The Mac App Store build of NetLights is already installed.
 
-    odie <<~EOS
-      The Mac App Store build of NetLights is already installed.
+        Both builds install to {{appdir}}/NetLights.app, so only one can be present.
+        Here is what changes if you switch to this (Developer-ID) build:
 
-      Both builds install to /Applications/NetLights.app, so only one can be present.
-      Here is what changes if you switch to this (Developer-ID) build:
+          GAIN  `netlights serve` — the built-in web UI. The App Store build is
+                sandboxed without the incoming-connections entitlement, so it can
+                never listen on a socket.
+          GAIN  Updates via `brew upgrade`, and the in-app Sponsor link.
+          LOSE  Automatic updates from the App Store.
+          LOSE  App Sandbox confinement. This build is notarized and uses the
+                hardened runtime, but it is not sandboxed.
+          SAME  Everything else — the graph, `netlights tui`, all the tabs.
 
-        GAIN  `netlights serve` — the built-in web UI. The App Store build is
-              sandboxed without the incoming-connections entitlement, so it can
-              never listen on a socket.
-        GAIN  Updates via `brew upgrade`, and the in-app Sponsor link.
-        LOSE  Automatic updates from the App Store.
-        LOSE  App Sandbox confinement. This build is notarized and uses the
-              hardened runtime, but it is not sandboxed.
-        SAME  Everything else — the graph, `netlights tui`, all the tabs.
+        To keep the App Store build and just get the CLI on your PATH:
+            brew install netlights-cli
+        (`tui` and `--dump-json` work there; `serve` does not.)
 
-      To keep the App Store build and just get the CLI on your PATH:
-          brew install netlights-cli
-      (`tui` and `--dump-json` work there; `serve` does not.)
+        To switch to this build: delete {{appdir}}/NetLights.app (drag it to the
+        Trash), then re-run:
+            brew install --cask netlights
 
-      To switch to this build: delete /Applications/NetLights.app (drag it to the
-      Trash), then re-run:
-          brew install --cask netlights
-
-      To proceed without deleting it first — Homebrew will overwrite the app:
-          NETLIGHTS_REPLACE_APPSTORE=1 brew install --cask netlights
-    EOS
+      EOS
+      run "/usr/bin/false"
+    end
   end
 
   zap trash: [
