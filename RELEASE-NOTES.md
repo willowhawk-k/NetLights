@@ -14,6 +14,17 @@ release history, newest at the top.
 
 Committed work for the pre-2.0 train, unlike the longer-range backlog below.
 
+### Fixed — the app slows down the longer it stays open (macOS 26)
+After a day open, clicks lagged and the process sat at 100–150 % CPU. On macOS 26,
+SwiftUI's segmented `Picker` leaks its tag bookkeeping — a projection plus one Observation
+registrar per segment — on **every re-render**, then re-tracks the whole accumulated set on
+every layout pass. The view switcher sat inline in the main body, so it re-rendered on every
+0.75 s refresh: one leaked set per tick. A nine-hour instance held 65,000 leaked projections
+and 126,000 registrars, with the main thread ~60 % busy servicing them. The picker now lives
+in its own view that re-renders only when the tab changes. A fixed build held steady at 3
+projections after 120 refreshes, where the old one gained ~140 over the same interval and
+ran at a third of the CPU. Independently reported for macOS 26.6.2 the same week.
+
 ### Public IP (STUN) in the terminal dashboard
 The app has an opt-in **Public IP** button; the TUI has no equivalent.
 
@@ -49,6 +60,15 @@ Not Linux-specific and not a regression — a parity gap from a macOS-only enhan
 ### Public IP (STUN) — also missing from the served UI
 Broadens the item above: the served web UI has no Public IP control either, not just the
 TUI. Same portable-probe work covers both.
+
+### Narrow the IOKit port query
+`IOKitProbe.serviceTree()` serialises the **entire** IOService plane — 2,789 registry entries
+on the development Mac — with one `IORegistryEntryCreateCFProperties` call each, every ~3 s.
+That is 0.54 s of kernel time per query standalone and ~3 s when the app is busy, for data
+the parsers only need from a handful of classes (Thunderbolt switches, USB host devices,
+storage, the USB-C power controller). `IOServiceGetMatchingServices` per class would cut
+the steady background CPU to a fraction. Measured during the 2026-10-07 sluggishness
+investigation; not the cause of that bug, but the largest remaining constant cost.
 
 ### Checksums for the .deb and .rpm
 The tarballs and AppImages ship a `.sha256` beside them; the packages do not, so those two

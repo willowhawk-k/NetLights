@@ -72,11 +72,9 @@ struct ContentView: View {
 
             Spacer()
 
-            Picker("View", selection: $selectedTab) {
-                ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 430)
+            // In its own view, deliberately — see TabPicker for why this is not tidiness
+            // but the fix for the app getting slower the longer it runs.
+            TabPicker(selection: $selectedTab).equatable()
 
             Spacer()
 
@@ -655,5 +653,42 @@ struct ContentView: View {
         case ..<1_073_741_824:  return String(format: "%.1f MB", Double(n) / 1_048_576)
         default:                return String(format: "%.2f GB", Double(n) / 1_073_741_824)
         }
+    }
+}
+
+// MARK: - Tab picker
+
+/// The view switcher, isolated so it re-renders only when the selection changes — not on
+/// every 0.75 s monitor refresh.
+///
+/// This matters far beyond hygiene. On macOS 26, SwiftUI's segmented `Picker` leaks its
+/// tag-index bookkeeping on EVERY re-render — a `TagIndexProjection` plus one Observation
+/// registrar per segment, never released — and then re-tracks the whole accumulated set on
+/// each layout pass. Inlined in ContentView's body it re-rendered every refresh. After nine
+/// hours a live instance held ~26,800 leaked projections and ~100,000 registrars, the main
+/// thread was ~60% busy in Observation bookkeeping, and clicks visibly lagged. Measured on
+/// the running app: +141 projections per 117 s — one per refresh.
+///
+/// `Equatable` on the selection VALUE (not the binding's identity) plus `.equatable()` at
+/// the call site makes the skip explicit rather than relying on SwiftUI's diffing
+/// heuristics: a monitor refresh rebuilds a `TabPicker` equal to the last one, so its body
+/// — and the leaking Picker inside it — is not re-evaluated. A click changes the selection,
+/// so that one re-render still happens. The leak is thereby bounded by how often you click.
+///
+/// Independently reported for macOS 26.6.2 (one registrar per segment per re-render; that
+/// reporter saw 337,000 and a pinned core after days). If Apple fixes the Picker, this
+/// isolation remains correct; if the segmented style is ever replaced by a custom tab
+/// strip — already queued as polish — keep the same shape.
+private struct TabPicker: View, Equatable {
+    @Binding var selection: ContentView.Tab
+
+    static func == (a: TabPicker, b: TabPicker) -> Bool { a.selection == b.selection }
+
+    var body: some View {
+        Picker("View", selection: $selection) {
+            ForEach(ContentView.Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 430)
     }
 }
