@@ -312,6 +312,14 @@ remotely, re-tag, force-push. Do this immediately or not at all.
 **Published a bad hash in the tap.** Fix and push the tap again — it is just a git repo,
 and users get the fix on their next `brew update`.
 
+**Notarization refused with HTTP 403 — "A required agreement is missing or has expired."**
+Not a build problem. Apple updated the Developer Program License Agreement (it happens with
+new OS releases) and the Account Holder has to accept it: developer.apple.com → Account →
+Agreements (it may also surface as a banner in App Store Connect). The same gate blocks App
+Store Connect uploads in 7.4, so accept it before either. Then re-run `build-app.sh` — the
+previous run left a **signed but unnotarized** zip at the exact release filename; the
+rebuild overwrites it, and `spctl`/`stapler` in step 4 are what stop the stale one shipping.
+
 **Notarization rejected.** The log URL in the `notarytool` output says why. Almost always a
 missing hardened-runtime flag or an unsigned nested binary.
 
