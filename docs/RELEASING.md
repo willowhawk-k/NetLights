@@ -281,6 +281,23 @@ compromise of this step costs a subkey rotation rather than the identity.
 Most releases. Steps 1, 2, 4, 7.1, 7.2, 7.4, 8 — skip all Linux work and the GPG signing.
 Still bump `Version.swift`; the guard will stop you anyway.
 
+Three things the full flow hides, learned cutting 1.9.5:
+
+- **`release.yml` fires on every `v*` tag regardless.** Left alone it builds every Linux
+  artifact and opens a draft release holding them — for a macOS-only patch that is
+  unvalidated Linux files one forgotten click from public, and a draft that makes step
+  7.1's `gh release create` fail with "already exists". Cancel it right after the tag push
+  (`gh run list --workflow release.yml`, then `gh run cancel <id>`) and confirm
+  `gh release view v<version>` finds nothing before 7.1.
+- **The formula's hash comes after the tag; the cask's after notarization.** Commit the
+  bump with both as placeholders, tag, then hash the live tag tarball into the formula and
+  commit that follow-up; the cask's `PENDING_NOTARIZED_ZIP` is filled in 7.2. Between the
+  bump and the tag `brew style` flags the formula placeholder (`FormulaAudit/Checksum`,
+  three offenses) and tolerates the cask's — expected, not something to fix.
+- **`brew style` can take five minutes** the first time after Homebrew upgrades its portable
+  Ruby, because it rebuilds the gem bundle. Later runs take seconds. It is not a hung
+  signing prompt — check with `ps` before assuming 1Password is waiting.
+
 ## Variant: Linux-only patch
 
 Steps 1, 2, 3, 5, 6, 7.1, 7.3, 8. No notarization, no App Store, no Homebrew.
