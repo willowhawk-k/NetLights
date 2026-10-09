@@ -266,6 +266,11 @@ compromise of this step costs a subkey rotation rather than the identity.
 4. **App Store** — archive and upload in Xcode, paste from `APPSTORE-LATEST.md`, submit.
    **Signature #3 — Apple, via Xcode.** Independent of everything above; review takes days,
    so it neither blocks nor is blocked by the other channels.
+   - A new Xcode may open an upgrade-check sheet offering **Use Recommended macOS
+     Deployment Target**. Cancel it: the macro is a floor that moves with each Xcode (14.0 on
+     Xcode 27), and the minimum OS is a deliberate four-place change — see "Minimum macOS
+     version" under Queued in `RELEASE-NOTES.md`. Even an all-unchecked "Perform Changes"
+     dirties `project.pbxproj` with a `LastUpgradeCheck` stamp.
 
 ## Step 8 — Post-release *(both repos, ~5 min)*
 

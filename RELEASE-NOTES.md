@@ -68,6 +68,19 @@ The "View" label is heavier than it needs to be and sits tight against the segme
 Lighter weight and more separation, and closer to a real tab strip if the segmented style
 can be pushed that far.
 
+### Minimum macOS version — one number everywhere
+A consistency review, not a raise: there is no compelling need to lift the floor. The
+minimum is written in four places and they do not quite agree — the Xcode target says 13.5
+(the project-level 26.5 above it is overridden and dead), `Package.swift` says `.v13`
+(13.0), the cask says `:ventura`, and `docs/BUILDING.md` says "macOS 13 or later". Pick one
+literal, write it in all four, and have `build-app.sh` fail on drift the way it already does
+for `Version.swift`.
+
+Not `$(RECOMMENDED_MACOSX_DEPLOYMENT_TARGET)`, which Xcode's upgrade-check sheet offers at
+archive time: it evaluates to 14.0 on Xcode 27 and moves with every Xcode, so the App Store
+minimum would change without a diff. Nothing in the sources is gated on `#available`, so a
+higher floor buys nothing today (decided 2026-10-09).
+
 ---
 
 ## Future enhancements
