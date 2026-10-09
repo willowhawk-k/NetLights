@@ -14,17 +14,6 @@ release history, newest at the top.
 
 Committed work for the pre-2.0 train, unlike the longer-range backlog below.
 
-### Fixed — the app slows down the longer it stays open (macOS 26)
-After a day open, clicks lagged and the process sat at 100–150 % CPU. On macOS 26,
-SwiftUI's segmented `Picker` leaks its tag bookkeeping — a projection plus one Observation
-registrar per segment — on **every re-render**, then re-tracks the whole accumulated set on
-every layout pass. The view switcher sat inline in the main body, so it re-rendered on every
-0.75 s refresh: one leaked set per tick. A nine-hour instance held 65,000 leaked projections
-and 126,000 registrars, with the main thread ~60 % busy servicing them. The picker now lives
-in its own view that re-renders only when the tab changes. A fixed build held steady at 3
-projections after 120 refreshes, where the old one gained ~140 over the same interval and
-ran at a third of the CPU. Independently reported for macOS 26.6.2 the same week.
-
 ### Public IP (STUN) in the terminal dashboard
 The app has an opt-in **Public IP** button; the TUI has no equivalent.
 
@@ -106,6 +95,22 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 ---
 
 ## Release history
+
+### 1.9.5 — 2026-10-09
+
+A single-fix patch: the app slowed down the longer it stayed open.
+
+**The app stays fast after days of uptime.** After a day open, clicks lagged and the process sat at 100–150 % CPU. On macOS 26,
+SwiftUI's segmented `Picker` leaks its tag bookkeeping — a projection plus one Observation
+registrar per segment — on **every re-render**, then re-tracks the whole accumulated set on
+every layout pass. The view switcher sat inline in the main body, so it re-rendered on every
+0.75 s refresh: one leaked set per tick. A nine-hour instance held 65,000 leaked projections
+and 126,000 registrars, with the main thread ~60 % busy servicing them. The picker now lives
+in its own view that re-renders only when the tab changes. A fixed build held steady at 3
+projections after 120 refreshes, where the old one gained ~140 over the same interval and
+ran at a third of the CPU. Independently reported for macOS 26.6.2 the same week.
+
+macOS only. The Linux port is unchanged and still unreleased.
 
 ### 1.9.4 — 2026-08-10
 

@@ -1,4 +1,4 @@
-# App Store — 1.9.4 (build 23)
+# App Store — 1.9.5 (build 24)
 
 Two paste-ready blocks. Lines are deliberately unwrapped — App Store Connect wraps text to
 the field width, and hand-wrapping only creates breaks you have to undo.
@@ -10,33 +10,27 @@ the field width, and hand-wrapping only creates breaks you have to undo.
 *Paste into App Store Connect → Version Information → What's New in This Version.*
 
 ```
-Shows the interface that actually reaches the internet
-With Wi-Fi and Ethernet both connected, NetLights could name the wrong one as your primary uplink — a docked Mac might be told its traffic was leaving over Wi-Fi while it was really going out Ethernet. It now uses the same network service order macOS itself uses to decide, so the answer matches reality.
-
-Link state now matches the system
-An interface with no live link could still show as up — switched-off Wi-Fi, a Thunderbolt port with no cable, an idle bridge. NetLights was reading the interface's flags, which macOS leaves set in all of those cases; it now asks the system for the real link state. Your "interfaces up" count will drop and be accurate.
-
-Clearer labelling of the primary
-The status bar names the interface your internet traffic leaves through, and the Interfaces tab stars it. In the graph, that interface's tile is outlined and softly highlighted. On the Routes tab, only the default route that actually wins is starred — previously every default route was marked, which made it look like several were primary at once.
+Fixes the app slowing down the longer it stays open
+If you left NetLights running for a day, clicks started to lag and the app used far more of your Mac's processor than it should. On macOS 26 a system framework leaked a little bookkeeping each time the view switcher at the top of the window redrew — and it redrew on every refresh, so each refresh cost a bit more than the last. The view switcher now redraws only when you change tabs. Response stays as quick on day three as at launch, and processor use drops to a fraction.
 ```
 
-**Note for you, not for Apple:** short on purpose. 1.9.3's notes are already live and
-approved, so this only describes what 1.9.4 changes.
+**Note for you, not for Apple:** one fix, so one paragraph. 1.9.4's notes are live and
+approved; this only describes what 1.9.5 changes.
 
 ---
 
 ## 2 · App Review Notes
 
 *Paste into App Store Connect → App Review Information → Notes. Field limit is 4,000
-characters; this block is sized to fit.*
+characters; this block is 3428.*
 
 ```
-NetLights 1.9.4 (build 23), a bug-fix release. No new capabilities, entitlements or permission prompts compared with 1.9.3, approved 10 August 2026.
+NetLights 1.9.5 (build 24), a bug-fix release. No new capabilities, entitlements or permission prompts compared with 1.9.4, approved 12 August 2026.
 
 WHAT THE APP DOES
 NetLights draws the machine's network interfaces as a layered map, lighting up live link, traffic, device and power state. It is read-only and needs no administrator rights.
 
-ENTITLEMENTS (unchanged from the approved 1.9.3)
+ENTITLEMENTS (unchanged from the approved 1.9.4)
 com.apple.security.app-sandbox — sandboxed.
 com.apple.security.personal-information.location — macOS reveals the current Wi-Fi network name only to an app holding Location access, and NetLights uses it solely to label the Wi-Fi uplink. No location coordinates are read, stored or transmitted. Declining is fully supported; the uplink is then labelled simply "Wi-Fi".
 com.apple.security.device.bluetooth — used solely to list ALREADY connected devices, so they can be drawn as attached hardware. The app never scans, pairs or connects. Declining is fully supported; the Bluetooth group then does not appear.
@@ -48,18 +42,18 @@ No data is collected, stored off-device or transmitted. No analytics, accounts o
 IN THE PUBLIC SOURCE, BUT NOT IN THIS BUILD
 NetLights is open source (MIT), built from one codebase for three targets: this sandboxed App Store build, a Developer-ID build, and a Linux build.
 1. An HTTP server feature ("serve") showing the same graph in a browser is compiled out of this build by the APPSTORE build flag, because the sandbox has no incoming-connections entitlement. This build opens no listening sockets of any kind.
-2. Linux-only hardware collectors, including a small D-Bus client that reads the Bluetooth device list on Linux, are each guarded by "#if os(Linux)" and are not compiled into this build. One portable support file compiles on macOS but has no macOS caller and is never invoked. On macOS the Bluetooth list comes from IOBluetooth, gated by the entitlement above, exactly as in 1.9.3.
+2. Linux-only hardware collectors, including a small D-Bus client that reads the Bluetooth device list on Linux, are each guarded by "#if os(Linux)" and are not compiled into this build. On macOS the Bluetooth list comes from IOBluetooth, gated by the entitlement above, exactly as in 1.9.4.
 
 WHAT CHANGED IN THIS VERSION
-Two user-visible bug fixes and the labelling around them. (1) NetLights identifies which interface carries traffic to the internet. With Wi-Fi and Ethernet both connected each holds a default route, and the app picked whichever the kernel listed first rather than the one macOS prefers, so it could name the wrong one. It now uses the network service order already shown in the Routes tab. (2) Link state was inferred from interface flags, which macOS leaves set on a Wi-Fi interface whose radio is off, so those read as up; it now uses SystemConfiguration's link state. Alongside those: the status bar names the primary interface, the Interfaces tab stars it, the graph highlights its tile, and the Routes tab stars only the winning default route rather than every one.
+One fix. The longer the app stayed open, the slower it responded and the more CPU it used. The cause was the view switcher at the top of the window: on macOS 26 the segmented control's framework bookkeeping was not released when the control redrew, and it redrew on every data refresh (every 0.75 seconds), so each refresh cost more than the last. The view switcher now redraws only when the user changes tabs. No UI, data source, entitlement or network behaviour changed.
 
 OPTIONAL COMMAND-LINE INTERFACE
 The same binary can also run as a terminal dashboard, not required and not surfaced in the app UI. Run /Applications/NetLights.app/Contents/Resources/netlights tui and press q. It opens no sockets and shows the same data as the window. The "serve" subcommand in the public documentation is not in this build.
 
 WHERE TO LOOK
-The primary interface is named in the status bar at the bottom of the window, starred in the Interfaces tab, and outlined in the graph. Seeing the first fix requires two active uplinks — for example Wi-Fi connected while also plugged into Ethernet; the second is visible by switching Wi-Fi off.
+There is no new UI. Leave the app open for an hour or more: it should stay as responsive as at launch, and Activity Monitor should show it near idle between refreshes rather than holding a processor core.
 
-Source and release notes: https://github.com/willowhawk-k/NetLights/releases/tag/v1.9.4
+Source and release notes: https://github.com/willowhawk-k/NetLights/releases/tag/v1.9.5
 ```
 
 ---
@@ -87,19 +81,17 @@ NetLights is read-only and needs no administrator rights — it never changes yo
 Free and open source under the MIT License — source at https://github.com/willowhawk-k/NetLights
 ```
 
-**What changed vs. the description in APPSTORE.md:** added the **DNS tab** and **Privacy
-mode**, both of which have shipped for several releases and were missing from the listing
-entirely; added the optional terminal dashboard; and expanded the tables line to name the
-columns. The rest is the previous wording.
+**Unchanged since 1.9.4** — re-paste only if the live listing was never updated with the
+DNS tab and Privacy mode.
 
 ---
 
 ## Checklist before submitting
 
-- [ ] Build **23** selected (must strictly exceed 22, which shipped as 1.9.3)
-- [ ] Version string reads **1.9.4**
+- [ ] Build **24** selected (must strictly exceed 23, which shipped as 1.9.4)
+- [ ] Version string reads **1.9.5**
 - [ ] "What's New" pasted from section 1
 - [ ] App Review Notes pasted from section 2
 - [ ] App Privacy still declared **Data Not Collected** — unchanged
-- [ ] Description — unchanged from 1.9.3; only re-paste if it was never updated with the DNS tab and Privacy mode (section 3)
-- [ ] Screenshots unchanged; the UI gains a star and a highlight, nothing structural
+- [ ] Description — unchanged
+- [ ] Screenshots unchanged; no UI change in this release
