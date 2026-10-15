@@ -109,6 +109,19 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
+### 1.9.6 — unreleased (in soak since 2026-10-15)
+
+The second half of the 1.9.5 fix: the app still slowed down after days of uptime.
+
+**The traffic LED no longer piles up animations.** 1.9.5 removed the picker leak, and five
+days of production uptime confirmed that part stayed fixed — yet the main thread was back at a
+full core, this time inside SwiftUI's animation evaluation. Each interface LED blinked with a
+`repeatForever` animation that was restarted every time traffic resumed on that interface. Such
+an animation never finishes, so SwiftUI kept every one of them (7,681 after five days) and
+evaluated the whole list on every frame. The LED now blinks from a clock with a finite
+crossfade: idle LEDs cost nothing and a blinking one carries at most two animations. Same look
+as before.
+
 ### 1.9.5 — 2026-10-09
 
 A single-fix patch: the app slowed down the longer it stayed open.
