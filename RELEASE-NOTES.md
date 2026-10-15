@@ -118,9 +118,9 @@ days of production uptime confirmed that part stayed fixed — yet the main thre
 full core, this time inside SwiftUI's animation evaluation. Each interface LED blinked with a
 `repeatForever` animation that was restarted every time traffic resumed on that interface. Such
 an animation never finishes, so SwiftUI kept every one of them (7,681 after five days) and
-evaluated the whole list on every frame. The LED now blinks from a clock with a finite
-crossfade: idle LEDs cost nothing and a blinking one carries at most two animations. Same look
-as before.
+evaluated the whole list on every frame. The LED's pulse is now computed from the clock on
+each update, with no SwiftUI animation behind it at all: idle LEDs cost nothing and a pulsing
+one never accumulates anything. Same look as before.
 
 ### 1.9.5 — 2026-10-09
 
