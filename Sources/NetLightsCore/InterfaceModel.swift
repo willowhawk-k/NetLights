@@ -60,6 +60,15 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
     var txBytes: UInt64
     var mtu: Int
     var flags: UInt32
+    /// Member interfaces of a bridge (`category == .bridge`), by BSD name — what `ifconfig
+    /// bridgeN` lists as `member:`. Read from the kernel (macOS: the SIOCGDRVSPEC/BRDGGIFS
+    /// ioctl; Linux: /sys/class/net/<bridge>/brif), never inferred. nil when the collector
+    /// could not ask, in which case the layout falls back to matching the bridge's MAC
+    /// against its members' — which only holds for a bridge that adopts a member's address
+    /// (the Thunderbolt bridge0), not for the locally-administered MAC that UTM's and
+    /// Internet Sharing's bridge100 get. Optional, so JSONEncoder omits it on every
+    /// non-bridge and a schema-3 reader is unaffected.
+    var bridgeMembers: [String]? = nil
 
     // Explicit public init (mirrors the memberwise one, so macOS construction is
     // unchanged) — lets a separate module (the Linux collector) build interfaces.
@@ -67,7 +76,7 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
                 ipv4Addresses: [String] = [], ipv6Addresses: [String] = [],
                 macAddress: String? = nil, linkSpeedBps: UInt64? = nil,
                 linkState: LinkState = .unknown, rxBytes: UInt64 = 0, txBytes: UInt64 = 0,
-                mtu: Int = 0, flags: UInt32 = 0) {
+                mtu: Int = 0, flags: UInt32 = 0, bridgeMembers: [String]? = nil) {
         self.id = id
         self.displayName = displayName
         self.category = category
@@ -80,6 +89,7 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
         self.txBytes = txBytes
         self.mtu = mtu
         self.flags = flags
+        self.bridgeMembers = bridgeMembers
     }
 
     // Computed
@@ -252,7 +262,8 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
         lhs.linkState == rhs.linkState &&
         lhs.rxBytes == rhs.rxBytes &&
         lhs.txBytes == rhs.txBytes &&
-        lhs.ipv4Addresses == rhs.ipv4Addresses
+        lhs.ipv4Addresses == rhs.ipv4Addresses &&
+        lhs.bridgeMembers == rhs.bridgeMembers
     }
 }
 
@@ -913,6 +924,8 @@ public struct TopologySnapshot: Codable {
     // 3: added `serviceRank` (interface → macOS network-service order), so a consumer that
     //    isn't the SwiftUI app — the TUI, the web UI — can show which default route wins.
     //    Additive and optional, so a schema-2 reader is unaffected.
+    //    Also additive within 3: `InterfaceInfo.bridgeMembers`, a bridge's member interfaces
+    //    as the kernel reports them. Optional and omitted on every non-bridge, so no bump.
     // 2: RouteEntry.id became a derived key and is no longer encoded (it was a random UUID
     //    that could not round-trip). 1: initial cross-platform contract.
     public var schemaVersion: Int = 3

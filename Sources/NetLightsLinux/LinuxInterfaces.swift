@@ -40,6 +40,7 @@ func linuxInterfaces() -> [InterfaceInfo] {
 
     return names.sorted().map { name in
         let base = "\(netDir)/\(name)"
+        let category = linuxCategory(for: name)
         let mac = sysRead("\(base)/address")
         let oper = sysRead("\(base)/operstate") ?? "unknown"
         let carrier = sysRead("\(base)/carrier")
@@ -52,7 +53,7 @@ func linuxInterfaces() -> [InterfaceInfo] {
         }
         return InterfaceInfo(
             id: name,
-            category: linuxCategory(for: name),
+            category: category,
             ipv4Addresses: ipv4[name] ?? [],
             ipv6Addresses: ipv6[name] ?? [],
             macAddress: (mac?.isEmpty == false && mac != "00:00:00:00:00:00") ? mac : nil,
@@ -61,8 +62,17 @@ func linuxInterfaces() -> [InterfaceInfo] {
             rxBytes: UInt64(sysRead("\(base)/statistics/rx_bytes") ?? "") ?? 0,
             txBytes: UInt64(sysRead("\(base)/statistics/tx_bytes") ?? "") ?? 0,
             mtu: Int(sysRead("\(base)/mtu") ?? "") ?? 0,
-            flags: flagsByName[name] ?? 0)
+            flags: flagsByName[name] ?? 0,
+            bridgeMembers: category == .bridge ? linuxBridgeMembers(name) : nil)
     }
+}
+
+/// Members of a Linux bridge: the kernel exposes them as one entry per port under
+/// /sys/class/net/<bridge>/brif/ — the same source `bridge link` and `brctl show` read.
+/// nil when the directory cannot be listed (gone mid-scan), so the layout's MAC fallback
+/// applies; an empty array is a real answer.
+private func linuxBridgeMembers(_ bridge: String) -> [String]? {
+    (try? FileManager.default.contentsOfDirectory(atPath: "/sys/class/net/\(bridge)/brif"))?.sorted()
 }
 
 /// Linux interface name → category. Uses /sys markers (wireless, bridge) where a name

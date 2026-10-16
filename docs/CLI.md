@@ -128,6 +128,7 @@ earlier version still works:
 | Version | Change |
 |---------|--------|
 | 3 | added `serviceRank` (interface → macOS network-service order, the macOS analog of a Linux route metric). Empty on Linux. |
+| 3 (additive) | `bridgeMembers` on each bridge interface — its member interfaces as the kernel reports them (`ifconfig`'s `member:` lines on macOS, `/sys/class/net/<bridge>/brif` on Linux). Absent on non-bridges, and on a bridge the collector could not query. |
 | 2 | `RouteEntry.id` is no longer encoded — it was a random UUID, so two dumps of an unchanged machine differed by hundreds of lines. |
 | 1 | initial cross-platform contract. |
 

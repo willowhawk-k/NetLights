@@ -855,6 +855,11 @@ private func graphView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
                     let flow = "\(arrows.0)\(rx ?? "—") \(arrows.1)\(tx ?? "—")"
                     line += paint(flow, .up, m)
                 }
+                // The text graph has no wires, so a bridge names its members here — the
+                // SwiftUI and SVG graphs draw the same fact as a line to each one.
+                if i.category == .bridge, let members = i.bridgeMembers, !members.isEmpty {
+                    line += paint("  members: " + members.joined(separator: ", "), .dim, m)
+                }
                 rows.append(line)
             }
         }

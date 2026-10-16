@@ -195,6 +195,7 @@ struct GraphLayoutEngine {
         for i in visible {
             h.combine(i.id); h.combine(i.category.rawValue); h.combine(i.hasLink)
             h.combine(i.macAddress ?? "")
+            h.combine(i.bridgeMembers?.joined(separator: ",") ?? "")   // where a bridge sits + its wires
             h.combine(i.groupKey)   // captures displayName→isVirtualAdapter, which changes grouping
         }
         for d in attachedDevices {
@@ -228,6 +229,24 @@ struct GraphLayoutEngine {
 
     var visible: [InterfaceInfo] {
         hideUnused ? interfaces.filter { !$0.isHiddenWhenInactive(active: hasTraffic($0.id)) } : interfaces
+    }
+
+    /// The visible members of a bridge: the collector's list (`bridgeMembers`, what `ifconfig`
+    /// shows) when it has one, else the old inference — a physical interface sharing the
+    /// bridge's MAC prefix. The inference holds for the Thunderbolt bridge0, which adopts
+    /// en1's address, and for nothing else: UTM's and Internet Sharing's bridge100 get a
+    /// locally-administered MAC of their own, so they floated in the band with no wire to
+    /// the port they bridge.
+    func bridgeMembers(of bridge: InterfaceInfo) -> [InterfaceInfo] {
+        if let ids = bridge.bridgeMembers, !ids.isEmpty {
+            return visible.filter { ids.contains($0.id) }
+        }
+        guard let mac = bridge.macAddress else { return [] }
+        let prefix = String(mac.prefix(8))
+        return visible.filter {
+            ($0.category == .ethernet || $0.category == .thunderbolt)
+                && $0.macAddress?.hasPrefix(prefix) == true
+        }
     }
 
     /// BSD name → hardware-port id, derived from each port's child list.
@@ -606,11 +625,12 @@ struct GraphLayoutEngine {
         var anchored: [(id: String, x: CGFloat)] = []
         var floating: [String] = []
         for iface in visible.filter({ $0.effectiveLayer == "Data Link" }) {
-            if iface.category == .bridge, let mac = iface.macAddress {
-                let prefix = String(mac.prefix(8))
-                let xs = visible
-                    .filter { ($0.category == .ethernet || $0.category == .thunderbolt)
-                               && $0.macAddress?.hasPrefix(prefix) == true }
+            if iface.category == .bridge {
+                // Centred over its members in the Physical band just above. A VM-side member
+                // (UTM's vmenet0) lives in the Virtual band: it gets a wire, not a say in
+                // where the bridge sits.
+                let xs = bridgeMembers(of: iface)
+                    .filter { $0.effectiveLayer == "Physical" }
                     .compactMap { result[$0.id]?.x }
                 if !xs.isEmpty {
                     anchored.append((iface.id, xs.reduce(0, +) / CGFloat(xs.count)))
@@ -1104,14 +1124,11 @@ struct GraphLayoutEngine {
                 color: .link, hasTraffic: false, emphasized: true, style: .physical))
         }
 
-        // L1 → L2: bridge ↔ member ports (MAC prefix match)
+        // L1 → L2: bridge ↔ every visible member — the physical uplink above it and, when
+        // inactive interfaces are shown, the VM-side port below it (UTM's vmenet0), so a
+        // bridged VM reads as VM ⇄ bridge ⇄ en7, the path its packets take.
         for bridge in visible where bridge.category == .bridge {
-            guard let bMac = bridge.macAddress else { continue }
-            let prefix = String(bMac.prefix(8))
-            for member in visible where
-                (member.category == .ethernet || member.category == .thunderbolt)
-                && member.macAddress?.hasPrefix(prefix) == true
-            {
+            for member in bridgeMembers(of: bridge) {
                 if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
                     lines.append(ConnLine(from: f, to: t, label: "L2",
                         color: .l2, hasTraffic: hasTraffic(member.id),
