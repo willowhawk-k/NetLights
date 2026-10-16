@@ -123,6 +123,20 @@ press Refresh, or once a minute as a fallback, and it skips the handful of drive
 HID and display nodes whose property reads were 90 % of the cost and that nothing reads.
 The topology shown is unchanged; what changes is that an idle NetLights idles.
 
+**A bridged virtual machine's bridge now sits under the port it bridges.** With a UTM virtual
+machine in bridged mode, `bridge100` floated in the Data Link band with no wire to `en7`, the USB
+Ethernet it bridges, while `ifconfig bridge100` plainly listed both members. The graph had been
+inferring membership from MAC addresses, which holds for the Thunderbolt `bridge0` — it adopts
+`en1`'s address — and for nothing else; UTM's and Internet Sharing's bridges get a
+locally-administered MAC of their own. NetLights now asks the bridge driver the way `ifconfig`
+does (unprivileged, and it works in the sandboxed App Store build), and the Linux collector
+reads `/sys/class/net/<bridge>/brif`. Each bridge in `--dump-json` gains an optional
+`bridgeMembers`; the schema stays 3. A bridge is centred over its physical members and wired
+to every visible one, including the VM side (`vmenet0`), which "Hide inactive" now keeps on
+screen whenever its bridge is. Two bridges whose members sit close together keep the Physical
+row's minimum spacing instead of overlapping, and the terminal graph, which has no wires, names
+the members on the bridge's row.
+
 ### 1.9.5 — 2026-10-09
 
 A single-fix patch: the app slowed down the longer it stayed open.

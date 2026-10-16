@@ -195,6 +195,7 @@ struct GraphLayoutEngine {
         for i in visible {
             h.combine(i.id); h.combine(i.category.rawValue); h.combine(i.hasLink)
             h.combine(i.macAddress ?? "")
+            h.combine(i.bridgeMembers?.joined(separator: ",") ?? "")   // where a bridge sits + its wires
             h.combine(i.groupKey)   // captures displayName→isVirtualAdapter, which changes grouping
         }
         for d in attachedDevices {
@@ -227,7 +228,25 @@ struct GraphLayoutEngine {
     }
 
     var visible: [InterfaceInfo] {
-        hideUnused ? interfaces.filter { !$0.isHiddenWhenInactive(active: hasTraffic($0.id)) } : interfaces
+        hideUnused ? interfacesShownWhenHidingInactive(interfaces, active: { hasTraffic($0) }) : interfaces
+    }
+
+    /// The visible members of a bridge: the collector's list (`bridgeMembers`, what `ifconfig`
+    /// shows) when it has one, else the old inference — a physical interface sharing the
+    /// bridge's MAC prefix. The inference holds for the Thunderbolt bridge0, which adopts
+    /// en1's address, and for nothing else: UTM's and Internet Sharing's bridge100 get a
+    /// locally-administered MAC of their own, so they floated in the band with no wire to
+    /// the port they bridge.
+    func bridgeMembers(of bridge: InterfaceInfo) -> [InterfaceInfo] {
+        if let ids = bridge.bridgeMembers, !ids.isEmpty {
+            return visible.filter { ids.contains($0.id) }
+        }
+        guard let mac = bridge.macAddress else { return [] }
+        let prefix = String(mac.prefix(8))
+        return visible.filter {
+            ($0.category == .ethernet || $0.category == .thunderbolt)
+                && $0.macAddress?.hasPrefix(prefix) == true
+        }
     }
 
     /// BSD name → hardware-port id, derived from each port's child list.
@@ -269,10 +288,26 @@ struct GraphLayoutEngine {
     /// the band width. We have far more horizontal than vertical room, so it only
     /// wraps into extra stacked rows when the window genuinely can't fit them. Returns
     /// each id's x + row index, and the row count. Geometry-free in x (no band rects).
+    /// Minimum centre-to-centre distance between interface tiles in one row: the 90-wide
+    /// tile plus breathing room. The Physical and Data Link rows share it.
+    let tileMinGap: CGFloat = 112
+    private var spreadLoX: CGFloat { gwColWidth + 36 }
+    private var spreadHiX: CGFloat { gwColWidth + bw - 36 }
+    /// Tiles one row holds at `minGap` before `spreadAnchored` wraps into another.
+    private func tilesPerRow(minGap: CGFloat) -> Int {
+        max(Int(max(spreadHiX - spreadLoX, minGap) / minGap) + 1, 1)
+    }
+    /// Rows `count` tiles need at `minGap`: one unless the window genuinely can't fit them.
+    /// Geometry-free, so band sizing can ask before any band rect exists.
+    func lanesNeeded(count: Int, minGap: CGFloat) -> Int {
+        let perRow = tilesPerRow(minGap: minGap)
+        return count <= perRow ? 1 : (count + perRow - 1) / perRow
+    }
+
     private func spreadAnchored(_ items: [(id: String, x: CGFloat)], minGap: CGFloat) -> (pos: [String: (x: CGFloat, lane: Int)], lanes: Int) {
-        let loX = gwColWidth + 36, hiX = gwColWidth + bw - 36
+        let loX = spreadLoX, hiX = spreadHiX
         let avail = max(hiX - loX, minGap)
-        let perRow = max(Int(avail / minGap) + 1, 1)
+        let perRow = tilesPerRow(minGap: minGap)
         let sorted = items.sorted { $0.x != $1.x ? $0.x < $1.x : $0.id < $1.id }
         guard !sorted.isEmpty else { return ([:], 1) }
 
@@ -290,7 +325,7 @@ struct GraphLayoutEngine {
             return (pos, 1)
         }
         // Window-constrained: wrap into the fewest rows, evenly spaced within each.
-        let lanes = (sorted.count + perRow - 1) / perRow
+        let lanes = lanesNeeded(count: sorted.count, minGap: minGap)
         let perLane = (sorted.count + lanes - 1) / lanes
         var pos: [String: (x: CGFloat, lane: Int)] = [:]
         for (i, it) in sorted.enumerated() {
@@ -326,7 +361,7 @@ struct GraphLayoutEngine {
     /// How many stacked rows the anchored Physical interfaces need (1 unless the
     /// window is too narrow to spread them horizontally). Geometry-free.
     var physicalUpperLaneCount: Int {
-        spreadAnchored(anchoredPhysicalLayout(), minGap: 112).lanes
+        spreadAnchored(anchoredPhysicalLayout(), minGap: tileMinGap).lanes
     }
 
     // MARK: - Band area geometry (everything right of the gateway sidebar)
@@ -513,8 +548,9 @@ struct GraphLayoutEngine {
 
         // Data Link holds full interface tiles (bridge0, VLANs — 90 tall), so the band
         // must fit one, not just a label; otherwise the tile overflows into neighbors.
-        let hasDL = visible.contains { $0.effectiveLayer == "Data Link" }
-        let dlNeed: CGFloat = hasDL ? 118 : 26
+        let dlCount = visible.filter { $0.effectiveLayer == "Data Link" }.count
+        let dlNeed: CGFloat = dlCount > 0
+            ? CGFloat(lanesNeeded(count: dlCount, minGap: tileMinGap)) * 96 + 22 : 26
 
         // Virtual holds the tunnel/loopback/system rows; reserve an extra strip at its
         // top for the VPN gateway chip, which pins above its tunnel (see gatewayPositions)
@@ -572,7 +608,7 @@ struct GraphLayoutEngine {
         // same port rather than stacked on it. Extra rows appear only if the window is
         // too narrow. Free interfaces (app/VM adapters) fill a grouped row below.
         let physBand = bandRect("Physical")
-        let (anchoredPos, laneCount) = spreadAnchored(anchoredPhysicalLayout(), minGap: 112)
+        let (anchoredPos, laneCount) = spreadAnchored(anchoredPhysicalLayout(), minGap: tileMinGap)
         let freeGroups = subgroups(layer: "Physical", ifaces: physFreeVisible)
         let totalRows  = max(laneCount + (freeGroups.isEmpty ? 0 : 1), 1)
         // Rows sit below the reserved bracket strip so tiles don't overlap the labels.
@@ -594,8 +630,12 @@ struct GraphLayoutEngine {
             }
         }
 
-        // Data Link (L2) — bridges centered under their physical members, and the rest
-        // spread rather than piled up.
+        // Data Link (L2) — bridges centred under their physical members where they have
+        // some, the rest spread evenly; then the whole row goes through the same spacing
+        // pass as the Physical row, so no two tiles overlap even if that costs a bridge
+        // its centring. Two bridges whose members sit close together — the Thunderbolt
+        // bridge0 over en1–en3 and UTM's bridge100 under the adjacent en7 — landed 75 px
+        // apart and one tile covered most of the other.
         //
         // Every node here used to fall back to the band centre when it had no physical
         // member to sit under. On a Mac that is at most one bridge0, which does have a
@@ -603,28 +643,36 @@ struct GraphLayoutEngine {
         // container bridges put FIVE tiles on the same pixel — the graph appeared to be
         // missing four interfaces that the tables listed.
         let dlBand = bandRect("Data Link")
-        var anchored: [(id: String, x: CGFloat)] = []
+        var dlTargets: [(id: String, x: CGFloat)] = []
         var floating: [String] = []
         for iface in visible.filter({ $0.effectiveLayer == "Data Link" }) {
-            if iface.category == .bridge, let mac = iface.macAddress {
-                let prefix = String(mac.prefix(8))
-                let xs = visible
-                    .filter { ($0.category == .ethernet || $0.category == .thunderbolt)
-                               && $0.macAddress?.hasPrefix(prefix) == true }
+            if iface.category == .bridge {
+                // Centred over its members in the Physical band just above. A VM-side member
+                // (UTM's vmenet0) lives in the Virtual band: it gets a wire, not a say in
+                // where the bridge sits.
+                let xs = bridgeMembers(of: iface)
+                    .filter { $0.effectiveLayer == "Physical" }
                     .compactMap { result[$0.id]?.x }
                 if !xs.isEmpty {
-                    anchored.append((iface.id, xs.reduce(0, +) / CGFloat(xs.count)))
+                    dlTargets.append((iface.id, xs.reduce(0, +) / CGFloat(xs.count)))
                     continue
                 }
             }
             floating.append(iface.id)
         }
-        for a in anchored { result[a.id] = CGPoint(x: a.x, y: dlBand.midY) }
         if !floating.isEmpty {
             let sp = bw / CGFloat(floating.count)
             for (i, id) in floating.enumerated() {
-                result[id] = CGPoint(x: sp * (CGFloat(i) + 0.5) + gwColWidth, y: dlBand.midY)
+                dlTargets.append((id, sp * (CGFloat(i) + 0.5) + gwColWidth))
             }
+        }
+        // Wraps into stacked rows only when the window can't fit the tiles at tileMinGap;
+        // bandNeeds reserves a row of height for each lane, so a wrapped row never
+        // overflows into the Virtual band.
+        let (dlPos, dlLanes) = spreadAnchored(dlTargets, minGap: tileMinGap)
+        let dlRowH = dlBand.height / CGFloat(max(dlLanes, 1))
+        for (id, p) in dlPos {
+            result[id] = CGPoint(x: p.x, y: dlBand.minY + dlRowH * (CGFloat(p.lane) + 0.5))
         }
 
         // Virtual (L3+) — two rows, groups balanced across them (like Hardware).
@@ -1104,14 +1152,11 @@ struct GraphLayoutEngine {
                 color: .link, hasTraffic: false, emphasized: true, style: .physical))
         }
 
-        // L1 → L2: bridge ↔ member ports (MAC prefix match)
+        // L1 → L2: bridge ↔ every visible member — the physical uplink above it and, when
+        // inactive interfaces are shown, the VM-side port below it (UTM's vmenet0), so a
+        // bridged VM reads as VM ⇄ bridge ⇄ en7, the path its packets take.
         for bridge in visible where bridge.category == .bridge {
-            guard let bMac = bridge.macAddress else { continue }
-            let prefix = String(bMac.prefix(8))
-            for member in visible where
-                (member.category == .ethernet || member.category == .thunderbolt)
-                && member.macAddress?.hasPrefix(prefix) == true
-            {
+            for member in bridgeMembers(of: bridge) {
                 if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
                     lines.append(ConnLine(from: f, to: t, label: "L2",
                         color: .l2, hasTraffic: hasTraffic(member.id),

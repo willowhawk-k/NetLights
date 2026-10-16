@@ -446,10 +446,8 @@ private func color(for c: InterfaceCategory) -> TUIColor {
 
 private func visibleInterfaces(_ s: TopologySnapshot, _ st: TUIState,
                                _ rates: TrafficRateDeriver) -> [InterfaceInfo] {
-    s.interfaces.filter {
-        guard st.hideInactive else { return true }
-        return !$0.isHiddenWhenInactive(active: rates.isActive($0.id))
-    }
+    st.hideInactive ? interfacesShownWhenHidingInactive(s.interfaces, active: { rates.isActive($0) })
+                    : s.interfaces
 }
 
 private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
@@ -854,6 +852,11 @@ private func graphView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,
                     let arrows = f.unicode ? ("↓", "↑") : ("v", "^")
                     let flow = "\(arrows.0)\(rx ?? "—") \(arrows.1)\(tx ?? "—")"
                     line += paint(flow, .up, m)
+                }
+                // The text graph has no wires, so a bridge names its members here — the
+                // SwiftUI and SVG graphs draw the same fact as a line to each one.
+                if i.category == .bridge, let members = i.bridgeMembers, !members.isEmpty {
+                    line += paint("  members: " + members.joined(separator: ", "), .dim, m)
                 }
                 rows.append(line)
             }

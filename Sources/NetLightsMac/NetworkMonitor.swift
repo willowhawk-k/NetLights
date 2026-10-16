@@ -479,6 +479,13 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
             ptr = ifa.pointee.ifa_next
         }
 
+        // Bridge membership, from the bridge driver — not inferred from MAC addresses, which
+        // only works for the Thunderbolt bridge0 (it adopts en1's). nil on failure keeps the
+        // layout's MAC fallback in play.
+        for name in byName.keys where byName[name]?.category == .bridge {
+            byName[name]?.bridgeMembers = kernelBridgeMembers(of: name)
+        }
+
         // Enrich with sysctl stats
         enrichWithSysctl(interfaces: &byName)
 
@@ -676,6 +683,76 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
             }
         }
         return names
+    }
+
+    // MARK: - Bridge membership (SIOCGDRVSPEC / BRDGGIFS)
+
+    /// `ifconfig bridgeN` lists `member: en7` by asking the bridge driver through the
+    /// SIOCGDRVSPEC ioctl carrying BRDGGIFS. `<net/if_bridgevar.h>` is not in the macOS SDK,
+    /// so the bridge-side structures are laid out by hand from xnu's bsd/net/if_bridgevar.h
+    /// and were checked against the live kernel (macOS 26.6 / Darwin 25.6): it accepts
+    /// exactly these sizes and returns EINVAL for the naturally-aligned alternative.
+    ///
+    ///   struct ifdrv      <net/if.h>, importable: name[16], cmd, len, data — 40 bytes.
+    ///   SIOCGDRVSPEC      _IOWR('i', 123, struct ifdrv) = 0xC028697B. A function-like
+    ///                     macro, so Swift cannot import it; the value is pinned by that
+    ///                     40-byte struct and cannot drift without breaking ifconfig too.
+    ///   struct ifbifconf  #pragma pack(4): uint32 ifbic_len, then the buffer pointer at
+    ///                     byte 4 (not 8) — 12 bytes.
+    ///   struct ifbreq     char ifbr_ifsname[16], then 64 bytes of STP/address fields —
+    ///                     80 bytes per member; only the name is read.
+    private static let SIOCGDRVSPEC: UInt = 0xC028_697B
+    private static let BRDGGIFS: UInt = 6
+    private static let ifbifconfSize = 12
+    private static let ifbreqSize = 80
+
+    /// Member interfaces of `bridge`, as `ifconfig` shows them. nil when the kernel would not
+    /// say (not a bridge, no socket) so the layout can fall back to MAC matching; an empty
+    /// array is a real answer — a bridge with no members. Read-only and unprivileged:
+    /// BRDGGIFS carries no superuser flag in the bridge control table, and it works under
+    /// the App Sandbox (checked with com.apple.security.app-sandbox on).
+    static func kernelBridgeMembers(of bridge: String) -> [String]? {
+        let sock = socket(AF_INET, SOCK_DGRAM, 0)
+        guard sock >= 0 else { return nil }
+        defer { close(sock) }
+
+        // One ifbifconf, reused: `ifbic_len` is the capacity going in and the byte count
+        // the kernel wrote coming out.
+        let conf = UnsafeMutableRawPointer.allocate(byteCount: ifbifconfSize, alignment: 8)
+        defer { conf.deallocate() }
+        func ask(buffer: UnsafeMutableRawPointer?, capacity: Int) -> Int? {
+            conf.initializeMemory(as: UInt8.self, repeating: 0, count: ifbifconfSize)
+            conf.storeBytes(of: UInt32(capacity), toByteOffset: 0, as: UInt32.self)
+            conf.storeBytes(of: UInt64(UInt(bitPattern: buffer)), toByteOffset: 4, as: UInt64.self)
+            var drv = ifdrv()
+            withUnsafeMutableBytes(of: &drv.ifd_name) { name in
+                for (i, byte) in bridge.utf8.prefix(name.count - 1).enumerated() { name[i] = byte }
+            }
+            drv.ifd_cmd = BRDGGIFS
+            drv.ifd_len = ifbifconfSize
+            drv.ifd_data = conf
+            guard ioctl(sock, SIOCGDRVSPEC, &drv) == 0 else { return nil }
+            return Int(conf.load(fromByteOffset: 0, as: UInt32.self))
+        }
+
+        // Capacity 0 makes the kernel report the byte count it needs; then fetch, with room
+        // for a couple of members that may have joined in between.
+        guard let needed = ask(buffer: nil, capacity: 0) else { return nil }
+        guard needed > 0 else { return [] }
+        let capacity = needed + 2 * ifbreqSize
+        let buf = UnsafeMutableRawPointer.allocate(byteCount: capacity, alignment: 8)
+        defer { buf.deallocate() }
+        buf.initializeMemory(as: UInt8.self, repeating: 0, count: capacity)
+        guard let written = ask(buffer: buf, capacity: capacity) else { return nil }
+
+        var members: [String] = []
+        for i in 0 ..< (min(written, capacity) / ifbreqSize) {
+            // ifbr_ifsname is the first field of each entry: NUL-terminated, at most IFNAMSIZ.
+            let field = UnsafeRawBufferPointer(start: buf + i * ifbreqSize, count: Int(IFNAMSIZ))
+            let name = String(decoding: field.prefix { $0 != 0 }, as: UTF8.self)
+            if !name.isEmpty { members.append(name) }
+        }
+        return members
     }
 
     // MARK: - Helpers
