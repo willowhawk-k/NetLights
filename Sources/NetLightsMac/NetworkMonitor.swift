@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Combine
 import Darwin
 import SystemConfiguration
@@ -94,6 +95,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
         // started from more than one window's onAppear — only the first call arms
         // the poll timer, so a second window can't orphan/duplicate it.
         guard pollTimer == nil else { return }
+        registryWatch.start()
         // Ask for Location access solely to read the Wi-Fi SSID (see LocationAuth);
         // re-refresh when the grant lands so the network name appears.
         locationAuth.onAuthorizationChange = { [weak self] in
@@ -109,6 +111,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
+        registryWatch.stop()
         // Tear down everything start() established (the monitor outlives any single
         // window now, so leaving these live would keep firing on a "stopped" monitor).
         locationAuth.onAuthorizationChange = nil
@@ -198,7 +201,7 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
             dnsConfigs: Self.gatherDNS(), serviceRank: rank)
     }
 
-    func refresh() {
+    func refresh(forceTopology: Bool = false) {
         let newInterfaces = Self.gatherInterfaces()
         updateTrafficStates(newInterfaces: newInterfaces)
         interfaces = newInterfaces
@@ -235,10 +238,12 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
         attachedDevices = lastPortStatus.attachedDevices
         systemPower = lastPortStatus.systemPower
 
-        // Re-query topology roughly every ~3s so a plug/unplug shows promptly, and
-        // never run two at once. The in-process IOKit walk is cheap; the genuinely slow
-        // part (Bluetooth's XPC device list) is throttled separately below. Note some of
-        // the unplug lag is macOS tearing the device down in the IORegistry, not us.
+        // Re-query port status roughly every ~3 s so a plug/unplug shows promptly, and
+        // never run two at once. The registry-tree walk inside it is NOT cheap (1.6–1.9 s of
+        // kernel/IPC time per pass on this Mac, 2026-10-15), so it runs only when IOKit flags
+        // a relevant change, on manual Refresh, or as a slow fallback — see IORegistryWatch.
+        // Bluetooth's XPC device list is throttled separately below. Note some of the unplug
+        // lag is macOS tearing the device down in the IORegistry, not us.
         portQueryCounter += 1
         if (portQueryCounter == 1 || portQueryCounter % 4 == 0) && !portQueryInFlight {
             portQueryInFlight = true
@@ -263,10 +268,32 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
                 btDevicesCache = BluetoothProbe.connectedDevices()
             }
             let bluetooth = btDevicesCache
+            // Decide whether this query re-walks the registry tree (the expensive half) or
+            // reuses the cached tree-derived data.
+            let cachedTree = lastTreeDerived
+            let registryChanged = registryWatch.consumeDirty()
+            let sinceWalk = Date().timeIntervalSince(lastTreeWalk)
+            let walkReason: String?
+            if forceTopology { walkReason = "manual refresh" }
+            else if cachedTree == nil { walkReason = "first query" }
+            else if registryChanged { walkReason = "registry change" }
+            else if sinceWalk >= Self.treeWalkFallback { walkReason = "fallback, \(Int(sinceWalk)) s since last" }
+            else { walkReason = nil }
+            if walkReason != nil { lastTreeWalk = Date() }
             Task.detached(priority: .utility) {
-                let status = NetworkMonitor.queryPortStatus(displayNames: displayNames, bluetooth: bluetooth)
+                let tree: TreeDerived
+                if let reason = walkReason {
+                    let t0 = Date()
+                    tree = NetworkMonitor.treeDerived()
+                    let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                    NetworkMonitor.registryLog.notice("registry walk (\(reason, privacy: .public)) took \(ms) ms")
+                } else {
+                    tree = cachedTree ?? NetworkMonitor.treeDerived()
+                }
+                let status = NetworkMonitor.queryPortStatus(tree: tree, displayNames: displayNames, bluetooth: bluetooth)
                 await MainActor.run { [weak self] in
                     guard let self else { return }
+                    self.lastTreeDerived = tree
                     self.lastPortStatus = status
                     self.portQueryInFlight = false
                     // Rebuild against the freshest interface list.
@@ -285,6 +312,15 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     private var btRefreshTick = 0
     private var btDevicesCache: [BluetoothProbe.RawBT] = []
     private var lastPortStatus: PortStatus = PortStatus()
+    // The registry-tree half of the port status is cached and recomputed only when IOKit
+    // flags a relevant publish/terminate, on manual Refresh, or after `treeWalkFallback`
+    // without one — see IORegistryWatch for the measurements behind this.
+    private let registryWatch = IORegistryWatch(classes: IORegistryWatch.topologyClasses)
+    private var lastTreeDerived: TreeDerived?
+    private var lastTreeWalk = Date.distantPast
+    private static let treeWalkFallback: TimeInterval = 60
+    nonisolated private static let registryLog =
+        Logger(subsystem: Bundle.main.bundleIdentifier ?? "NetLights", category: "ioregistry")
 
     struct PortStatus {
         /// Receptacle number → true if a *Thunderbolt* device is connected.
@@ -702,27 +738,63 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
     /// NSScreen and IOBluetooth's classic API are main-thread-affine.
     nonisolated static func queryPortStatus(displayNames: [UInt32: String],
                                             bluetooth: [BluetoothProbe.RawBT] = []) -> PortStatus {
-        var status = PortStatus()
+        queryPortStatus(tree: treeDerived(), displayNames: displayNames, bluetooth: bluetooth)
+    }
+
+    /// The half of `PortStatus` that comes from the full IOService-plane tree, plus the HID
+    /// usage map (which reads the same slow DriverKit-backed nodes). This is the expensive
+    /// part of a port query, so `refresh()` caches it and recomputes it only when
+    /// `IORegistryWatch` reports a change, on manual Refresh, or as a slow fallback.
+    struct TreeDerived {
+        var tbConnected: [Int: Bool] = [:]
+        var deviceReceptacle: [String: Int] = [:]
+        var phoneReceptacle: Int? = nil
+        var phoneDeviceKind: String = "iPhone"
+        var usbDeviceName: [Int: String] = [:]
+        /// USB peripherals (with hub nesting) and external storage.
+        var devices: [AttachedDevice] = []
+        /// HID product name → Generic-Desktop usages, for Bluetooth-LE classification.
+        var hidUsage: [String: Set<Int>] = [:]
+    }
+
+    nonisolated static func treeDerived() -> TreeDerived {
+        var out = TreeDerived()
 
         // Build the IOService-plane registry tree ONCE (equivalent to `ioreg -a -l`);
-        // both the Thunderbolt and USB passes read from it.
+        // the Thunderbolt, USB and storage passes all read from it.
         let tree = IOKitProbe.serviceTree()
 
         // Thunderbolt: USB4 bus → physical receptacle, and which receptacles have a
         // TB device connected.
         let tb = thunderbolt(tree: tree)
-        status.tbConnected = tb.tbConnected
+        out.tbConnected = tb.tbConnected
 
         // USB device tree: BSD-name → receptacle, classified peripherals (with hub
         // nesting), and a USB-tethered iPhone/iPad's bus.
         let scan = usbScan(tree: tree, busToReceptacle: tb.busToReceptacle)
-        status.deviceReceptacle = scan.bsd
+        out.deviceReceptacle = scan.bsd
         if let bus = scan.phoneBus {
             let recep = tb.busToReceptacle[bus]
-            status.phoneReceptacle = recep
-            status.phoneDeviceKind = scan.phoneKind
-            if let r = recep { status.usbDeviceName[r] = scan.phoneKind }
+            out.phoneReceptacle = recep
+            out.phoneDeviceKind = scan.phoneKind
+            if let r = recep { out.usbDeviceName[r] = scan.phoneKind }
         }
+        out.devices = scan.devices + storageScan(tree: tree, busToReceptacle: tb.busToReceptacle)
+        out.hidUsage = IOKitProbe.hidGenericDesktopUsage()
+        return out
+    }
+
+    /// Assembles a `PortStatus` from the cached tree-derived half plus the cheap per-call
+    /// fetches: USB-C PD state, displays, Bluetooth, system power — each a few nodes, ~1 ms.
+    nonisolated static func queryPortStatus(tree: TreeDerived,
+                                            displayNames: [UInt32: String],
+                                            bluetooth: [BluetoothProbe.RawBT]) -> PortStatus {
+        var status = PortStatus()
+        status.tbConnected = tree.tbConnected
+        status.deviceReceptacle = tree.deviceReceptacle
+        status.phoneReceptacle = tree.phoneReceptacle
+        status.phoneDeviceKind = tree.phoneDeviceKind
+        status.usbDeviceName = tree.usbDeviceName
 
         // Physical attachment + power state per port, from the USB-C PD controller.
         let hpm = IOKitProbe.usbCPower()
@@ -731,11 +803,10 @@ final class NetworkMonitor: ObservableObject, TopologyCollector {
 
         // External displays (CoreGraphics) grouped under the synthetic "Displays"
         // entity (receptacle -2): macOS exposes no port mapping for them.
-        status.attachedDevices = scan.devices
-            + storageScan(tree: tree, busToReceptacle: tb.busToReceptacle)
+        status.attachedDevices = tree.devices
             + buildDisplays(IOKitProbe.externalDisplays(), names: displayNames)
             + buildBluetooth(bluetooth, battery: IOKitProbe.bluetoothHIDBattery(),
-                             hidUsage: IOKitProbe.hidGenericDesktopUsage())
+                             hidUsage: tree.hidUsage)
 
         // System AC/charging state (AppleSmartBattery) — system-level, not per-port.
         if let p = IOKitProbe.systemPower() {

@@ -50,15 +50,6 @@ Not Linux-specific and not a regression — a parity gap from a macOS-only enhan
 Broadens the item above: the served web UI has no Public IP control either, not just the
 TUI. Same portable-probe work covers both.
 
-### Narrow the IOKit port query
-`IOKitProbe.serviceTree()` serialises the **entire** IOService plane — 2,789 registry entries
-on the development Mac — with one `IORegistryEntryCreateCFProperties` call each, every ~3 s.
-That is 0.54 s of kernel time per query standalone and ~3 s when the app is busy, for data
-the parsers only need from a handful of classes (Thunderbolt switches, USB host devices,
-storage, the USB-C power controller). `IOServiceGetMatchingServices` per class would cut
-the steady background CPU to a fraction. Measured during the 2026-10-07 sluggishness
-investigation; not the cause of that bug, but the largest remaining constant cost.
-
 ### Checksums for the .deb and .rpm
 The tarballs and AppImages ship a `.sha256` beside them; the packages do not, so those two
 downloads cannot be verified. `build-packages.sh` should emit them like the other scripts do.
@@ -121,6 +112,16 @@ an animation never finishes, so SwiftUI kept every one of them (7,681 after five
 evaluated the whole list on every frame. The LED's pulse is now computed from the clock on
 each update, with no SwiftUI animation behind it at all: idle LEDs cost nothing and a pulsing
 one never accumulates anything. Same look as before.
+
+**The port query no longer walks the whole I/O Registry every three seconds.** Reading the
+registry tree is how NetLights maps USB and Thunderbolt devices to ports. It used to serialize
+every property of every registry node on every third poll, and a single pass had grown to
+about two seconds of kernel time on an M-series MacBook Pro — most of a core, continuously,
+for data that only changes when something is plugged in. The walk now runs when IOKit reports
+that a USB device, Thunderbolt switch, disk, or HID device appeared or went away, when you
+press Refresh, or once a minute as a fallback, and it skips the handful of driver-hosted
+HID and display nodes whose property reads were 90 % of the cost and that nothing reads.
+The topology shown is unchanged; what changes is that an idle NetLights idles.
 
 ### 1.9.5 — 2026-10-09
 

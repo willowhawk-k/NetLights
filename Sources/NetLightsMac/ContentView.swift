@@ -95,7 +95,7 @@ struct ContentView: View {
             .help("Mask IP and MAC addresses (for screenshots / screen-sharing)")
 
             Button {
-                monitor.refresh()
+                monitor.refresh(forceTopology: true)
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
                     .font(.callout)

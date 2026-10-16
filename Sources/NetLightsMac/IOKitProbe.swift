@@ -34,9 +34,24 @@ enum IOKitProbe {
     /// `entry`, mirroring `ioreg -a -l`: each node is its property dict, with the
     /// class under "IOObjectClass" and children under "IORegistryEntryChildren".
     /// This lets the existing registry-walking parsers run unchanged.
+    /// Classes whose properties no NetLights parser reads and whose
+    /// `IORegistryEntryCreateCFProperties` is an IPC round trip into a DriverKit process.
+    /// Measured 2026-10-15 on an M-series MacBook Pro: 41 such nodes out of 3,103 took ~1.5 s
+    /// of a 1.6 s full walk; the other 3,000 nodes took ~0.1 s. Their children are still
+    /// walked, so the tree keeps its shape. Set `NETLIGHTS_IOKIT_FULL=1` to fetch everything
+    /// again when diagnosing a parser.
+    private static let propertySkipClasses: Set<String> = [
+        "AppleUserHIDEventService", "AppleHIDTransportHIDDevice", "IOMobileFramebufferShim",
+        "IOHIDUserDevice", "IOUserService",
+    ]
+    private static let skipHeavyProperties =
+        ProcessInfo.processInfo.environment["NETLIGHTS_IOKIT_FULL"] == nil
+
     static func tree(of entry: io_registry_entry_t) -> [String: Any] {
-        var node = properties(of: entry)
-        if let cls = className(of: entry) { node["IOObjectClass"] = cls }
+        let cls = className(of: entry)
+        var node: [String: Any] = (skipHeavyProperties && cls.map(propertySkipClasses.contains) == true)
+            ? [:] : properties(of: entry)
+        if let cls { node["IOObjectClass"] = cls }
 
         var iter: io_iterator_t = 0
         guard IORegistryEntryGetChildIterator(entry, "IOService", &iter) == KERN_SUCCESS else {
