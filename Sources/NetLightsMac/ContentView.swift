@@ -341,7 +341,7 @@ struct ContentView: View {
     }
 
     private var displayedInterfaces: [InterfaceInfo] {
-        hideUnused ? monitor.interfaces.filter { !$0.isHiddenWhenInactive(active: ifaceActive($0.id)) }
+        hideUnused ? interfacesShownWhenHidingInactive(monitor.interfaces, active: { ifaceActive($0) })
                    : monitor.interfaces
     }
 

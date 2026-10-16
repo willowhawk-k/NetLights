@@ -228,7 +228,7 @@ struct GraphLayoutEngine {
     }
 
     var visible: [InterfaceInfo] {
-        hideUnused ? interfaces.filter { !$0.isHiddenWhenInactive(active: hasTraffic($0.id)) } : interfaces
+        hideUnused ? interfacesShownWhenHidingInactive(interfaces, active: { hasTraffic($0) }) : interfaces
     }
 
     /// The visible members of a bridge: the collector's list (`bridgeMembers`, what `ifconfig`

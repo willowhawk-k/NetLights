@@ -267,6 +267,23 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
     }
 }
 
+// MARK: - Hide inactive
+
+/// The interfaces "Hide inactive" keeps: each one's own `isHiddenWhenInactive` test, plus
+/// every member of a bridge that passed. A bridge member is an L2-only port — UTM's vmenet0
+/// never has an address, so `isUnused` hid it even while it carried the VM's traffic — and
+/// it belongs on screen exactly when its bridge does: no flicker of its own, gone with the
+/// bridge once the VM goes quiet. THE single definition: the SwiftUI graph and tables, the
+/// SVG renderer, the TUI and the web payload all filter through here. Order is preserved.
+public func interfacesShownWhenHidingInactive(_ interfaces: [InterfaceInfo],
+                                              active: (String) -> Bool) -> [InterfaceInfo] {
+    var kept = Set(interfaces.filter { !$0.isHiddenWhenInactive(active: active($0.id)) }.map(\.id))
+    for bridge in interfaces where bridge.category == .bridge && kept.contains(bridge.id) {
+        kept.formUnion(bridge.bridgeMembers ?? [])
+    }
+    return interfaces.filter { kept.contains($0.id) }
+}
+
 // MARK: - Route Entry
 
 public struct RouteEntry: Identifiable, Codable {

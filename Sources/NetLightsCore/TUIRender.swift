@@ -446,10 +446,8 @@ private func color(for c: InterfaceCategory) -> TUIColor {
 
 private func visibleInterfaces(_ s: TopologySnapshot, _ st: TUIState,
                                _ rates: TrafficRateDeriver) -> [InterfaceInfo] {
-    s.interfaces.filter {
-        guard st.hideInactive else { return true }
-        return !$0.isHiddenWhenInactive(active: rates.isActive($0.id))
-    }
+    st.hideInactive ? interfacesShownWhenHidingInactive(s.interfaces, active: { rates.isActive($0) })
+                    : s.interfaces
 }
 
 private func interfacesView(_ s: TopologySnapshot, _ rates: TrafficRateDeriver,

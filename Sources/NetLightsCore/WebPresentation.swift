@@ -57,10 +57,8 @@ public struct UIPayload: Encodable, Sendable {
 /// Build the whole payload. `rates` must already have been updated with this snapshot.
 public func buildUIPayload(_ s: TopologySnapshot, rates: TrafficRateDeriver,
                            privacy: Bool, hideInactive: Bool) -> UIPayload {
-    let ifaces = s.interfaces.filter {
-        guard hideInactive else { return true }
-        return !$0.isHiddenWhenInactive(active: rates.isActive($0.id))
-    }
+    let ifaces = hideInactive ? interfacesShownWhenHidingInactive(s.interfaces, active: { rates.isActive($0) })
+                              : s.interfaces
 
     let up = s.interfaces.filter { $0.linkState == .up }.count
     var headerBits: [String] = []
@@ -254,9 +252,7 @@ public func redactedSnapshot(_ s: TopologySnapshot, rates: TrafficRateDeriver,
                              privacy: Bool, hideInactive: Bool) -> TopologySnapshot {
     var out = s
     if hideInactive {
-        out.interfaces = s.interfaces.filter {
-            !$0.isHiddenWhenInactive(active: rates.isActive($0.id))
-        }
+        out.interfaces = interfacesShownWhenHidingInactive(s.interfaces, active: { rates.isActive($0) })
     }
     guard privacy else { return out }
     out.interfaces = out.interfaces.map { i in
