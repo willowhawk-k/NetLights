@@ -67,7 +67,8 @@ Shape of the fix: keep traffic counters out of the published topology (`trafficS
 exists for that), publish `interfaces`/`routes`/`gateways` only when they actually differ, and
 move the gathers off the main actor. Expected: the graph re-lays out on topology changes only,
 and the main thread idles between ticks. Constant cost, not growth — it does not get worse
-with uptime.
+with uptime. (1.9.6 already removed the engine-side half of this — band geometry and the
+layout signature are memoized — leaving SwiftUI's own per-tick re-layout and the gathers.)
 
 ### View picker polish (app)
 The "View" label is heavier than it needs to be and sits tight against the segments.
@@ -137,6 +138,12 @@ that a USB device, Thunderbolt switch, disk, or HID device appeared or went away
 press Refresh, or once a minute as a fallback, and it skips the handful of driver-hosted
 HID and display nodes whose property reads were 90 % of the cost and that nothing reads.
 The topology shown is unchanged; what changes is that an idle NetLights idles.
+
+**Less work per refresh on the main thread.** With a virtual machine bridged, the layout engine
+was re-deriving the band geometry and the Virtual band's rows dozens of times per tick and
+re-hashing every interface, including a string-splitting parse of Thunderbolt port names, on
+every geometry lookup. Those are now computed once per layout and cached; on an M-series
+MacBook Pro the main thread's busy share with a bridged VM dropped from 88 % to 47 %.
 
 **A bridged virtual machine's bridge now sits under the port it bridges.** With a UTM virtual
 machine in bridged mode, `bridge100` floated in the Data Link band with no wire to `en7`, the USB
