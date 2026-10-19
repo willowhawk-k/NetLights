@@ -150,7 +150,8 @@ reads `/sys/class/net/<bridge>/brif`. Each bridge in `--dump-json` gains an opti
 to every visible one, including the VM side (`vmenet0`), which "Hide inactive" now keeps on
 screen whenever its bridge is. Two bridges whose members sit close together keep the Physical
 row's minimum spacing instead of overlapping, and the terminal graph, which has no wires, names
-the members on the bridge's row.
+the members on the bridge's row. The VM-side port of such a bridge (`vmenet0`) is listed
+under Virtual Adapters as a Virtual Machine port instead of under System.
 
 ### 1.9.5 — 2026-10-09
 

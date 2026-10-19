@@ -212,6 +212,12 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
     /// Detection: SC assigns "Ethernet Adapter (enX)" to such adapters.
     var isVirtualAdapter: Bool {
         guard thunderboltPortNumber == nil else { return false }
+        // VM ports have no SystemConfiguration service, so there is no display name to
+        // recognise — the BSD name is the only tell. `vmenet*` is the guest-side port of
+        // Apple's Virtualization framework (UTM, Tart, VirtualBuddy, Lima); `vmnet*` is
+        // VMware's host adapter. Without this they read as category "Other" and land in
+        // the System group beside anpi/llw/pktap, which is where the user found vmenet0.
+        if id.hasPrefix("vmenet") || id.hasPrefix("vmnet") { return true }
         let d = displayName?.lowercased() ?? ""
         return d.hasPrefix("ethernet adapter")
     }
@@ -224,6 +230,8 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
 
     /// For virtual adapters: best-guess application name from MAC OUI.
     var virtualAdapterAppName: String {
+        if id.hasPrefix("vmenet") { return "Virtual Machine" }   // Virtualization.framework guest port
+        if id.hasPrefix("vmnet")  { return "VMware Fusion" }
         guard let mac = macAddress else { return "App Adapter" }
         let oui = String(mac.lowercased().prefix(8))
         switch oui {
