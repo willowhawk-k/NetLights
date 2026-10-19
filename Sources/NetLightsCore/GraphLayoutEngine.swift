@@ -1158,9 +1158,15 @@ struct GraphLayoutEngine {
         for bridge in visible where bridge.category == .bridge {
             for member in bridgeMembers(of: bridge) {
                 if let f = ifacePositions[bridge.id], let t = ifacePositions[member.id] {
+                    // Tagged with the BRIDGE, not the member. This wire is the bridge's
+                    // membership link, and the VPN pipe sweep further down recolors every
+                    // wire tagged with the VPN's carrier interface as encrypted. A member
+                    // that is also the carrier (en7 under bridge100 with the VPN up) would
+                    // otherwise paint this L2 attachment as part of the tunnel, which never
+                    // crosses it. The ant-crawl still follows the member's traffic.
                     lines.append(ConnLine(from: f, to: t, label: "L2",
                         color: .l2, hasTraffic: hasTraffic(member.id),
-                        ifaceID: member.id))
+                        ifaceID: bridge.id))
                 }
             }
         }
@@ -1254,6 +1260,9 @@ struct GraphLayoutEngine {
         // carrier) becomes encapsulated + VPN-blue, and a final hop crosses from the
         // Internet node to the server. Only fires when the server is resolved, so
         // non-VPN graphs and VPNs without a pinned concentrator are untouched.
+        // The sweep keys on `ifaceID`, so a wire must tag the interface whose traffic it
+        // carries TOWARD the Internet. Attachments hanging below the carrier (a bridge's
+        // L2 wire to its member) tag themselves, not the member — see the L1 → L2 block.
         if let vpnGW = gateways.first(where: { $0.isVPN && $0.vpnServer != nil }) {
             var pipeIfaces = Set(vpnGW.reachableVia)
             if let c = vpnGW.vpnCarrier { pipeIfaces.insert(c) }
