@@ -54,6 +54,21 @@ TUI. Same portable-probe work covers both.
 The tarballs and AppImages ship a `.sha256` beside them; the packages do not, so those two
 downloads cannot be verified. `build-packages.sh` should emit them like the other scripts do.
 
+### Refresh cycle re-renders the whole graph every tick
+Measured 2026-10-19 on the 1.9.6 soak build: with the animation pile-ups and the IOKit walk
+gone, the app still spends 40–47 % of a core, almost all of it on the main thread in the
+0.75-second refresh — SwiftUI layout, `GraphLayoutEngine`, and the gathers that run on the
+main actor (`currentSSID`, `gatherInterfaces`, `buildSCDisplayNames`, `gatherRoutes`). The
+reason it never idles: `interfaces` is republished every tick and can never compare equal,
+because the per-interface byte counters live inside `InterfaceInfo`, so the entire graph body
+re-evaluates and re-lays out 80 times a minute even when the topology has not changed.
+
+Shape of the fix: keep traffic counters out of the published topology (`trafficStates` already
+exists for that), publish `interfaces`/`routes`/`gateways` only when they actually differ, and
+move the gathers off the main actor. Expected: the graph re-lays out on topology changes only,
+and the main thread idles between ticks. Constant cost, not growth — it does not get worse
+with uptime.
+
 ### View picker polish (app)
 The "View" label is heavier than it needs to be and sits tight against the segments.
 Lighter weight and more separation, and closer to a real tab strip if the segmented style
