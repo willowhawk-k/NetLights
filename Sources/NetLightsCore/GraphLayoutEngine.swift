@@ -159,9 +159,16 @@ final class LayoutCache {
     var hwPort: [Int: CGPoint]?
     var dev: [String: CGPoint]?
     var gw: [String: CGPoint]?
+    // Band geometry and the Virtual rows are pure functions of the signature too. Before
+    // they were memoized (2026-10-19) `bandRect` recomputed every band's need on each of
+    // ~180 calls per five seconds, and the Virtual rows ~100 times — most of a core.
+    var bandNeeds: [(name: String, need: CGFloat)]?
+    var bands: [LayerBand]?
+    var virtualRows: [[IfaceGroup]]?
     func clear() {
         forest = nil; slots = nil; contentW = nil; contentH = nil
         iface = nil; hwPort = nil; dev = nil; gw = nil
+        bandNeeds = nil; bands = nil; virtualRows = nil
     }
 }
 
@@ -188,14 +195,19 @@ struct GraphLayoutEngine {
     /// Signature of every input the layout depends on: window size + the identity and
     /// layout-affecting fields of each interface / device / port / gateway. When this
     /// changes, the layout memo is invalidated and recomputed once. Cheap (O(n) hashing)
-    /// relative to the layout it guards.
+    /// relative to the layout it guards — and it has to stay cheap: the engine is rebuilt
+    /// on every geometry access from the view, so this runs ~100 times per refresh tick.
+    /// No string joins here (allocations), and `groupKey` fails fast for interfaces that
+    /// are not Thunderbolt or virtual adapters. Measured 2026-10-19: the signature plus the
+    /// display-name parsing behind `groupKey` was a third of the main thread.
     private var layoutSig: Int {
         var h = Hasher()
         h.combine(Int(viewSize.width)); h.combine(Int(viewSize.height)); h.combine(hideUnused)
         for i in visible {
             h.combine(i.id); h.combine(i.category.rawValue); h.combine(i.hasLink)
             h.combine(i.macAddress ?? "")
-            h.combine(i.bridgeMembers?.joined(separator: ",") ?? "")   // where a bridge sits + its wires
+            h.combine(i.bridgeMembers?.count ?? -1)                     // where a bridge sits + its wires
+            for m in i.bridgeMembers ?? [] { h.combine(m) }
             h.combine(i.groupKey)   // captures displayName→isVirtualAdapter, which changes grouping
         }
         for d in attachedDevices {
@@ -205,11 +217,12 @@ struct GraphLayoutEngine {
         }
         for p in hardwarePorts {
             h.combine(p.id); h.combine(p.isPhone)
-            h.combine(p.childBSDNames.joined(separator: ",")); h.combine(p.physicalReceptacle ?? -999)
+            h.combine(p.childBSDNames.count); for c in p.childBSDNames { h.combine(c) }
+            h.combine(p.physicalReceptacle ?? -999)
         }
         for g in gateways {
             h.combine(g.id); h.combine(g.isDefault); h.combine(g.isVPN)
-            h.combine(g.reachableVia.joined(separator: ","))
+            h.combine(g.reachableVia.count); for v in g.reachableVia { h.combine(v) }
             h.combine(g.vpnServer ?? ""); h.combine(g.vpnCarrier ?? "")  // VPN far-side + carrier drive the tier/pipe
         }
         h.combine(egress?.name ?? "")
@@ -494,7 +507,8 @@ struct GraphLayoutEngine {
     /// larger than half (16 tunnels out of 22, say) therefore had the canvas sized for 11
     /// nodes while row 0 had to fit 16, and `uniformRects` compressed the per-node width
     /// below the drawn box, overlapping every chip in the row.
-    func virtualRows() -> [[IfaceGroup]] {
+    func virtualRows() -> [[IfaceGroup]] { memo(\.virtualRows, computeVirtualRows) }
+    private func computeVirtualRows() -> [[IfaceGroup]] {
         let groups = subgroups(layer: "Virtual", ifaces: visible)
         guard !groups.isEmpty else { return [[], []] }
         let total = groups.reduce(0) { $0 + $1.interfaces.count }
@@ -534,7 +548,8 @@ struct GraphLayoutEngine {
     /// when the band has several rows (visible on constrained windows). Geometry-free.
     var physBracketInset: CGFloat { hasAnchoredPhysical ? 36 : 0 }
 
-    private var bandNeeds: [(name: String, need: CGFloat)] {
+    private var bandNeeds: [(name: String, need: CGFloat)] { memo(\.bandNeeds, computeBandNeeds) }
+    private func computeBandNeeds() -> [(name: String, need: CGFloat)] {
         let depth = deviceForestDepth
         let deviceLevels = attachedDevices.isEmpty ? 0 : depth + 1
         let hwNeed = 96 + CGFloat(deviceLevels) * deviceRowGap + 24
@@ -562,7 +577,8 @@ struct GraphLayoutEngine {
                 ("Data Link", dlNeed), ("Virtual", vNeed)]
     }
 
-    var bands: [LayerBand] {
+    var bands: [LayerBand] { memo(\.bands, computeBands) }
+    private func computeBands() -> [LayerBand] {
         let needs = bandNeeds
         let total = needs.reduce(0) { $0 + $1.need }
         return needs.map { name, need in

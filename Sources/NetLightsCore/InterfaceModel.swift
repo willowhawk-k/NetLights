@@ -170,7 +170,11 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
     /// Thunderbolt port number parsed from SC display name, e.g. "Thunderbolt 1" → 1.
     /// Also works for "Ethernet Adapter (Thunderbolt 1)".
     var thunderboltPortNumber: Int? {
-        guard let d = displayName else { return nil }
+        // Hot path: this is consulted for every interface on every layout-signature
+        // computation (via isVirtualAdapter → groupKey). Almost no interface mentions
+        // Thunderbolt, so refuse before splitting any strings.
+        guard let d = displayName,
+              d.range(of: "thunderbolt", options: .caseInsensitive) != nil else { return nil }
         // Simple scan: find the last digit-sequence that follows "Thunderbolt"
         let words = d.components(separatedBy: .whitespacesAndNewlines)
         for (i, word) in words.enumerated() {
@@ -218,8 +222,7 @@ public struct InterfaceInfo: Identifiable, Equatable, Codable {
         // VMware's host adapter. Without this they read as category "Other" and land in
         // the System group beside anpi/llw/pktap, which is where the user found vmenet0.
         if id.hasPrefix("vmenet") || id.hasPrefix("vmnet") { return true }
-        let d = displayName?.lowercased() ?? ""
-        return d.hasPrefix("ethernet adapter")
+        return displayName?.range(of: "ethernet adapter", options: [.caseInsensitive, .anchored]) != nil
     }
 
     /// The band this interface renders in. Normally its category's OSI layer — EXCEPT a
