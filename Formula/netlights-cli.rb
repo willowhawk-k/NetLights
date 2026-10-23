@@ -11,7 +11,7 @@ class NetlightsCli < Formula
   # Bump on every release alongside the cask. sha256 of the GitHub source tarball:
   #   curl -sL https://github.com/willowhawk-k/NetLights/archive/refs/tags/v<version>.tar.gz | shasum -a 256
   url "https://github.com/willowhawk-k/NetLights/archive/refs/tags/v1.9.6.tar.gz"
-  sha256 "PENDING_TAG_TARBALL"
+  sha256 "175ed5dc9d3ed8f9f5b3077c97c6cc200fd4f01dd148a935f4a8fa4c3dc6fb87"
   license "MIT"
 
   depends_on :macos

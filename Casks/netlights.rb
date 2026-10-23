@@ -2,7 +2,7 @@ cask "netlights" do
   # Bump version + sha256 together on every release. `shasum -a 256 dist/NetLights-<v>.zip`
   # after scripts/build-app.sh, or read it off the GitHub release asset.
   version "1.9.6"
-  sha256 "PENDING_NOTARIZED_ZIP"
+  sha256 "c7c8c881c5d22878bbd5075abbec44a488ad52f218b8ca2a7444d5e672868f1a"
 
   # No `verified:` — Homebrew checks the URL against the homepage host itself (both are
   # github.com/willowhawk-k/NetLights), and as of Homebrew 7 the parameter is ignored with
