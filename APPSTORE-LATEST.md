@@ -1,4 +1,4 @@
-# App Store — 1.9.5 (build 24)
+# App Store — 1.9.6 (build 25)
 
 Two paste-ready blocks. Lines are deliberately unwrapped — App Store Connect wraps text to
 the field width, and hand-wrapping only creates breaks you have to undo.
@@ -10,27 +10,29 @@ the field width, and hand-wrapping only creates breaks you have to undo.
 *Paste into App Store Connect → Version Information → What's New in This Version.*
 
 ```
-Fixes the app slowing down the longer it stays open
-If you left NetLights running for a day, clicks started to lag and the app used far more of your Mac's processor than it should. On macOS 26 a system framework leaked a little bookkeeping each time the view switcher at the top of the window redrew — and it redrew on every refresh, so each refresh cost a bit more than the last. The view switcher now redraws only when you change tabs. Response stays as quick on day three as at launch, and processor use drops to a fraction.
+Faster, calmer, and right about bridged virtual machines
+This update finishes the work begun in 1.9.5 on the app slowing down the longer it stayed open. Two more causes are fixed: the blinking traffic LEDs quietly piled up animations every time traffic resumed on a link, and the hardware scan re-read the whole I/O Registry every three seconds. NetLights now scans only when something is plugged in or unplugged, idles between refreshes, and does far less work per redraw when a virtual machine is bridged.
+
+If you run a virtual machine in bridged mode, its bridge now sits under the port it actually bridges, wired to it, and the VM's own network port is listed under Virtual Adapters rather than System. The bridge's link is no longer drawn as part of your VPN tunnel when both ride the same Ethernet port.
 ```
 
-**Note for you, not for Apple:** one fix, so one paragraph. 1.9.4's notes are live and
-approved; this only describes what 1.9.5 changes.
+**Note for you, not for Apple:** two paragraphs — performance, then the bridged-VM picture.
+1.9.5's notes are live and approved; this only describes what 1.9.6 changes.
 
 ---
 
 ## 2 · App Review Notes
 
 *Paste into App Store Connect → App Review Information → Notes. Field limit is 4,000
-characters; this block is 3428.*
+characters; this block is 3868.*
 
 ```
-NetLights 1.9.5 (build 24), a bug-fix release. No new capabilities, entitlements or permission prompts compared with 1.9.4, approved 12 August 2026.
+NetLights 1.9.6 (build 25), a performance and graph-correctness release. No new entitlements or permission prompts compared with 1.9.5, approved 13 October 2026.
 
 WHAT THE APP DOES
 NetLights draws the machine's network interfaces as a layered map, lighting up live link, traffic, device and power state. It is read-only and needs no administrator rights.
 
-ENTITLEMENTS (unchanged from the approved 1.9.4)
+ENTITLEMENTS (unchanged from the approved 1.9.5)
 com.apple.security.app-sandbox — sandboxed.
 com.apple.security.personal-information.location — macOS reveals the current Wi-Fi network name only to an app holding Location access, and NetLights uses it solely to label the Wi-Fi uplink. No location coordinates are read, stored or transmitted. Declining is fully supported; the uplink is then labelled simply "Wi-Fi".
 com.apple.security.device.bluetooth — used solely to list ALREADY connected devices, so they can be drawn as attached hardware. The app never scans, pairs or connects. Declining is fully supported; the Bluetooth group then does not appear.
@@ -42,18 +44,19 @@ No data is collected, stored off-device or transmitted. No analytics, accounts o
 IN THE PUBLIC SOURCE, BUT NOT IN THIS BUILD
 NetLights is open source (MIT), built from one codebase for three targets: this sandboxed App Store build, a Developer-ID build, and a Linux build.
 1. An HTTP server feature ("serve") showing the same graph in a browser is compiled out of this build by the APPSTORE build flag, because the sandbox has no incoming-connections entitlement. This build opens no listening sockets of any kind.
-2. Linux-only hardware collectors, including a small D-Bus client that reads the Bluetooth device list on Linux, are each guarded by "#if os(Linux)" and are not compiled into this build. On macOS the Bluetooth list comes from IOBluetooth, gated by the entitlement above, exactly as in 1.9.4.
+2. Linux-only hardware collectors are each guarded by "#if os(Linux)" and are not compiled into this build. On macOS the Bluetooth list comes from IOBluetooth, gated by the entitlement above, exactly as in 1.9.5.
 
 WHAT CHANGED IN THIS VERSION
-One fix. The longer the app stayed open, the slower it responded and the more CPU it used. The cause was the view switcher at the top of the window: on macOS 26 the segmented control's framework bookkeeping was not released when the control redrew, and it redrew on every data refresh (every 0.75 seconds), so each refresh cost more than the last. The view switcher now redraws only when the user changes tabs. No UI, data source, entitlement or network behaviour changed.
+Performance: the blinking traffic LEDs are driven by a clock instead of a restarted repeating animation, which had accumulated in the framework's animator over days; the hardware scan runs only when IOKit's standard matching notifications report that a USB, Thunderbolt, disk or HID device appeared or disappeared, plus once a minute and on Refresh, instead of every three seconds; and the graph layout caches its geometry between redraws. It still only reads registry properties.
+Correctness: a network bridge (for example a virtual machine in bridged mode) is placed under, and wired to, the ports it actually contains. The app asks the bridge driver with the same read-only system call the system's own ifconfig uses (SIOCGDRVSPEC / BRDGGIFS); it needs no privileges and works inside the sandbox, replacing a guess based on MAC addresses. A VM's own virtual port is grouped under Virtual Adapters. No UI control, data source, entitlement or network behaviour changed.
 
 OPTIONAL COMMAND-LINE INTERFACE
-The same binary can also run as a terminal dashboard, not required and not surfaced in the app UI. Run /Applications/NetLights.app/Contents/Resources/netlights tui and press q. It opens no sockets and shows the same data as the window. The "serve" subcommand in the public documentation is not in this build.
+The same binary can also run as a terminal dashboard (not surfaced in the app UI). Run /Applications/NetLights.app/Contents/Resources/netlights tui and press q. It opens no sockets and shows the same data as the window. The "serve" subcommand in the public documentation is not in this build.
 
 WHERE TO LOOK
-There is no new UI. Leave the app open for an hour or more: it should stay as responsive as at launch, and Activity Monitor should show it near idle between refreshes rather than holding a processor core.
+Leave the app open for a day: it should stay as responsive as at launch and sit near idle in Activity Monitor between refreshes. With a VM in bridged mode, the bridge appears directly under the port it bridges, with a line to it.
 
-Source and release notes: https://github.com/willowhawk-k/NetLights/releases/tag/v1.9.5
+Source and release notes: https://github.com/willowhawk-k/NetLights/releases/tag/v1.9.6
 ```
 
 ---
@@ -88,10 +91,10 @@ DNS tab and Privacy mode.
 
 ## Checklist before submitting
 
-- [ ] Build **24** selected (must strictly exceed 23, which shipped as 1.9.4)
-- [ ] Version string reads **1.9.5**
+- [ ] Build **25** selected (must strictly exceed 24, which shipped as 1.9.5)
+- [ ] Version string reads **1.9.6**
 - [ ] "What's New" pasted from section 1
 - [ ] App Review Notes pasted from section 2
 - [ ] App Privacy still declared **Data Not Collected** — unchanged
 - [ ] Description — unchanged
-- [ ] Screenshots unchanged; no UI change in this release
+- [ ] Screenshots — optional refresh; the new collateral shows the bridged-VM wiring
