@@ -116,9 +116,10 @@ themselves are easy (`NSWorkspace`/`NSRunningApplication`). Treat as research.
 
 ## Release history
 
-### 1.9.6 — unreleased (in soak since 2026-10-15)
+### 1.9.6 — 2026-10-23
 
-The second half of the 1.9.5 fix: the app still slowed down after days of uptime.
+The rest of the slowdown fix, plus a correct picture of bridged virtual machines. Soaked for
+eight days across six builds before the cut; the final one ran three and a half days clean.
 
 **The traffic LED no longer piles up animations.** 1.9.5 removed the picker leak, and five
 days of production uptime confirmed that part stayed fixed — yet the main thread was back at a
