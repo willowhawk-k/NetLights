@@ -303,6 +303,20 @@ Three things the full flow hides, learned cutting 1.9.5:
   Ruby, because it rebuilds the gem bundle. Later runs take seconds. It is not a hung
   signing prompt — check with `ps` before assuming 1Password is waiting.
 
+Two more from 1.9.6:
+
+- **A locked Mac means no 1Password prompt.** Every commit is SSH-signed and every push
+  authenticates through the 1Password agent, and both need an on-screen approval. With the
+  screen locked, signing fails instantly ("agent returned an error", "failed to write commit
+  object") and pushes stall until they time out. If git is misbehaving, unlock first; if a
+  push has to happen while you are away, it does not.
+- **Check copy limits before the bump commit, not beside it.** The App Store reviewer block
+  has a 4,000-character limit; measure it (`len`) and stop if it is over BEFORE `git commit`,
+  as a separate step. In 1.9.6 a length check and the commit sat in one script, the check
+  failed, and the bump went out without `APPSTORE-LATEST.md` under a message that said it was
+  included. Harmless here, but a commit message that lies about its contents is the kind of
+  thing that bites a year later.
+
 ## Variant: Linux-only patch
 
 Steps 1, 2, 3, 5, 6, 7.1, 7.3, 8. No notarization, no App Store, no Homebrew.
